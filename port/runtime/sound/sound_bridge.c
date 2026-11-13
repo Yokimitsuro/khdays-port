@@ -338,6 +338,28 @@ static int footstep_of(const char *identifier, char *fs_archive, int fs_archive_
     return 1;
 }
 
+int khdays_sound_bridge_room_music(void)
+{
+    return khdays_sound_mods_rooms_present();
+}
+
+void khdays_sound_bridge_music_kinds(const unsigned char *kinds, int count)
+{
+    AcquireSRWLockExclusive(&lock);
+    khdays_sound_mods_music_kinds(kinds, count);
+    ReleaseSRWLockExclusive(&lock);
+}
+
+void khdays_sound_bridge_room(const char *world, int room, const char *folder)
+{
+    if (driver == NULL || !khdays_sound_mods_present()) {
+        return;
+    }
+    AcquireSRWLockExclusive(&lock);
+    khdays_sound_mods_room(world, room, folder);
+    ReleaseSRWLockExclusive(&lock);
+}
+
 void khdays_sound_bridge_hold_new_music(int hold)
 {
     InterlockedExchange(&music_held, hold != 0);

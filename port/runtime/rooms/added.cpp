@@ -33,7 +33,7 @@ constexpr unsigned kMapNone = 15; // the map's see-through colour
 
 struct Added {
     std::string mod_path, key, world;
-    fs::path model, collision;
+    fs::path folder, model, collision; // rooms/<world as rooms.txt names it>/<key>/ and its files
     int id = -1, index = -1; // given when its world is planned: its id (none of the world's), its place
     int collision_member = -1, model_member = -1;
     // its map on the lower screen (map.png, map.txt), when it has one: the picture's colours, where the room's origin
@@ -629,6 +629,7 @@ extern "C" void khdays_rooms_load(void)
                 continue;
             }
             a.mod_path = path;
+            a.folder = folder;
             read_map(folder, &a);
             rooms.push_back(std::move(a));
         }
@@ -771,6 +772,21 @@ extern "C" int khdays_rooms_index(const char *mod_path, const char *key, const c
             return a.index;
     }
     return -1;
+}
+
+extern "C" int khdays_rooms_folder(const char *world, int index, char *folder, int size)
+{
+    for (const auto &a : rooms) {
+        if (a.id < 0 || a.index != index || a.world != world)
+            continue;
+        const std::u8string p = a.folder.u8string();
+        if (p.size() + 1 > static_cast<std::size_t>(size))
+            return 0;
+        std::memcpy(folder, p.data(), p.size());
+        folder[p.size()] = '\0';
+        return 1;
+    }
+    return 0;
 }
 
 extern "C" int khdays_rooms_model(const char *name, char *path, int size)

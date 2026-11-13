@@ -119,6 +119,7 @@ struct App {
     std::vector<std::string> dialog_ports;            // the port's executable (the settings)
     std::vector<std::string> dialog_maps_kept;        // where the collections' maps are kept (setting collections)
     std::vector<std::string> dialog_characters;       // a character's model, clips, picture or sound
+    std::vector<std::string> dialog_room_music;       // a room's music (views/room_music_view.cpp)
 
     std::string status;
     bool missions_asked = false;  // the Missions window to open (main.cpp), asked by a game mission's view
@@ -271,6 +272,13 @@ std::string finding_text(const App& app, const Finding& finding);
 
 // Opens the system's file dialog for the shown item.
 void choose_file(App& app, const Item& item);
+
+// The music the mod gives a room (core/rooms/room_music.h): its field's and its battle's files, each chosen in the
+// system's dialog or removed, a notice for each (views/room_music_view.cpp). `id` tells it apart from another shown.
+struct RoomMusicPlace;
+void draw_room_music(App& app, const RoomMusicPlace& place, const char* id);
+// Each frame: a room's music the system's dialog chose, copied into the mod (the panel may be closed by then).
+void take_room_music(App& app);
 
 // Rows that wrap: the next item on the last one's line when its `width` fits
 // in what the window shows, else on the next line, so nothing is hidden past

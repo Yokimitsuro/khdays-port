@@ -196,6 +196,27 @@ sound it starts (its seat, from `Ov022_PlayEntityVoice` and
 character's file instead of the original or a sound mod's; `none` plays nothing
 as long as the original lasts. Its files are decoded ahead with the others.
 
+## A room's music
+
+A mod gives a room music of its own (`port/runtime/sound/room_place.c`, `sound_mods.c`): a game room's in
+`mods/<Mod>/sounds/rooms/<world>/<room>.<wav|flac|ogg>` (the world's code, the room's index in its room table, as
+the studio numbers them) and `<room>_battle.<ext>`, a room a mod adds in its own folder (`rooms/<world>/<key>/`),
+`music.<ext>` and `music_battle.<ext>`. Each VBlank the port reads where the player is -- the field's link context
+holds the player's slot and each slot's room, the world being the archive its room table was read from (RUNTIME_MAP.md,
+section 27) -- and the game's own tracks keep their kinds (`data_02042124`): a field's track plays the room's field
+file; a battle's or a boss's its battle file, else the field's going on; any other track (an event's, the results', a
+menu's) the game's. While a track plays and the player goes into another room, the new room's file (or the mods' own
+for the track, or the game's) comes in over half a second, the game's own fade between its field and battle tracks,
+once it is decoded. A field's file the game cut for a battle's track goes on where it was when the field's track comes
+back, as the game takes its own field track up again; a track of another kind between them starts it from the top.
+A room's file with no loop of its own plays whole, round and round (not the original's loop, which is another
+piece's). Each machine plays its own player's room: nothing of it goes over the network.
+
+Seen 2026-11-13 with tones written for it: the play walk's Twilight Town room 0 its file and room 1 the game's
+(faded both ways); a mod's wave mission (DisneyBoss1, a boss's track) its room's battle file, a second's file heard
+round and round for 14 s; a field, battle and field again (a script's `music.play`/`music.stop`) the field's file
+taken up after 267,003 output samples on another ARM7 player; a room the mod adds (`eh` room 23) its folder's files.
+
 ## The originals, to make replacements from
 
 `khdays-native --dump-sounds [DIR [NAME...]]` writes every sound of the archive as WAV

@@ -291,6 +291,16 @@ all (`name = ...`); English where one is missing.
 
     khdays-studio --add-world <Mod> <key> <code> [<language>=<name> | <name>]...
 
+**A room's music** (`core/rooms/room_music.h`). A room plays the mod's music in place of the game's while the player
+is in it (docs/SOUND.md, "A room's music"): one file for its field and one for its battles and bosses -- without the
+battle's, the field's goes on through the fights. WAV, FLAC or Ogg Vorbis; a file with no loop points of its own plays
+whole, over and over. A game room's are the mod's `sounds/rooms/<world>/<room>.<ext>` and `<room>_battle.<ext>` (in a
+world the mod adds, its game world's rooms), a room the mod adds keeps its own in its folder, `music.<ext>` and
+`music_battle.<ext>`. They are chosen in the map view's **Music** (a game room) or with **Music...** beside a mission's
+room (any room, the mod's own too); choosing another replaces the one there, of whatever extension.
+
+    khdays-studio --room-music <Mod> <world> <room | key> field|battle <file> | none
+
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's

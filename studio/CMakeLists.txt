@@ -178,6 +178,7 @@ add_library(khdays-studio-core STATIC
     core/rooms/room_collision.cpp
     core/rooms/room_export.cpp
     core/rooms/room_map.cpp
+    core/rooms/room_music.cpp
     core/mods/settings.cpp
     core/sheets/sheets.cpp
     core/rooms/worlds.cpp)
@@ -231,6 +232,7 @@ add_executable(khdays-studio
     app/views/mods_console.cpp
     app/views/plugin_parameters_view.cpp
     app/views/room_adder.cpp
+    app/views/room_music_view.cpp
     app/views/model_view.cpp
     app/model_shot.cpp
     app/preview3d.cpp

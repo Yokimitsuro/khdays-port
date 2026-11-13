@@ -646,6 +646,7 @@ add_executable(khdays-native
     runtime/sound/sound_bridge.c
     runtime/sound/sound_dump.c
     runtime/sound/sound_mods.c
+    runtime/sound/room_place.c        # where the player is, for a room's music
     runtime/core/start.c
     runtime/core/vram.c
     host/app/window.c

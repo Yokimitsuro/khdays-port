@@ -22,6 +22,7 @@
 #include "core/rooms/room_change.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/room_export.h"
+#include "core/rooms/room_music.h"
 #include "core/sheets/sheets.h"
 #include "core/texts/texts.h"
 #include "core/rooms/worlds.h"
@@ -812,6 +813,56 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
 }
 
 // --revert-room <Mod> <code> <room>: the room's change and what it wrote removed.
+// --room-music <Mod> <world> <room | key> field|battle <file> | none: the music the port plays in that room in place
+// of the game's (core/rooms/room_music.h), a game room by its number (in a world the mod adds: its game world's), a
+// room the mod adds by its key.
+int room_music_command(const fs::path& root, const std::vector<std::string>& args) {
+    const fs::path mod_dir = root / "mods" / path_u8(args[1]);
+    std::error_code ec;
+    if (!fs::is_directory(mod_dir, ec)) {
+        std::fprintf(stderr, "khdays-studio: no mod %s in %s\n", args[1].c_str(), u8(root / "mods").c_str());
+        return 1;
+    }
+    const std::string& world = args[2];
+    const std::string& room = args[3];
+    if (args[4] != "field" && args[4] != "battle") {
+        std::fprintf(stderr, "khdays-studio: %s: field or battle\n", args[4].c_str());
+        return 1;
+    }
+    const bool battle = args[4] == "battle";
+    std::vector<std::string> notes;
+    RoomMusicPlace place;
+    if (!room.empty() && room.find_first_not_of("0123456789") == std::string::npos) {
+        std::string code = world;  // a world the mod adds plays in a game world's rooms
+        for (const AddedWorld& w : read_added_worlds(mod_dir, &notes))
+            if (w.key == world)
+                code = w.like;
+        place = game_room_music(mod_dir, code, std::atoi(room.c_str()));
+    } else {
+        bool ours = false;
+        for (const AddedRoom& r : read_added_rooms(mod_dir, &notes))
+            ours = ours || (r.key == room && r.world == world);
+        if (!ours) {
+            std::fprintf(stderr, "khdays-studio: %s adds no room %s to %s\n", args[1].c_str(), room.c_str(),
+                         world.c_str());
+            return 1;
+        }
+        place = added_room_music(added_room_folder(mod_dir, world, room));
+    }
+    std::string why;
+    if (args[5] == "none") {
+        if (!room_music_remove(place, battle, &why))
+            return print_outcome(false, {}, why);
+        std::printf("%s room %s: no %s music of its own\n", world.c_str(), room.c_str(), args[4].c_str());
+        return 0;
+    }
+    if (!room_music_set(place, battle, path_u8(args[5]), &why))
+        return print_outcome(false, {}, why);
+    std::printf("%s room %s: its %s music %s written\n", world.c_str(), room.c_str(), args[4].c_str(),
+                u8(room_music_file(place, battle)).c_str());
+    return 0;
+}
+
 // --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]: a room of the mod's
 // own added to a world (no Days room replaced): another game's map placed in its units on room 0's ground, the
 // room's markers on its floors, or the modder's model as it is; its collision built from its own floors and walls,
@@ -1824,6 +1875,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
     if (args.size() >= 4 &&
         (args[0] == "--mission-wave" || args[0] == "--mission-chest" || args[0] == "--mission-emblem"))
         return mission_lines(root, args);
+    if (args.size() == 6 && args[0] == "--room-music")
+        return room_music_command(root, args);
     if ((args.size() == 5 || args.size() == 6) && args[0] == "--add-room")
         return add_room_command(root, args);
     if (args.size() == 4 && args[0] == "--remove-room")
@@ -1887,6 +1940,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a room made from a model (or again from its change)\n"
         "       khdays-studio [--port <dir>] --add-room <Mod> <code> <key> <model> | <game>:<map> [<collision model> | own-collision]\n"
         "                                                  a room of the mod's own added to a world, for its missions\n"
+        "       khdays-studio [--port <dir>] --room-music <Mod> <code> <room | key> field|battle <file> | none\n"
+        "                                                  the music played in a room in place of the game's (WAV, FLAC, Ogg)\n"
         "       khdays-studio [--port <dir>] --remove-room <Mod> <code> <key>\n"
         "                                                  a room the mod added, removed\n"
         "       khdays-studio [--port <dir>] --add-world <Mod> <key> <code> [<language>=<name> | <name>]...\n"

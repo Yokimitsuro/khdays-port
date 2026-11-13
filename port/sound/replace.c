@@ -64,13 +64,18 @@ static void take_comment(Comments *c, const char *comment, size_t length)
     }
 }
 
-/* The loop: the file's own, else the original's scaled to the file's rate. */
+/* The loop: the file's own, else the original's scaled to the file's rate (the whole file for
+ * KHDAYS_WHOLE_FILE_LOOP). */
 static void set_loop(KhdaysReplacement *r, int64_t start, int64_t end, const KhdaysOriginalLoop *original)
 {
     if (start >= 0 && end > start && (uint64_t)start < r->frames) {
         r->looped = 1;
         r->loop_start = (uint64_t)start;
         r->loop_end = (uint64_t)end < r->frames ? (uint64_t)end : r->frames;
+    } else if (original != NULL && original->looped && original->rate == 0) {
+        r->looped = r->frames > 0;
+        r->loop_start = 0;
+        r->loop_end = r->frames;
     } else if (original != NULL && original->looped && original->rate != 0 && original->end > original->start) {
         const double scale = (double)r->rate / (double)original->rate;
         r->looped = 1;

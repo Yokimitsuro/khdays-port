@@ -5084,6 +5084,23 @@ N`).
 - **A mod's track** (`music.play`) is asked for the game's way (`SoundMgr_SwitchBgm`); meanwhile the
   four routines keep the game's requests back (prepare.py's joins, `khdays_link_music_request`), and
   the last of them is made as the mod's track ends.
+- **The tracks' kinds** (`data_02042124`, 48 bytes of main's .rodata): 1 a world's field track (TwilightR_F,
+  Alice_F, Herc_F, Halloween_F, Alasin_F, Existence_F, Beast_F, Neverland_F), 2 its battle's (the `_B`s), 3 a
+  boss's (DestinysForce, MissionBoss1, DisneyBoss1, ShorodingDark, Boss3, Boss4), 0 the rest (Result,
+  Resultsingle, Entrymulti, the characters' and events' themes); all on `PLAYER_BGM` but StrangeWhispers,
+  MissingYou, XIIItheme2 and Icetime (`PLAYER_BGM_EVENT`). The new missions the studio builds on 1354's file play
+  DisneyBoss1 throughout.
+- **The field's track taken up again** (`SoundMgr_Update`, request 5): going from a field's track to a battle's, the
+  manager reads the field track's sequence variable 0 into `+0xb46fa` and keeps its number at `+0xb46f8`; coming
+  back to that same field track it starts it again and writes the variable back (`NNS_SndPlayerWriteVariable(0,
+  +0xb46fa)`), the sequence going on from there; any other request clears `+0xb46f8`. Each start takes a free ARM7
+  player, so the field's and the battle's are often on different ones (seen: TwilightR_F on 0, TwilightR_B on 2, the
+  field's again on 5).
+- **Where the player is** (a room's music, docs/SOUND.md): the field's link context (`data_ov002_0207fa10`,
+  `Ov002LinkCtx`) holds the player's slot at `+0xd` and each of the four slots' room at `+0x2f` -- the room's index
+  in the world's room table at `+4` (`Ov002_StepPeerObjectLoading`), the studio's room number -- and that table was
+  read from the world's archive, `mi/wd/wd_<code>`, which names the world. Seen on the play walk: tt room 0 from frame
+  4165, room 1 from 5399, room 0 again from 6207; a mod's added room as its own index past the world's (eh 23).
 
 ## 28. The magic
 

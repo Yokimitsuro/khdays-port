@@ -61,6 +61,12 @@ void khdays_sound_bridge_set_volumes(int volume, int music, int effects, int voi
  * lock; 0 from its release (prepare.py HOOKS). Their category is KHDAYS_SOUND_MOVIES. */
 void khdays_sound_movie_channels(u32 mask);
 
+/* A room's music (sound_mods.h): whether any mod that is on gives one; the game's music tracks' kinds; and, each
+ * VBlank on the game's thread, the player's world and room (-1 none: runtime/sound/room_place.c). */
+int khdays_sound_bridge_room_music(void);
+void khdays_sound_bridge_music_kinds(const unsigned char *kinds, int count);
+void khdays_sound_bridge_room(const char *world, int room, const char *folder);
+
 /* A scene's HD videos coming (runtime/movies/movie_hd.c): while held, the music the game starts is not
  * heard (an event's own, begun as the game goes down to black before them); let go, it is heard again
  * where it has got to. */

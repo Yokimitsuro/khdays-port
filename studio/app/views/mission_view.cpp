@@ -15,6 +15,7 @@
 #include "core/missions/mod_missions.h"
 #include "core/characters/character_files.h"
 #include "core/rooms/added_rooms.h"
+#include "core/rooms/room_music.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 #include "core/files/paths.h"
@@ -1187,6 +1188,14 @@ std::vector<std::string> world_labels(Language language, const std::vector<Added
     return labels;
 }
 
+// A room list's width: its longest choice whole (a room the mod adds: its key and `added`), at least a few digits'.
+float room_list_width(int game_rooms, const std::vector<std::string>& added_keys, const std::string& added) {
+    std::vector<std::string> labels{std::to_string(std::max(0, game_rooms - 1))};
+    for (const std::string& key : added_keys)
+        labels.push_back(key + added);
+    return std::max(6 * ImGui::GetFontSize(), combo_width(labels));
+}
+
 // What a mission's world offers to play in: the rooms of the game world it is played in, the rooms the mod adds to
 // it, and the mod's own worlds; read again for another world and when the room list opens (a room just added).
 struct RoomChoices {
@@ -1242,11 +1251,12 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
         }
         ImGui::EndCombo();
     }
-    same_line_if_room(14 * ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x +
-                      ImGui::CalcTextSize(tr(lang, S::mission_room), nullptr, true).x);
     const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
+    const float room_width = room_list_width(choices.game_rooms, choices.added, added);
+    same_line_if_room(room_width + ImGui::GetStyle().ItemInnerSpacing.x +
+                      ImGui::CalcTextSize(tr(lang, S::mission_room), nullptr, true).x);
     const std::string room = e.room_key.empty() ? std::to_string(e.room) : e.room_key + added;
-    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(room_width);
     if (ImGui::BeginCombo(tr(lang, S::mission_room), room.c_str())) {
         if (ImGui::IsWindowAppearing())
             read_room_choices(m, e.world);
@@ -1268,6 +1278,24 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
         if (ImGui::Selectable(tr(lang, S::take_out_all)))
             app.take_out_asked = true;  // every map ready, so that adding one is quick
         ImGui::EndCombo();
+    }
+    // the music the mod plays in that room: a room it adds keeps it in its folder, a game room in sounds/rooms (a
+    // world the mod adds plays in its game world's rooms)
+    same_line_if_room(button_width(tr(lang, S::room_music_button)));
+    if (ImGui::Button(tr(lang, S::room_music_button)))
+        ImGui::OpenPopup("##room_music");
+    if (ImGui::BeginPopup("##room_music")) {
+        std::string code = e.world;
+        for (const AddedWorld& w : choices.worlds)
+            if (w.key == e.world)
+                code = w.like;
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 36 * ImGui::GetFontSize());
+        draw_room_music(app,
+                        e.room_key.empty() ? game_room_music(m.dir, code, e.room)
+                                           : added_room_music(added_room_folder(m.dir, e.world, e.room_key)),
+                        "mission_music");
+        ImGui::PopTextWrapPos();
+        ImGui::EndPopup();
     }
     // a room just added for it: chosen
     std::string added_world, added_key;
@@ -1422,9 +1450,10 @@ void draw_new_mission_form(App& app, const Mod& m) {
     // its room: the world's own, one the mod adds to it, or one added now (another game's map or the modder's model)
     room = std::clamp(room, 0, std::max(0, rooms - 1));
     const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
-    same_line_if_room(14 * ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x +
+    const float room_width = room_list_width(rooms, form.added, added);
+    same_line_if_room(room_width + ImGui::GetStyle().ItemInnerSpacing.x +
                       ImGui::CalcTextSize(tr(lang, S::mw_new_room), nullptr, true).x);
-    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(room_width);
     if (ImGui::BeginCombo(tr(lang, S::mw_new_room),
                           form.room_key.empty() ? std::to_string(room).c_str() : (form.room_key + added).c_str())) {
         for (int r = 0; r < rooms; ++r) {

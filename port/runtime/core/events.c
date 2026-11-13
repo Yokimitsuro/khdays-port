@@ -12,6 +12,7 @@
 #include "../movies/video.h"
 #include "../net/net_session.h"
 #include "../sound/sound_bridge.h"
+#include "../sound/room_place.h"
 #include "runtime.h"
 #include "../../gfx/g3d.h"
 
@@ -175,6 +176,7 @@ void khdays_events_update(void)
             khdays_display_vblank(vblank_count);
         }
         khdays_input_frame(vblank_count + 1);
+        khdays_room_place_frame(); /* a room's music: where the player is */
         if (IO16(0x004) & 0x0008) { /* DISPSTAT: VBlank IRQ enabled */
             if (IO32(0x214) & 1u) {
                 ++timing_merged; /* the last VBlank's interrupt is not taken yet: one handler serves both */

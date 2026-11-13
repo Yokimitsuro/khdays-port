@@ -692,8 +692,19 @@ mods/<Mod>/sounds/
 ├── seq/<sequence>.<ext>              # a whole sequence (music)
 ├── seqarc/<archive>/<entry>.<ext>    # one effect or voice of a sequence archive
 ├── wave/<wave archive>/<index>.<ext> # one wave an instrument plays
-└── strm/<stream>.<ext>               # a stream (music, voices)
+├── strm/<stream>.<ext>               # a stream (music, voices)
+└── rooms/<world>/<room>.<ext>        # a room's own music (and <room>_battle.<ext>)
 ```
+
+**A room's music.** A room can play its own music instead of the game's
+while the player is in it: `sounds/rooms/<world>/<room>.<ext>` for the field
+and `<room>_battle.<ext>` for its fights and bosses (without one, the
+field's goes on through them); a room the mod adds keeps them in its own
+folder as `music.<ext>` and `music_battle.<ext>`. Going into another room
+fades one into the other; the field's file goes on where it was after a
+fight. A room's file with no loop points of its own plays whole, over and
+over. The studio's map view (**Music**) and its Missions window
+(**Music...** beside a mission's room) choose them.
 
 The loop is a WAV's `smpl` loop, else the Vorbis comments `LOOPSTART` and
 `LOOPLENGTH`, else the original's. The original keeps running unheard, so

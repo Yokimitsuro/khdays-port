@@ -9,6 +9,7 @@
 #include "core/models/model_files.h"
 #include "core/files/paths.h"
 #include "core/rooms/added_rooms.h"
+#include "core/rooms/room_music.h"
 #include "core/rooms/collection_source.h"
 #include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
@@ -2142,6 +2143,12 @@ void draw_map_view(App& app, const Item& item) {
     ImGui::TextDisabled("%s", tr(lang, S::map_controls));
     ImGui::BeginChild("##room_controls", ImVec2(0, 0), ImGuiChildFlags_None);
     draw_replace(app, item);
+    if (ImGui::CollapsingHeader(tr(lang, S::room_music))) {  // the music the mod plays in this room
+        if (const Mod* mod = app.current_mod())
+            draw_room_music(app, game_room_music(mod->dir, m.world.code, m.room->index), "map_music");
+        else
+            ImGui::TextDisabled("%s", tr(lang, S::choose_mod_first));
+    }
     draw_details(app);
     draw_lists(app);
     ImGui::EndChild();

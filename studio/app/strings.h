@@ -828,6 +828,16 @@ enum class S {
     take_out_count_again,
     take_out_this_game,
     take_out_only,
+    room_music,
+    room_music_hint,
+    room_music_field,
+    room_music_battle,
+    room_music_game,
+    room_music_field_goes_on,
+    room_music_saved,
+    room_music_removed,
+    room_music_failed,
+    room_music_button,
     count
 };
 

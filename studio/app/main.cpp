@@ -127,6 +127,7 @@ void draw_frame(App& app, Windows& open) {
     ImGui::EndChild();
     ImGui::TextUnformatted(app.status.c_str());
     ImGui::End();
+    take_room_music(app);  // a room's music chosen in the system's dialog, whatever is shown now
     draw_notices(app);
 
     if (open.settings)
