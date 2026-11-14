@@ -251,6 +251,29 @@ bool write_checked(const fs::path& mod_dir, const std::vector<std::string>& line
 
 }  // namespace
 
+std::vector<std::pair<std::string, std::string>> kh2_mission_enemies(const fs::path& mods_dir) {
+    std::map<std::string, std::string> found;
+    std::error_code ec;
+    for (const auto& mod : fs::directory_iterator(mods_dir, ec)) {
+        std::ifstream in(mod.path() / "kh2_enemies.txt", std::ios::binary);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '')
+                line.pop_back();
+            if (line.empty() || line[0] == '#')
+                continue;
+            std::vector<std::string> cells;
+            std::string cell;
+            std::istringstream row(line);
+            while (std::getline(row, cell, '	'))
+                cells.push_back(cell);
+            if (cells.size() > 2 && cells[2] == "yes" && (cells[0].rfind("M_", 0) == 0 || cells[0].rfind("B_", 0) == 0))
+                found.emplace(cells[0], cells[1]);
+        }
+    }
+    return {found.begin(), found.end()};
+}
+
 const std::vector<MissionSetting>& mission_settings() {
     static const std::vector<MissionSetting> settings = {
         {"name", true, "its name in the list"},

@@ -58,6 +58,8 @@ struct MapState {
     std::string mod, key, world = "\x01";  // what is shown
     int room = -1;
     std::string room_key;  // a room the mod adds, else empty
+    // the KH2 enemies its waves may place (kh2_mission_enemies: the mods' lists), read with the mission
+    std::vector<std::pair<std::string, std::string>> kh2_enemies;
     std::string error;
     bool has_collision = false;
     RoomCollision collision;
@@ -735,6 +737,8 @@ void draw_chosen(App& app) {
         ImGui::InputInt(tr(lang, S::mmap_wave), &sp.wave);
         sp.wave = std::clamp(sp.wave, 1, 255);
         int gone = -1;
+        sp.kh2.resize(sp.enemies.size());
+        sp.kh2_alone.resize(sp.enemies.size());
         for (std::size_t e = 0; e < sp.enemies.size(); ++e) {
             ImGui::PushID(static_cast<int>(e));
             auto& [enemy_class, count] = sp.enemies[e];
@@ -752,12 +756,46 @@ void draw_chosen(App& app) {
             ImGui::SameLine();
             if (ImGui::SmallButton("x"))
                 gone = static_cast<int>(e);
+            // a KH2 enemy in the class's place (kh2:<name>/<class>; docs/KH2_ENEMIES.md), or alone (kh2:<name>: the
+            // mission needs KH2's enemies)
+            std::string& kh2 = sp.kh2[e];
+            std::string shown = tr(lang, S::mmap_kh2_none);
+            for (const auto& [name, title] : s.kh2_enemies)
+                if (name == kh2)
+                    shown = "KH2: " + title + " (" + name + ")";
+            if (!kh2.empty() && shown == tr(lang, S::mmap_kh2_none))
+                shown = "KH2: " + kh2;  // in no mod's list here
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            if (ImGui::BeginCombo("##kh2", shown.c_str())) {
+                if (ImGui::Selectable(tr(lang, S::mmap_kh2_none), kh2.empty()))
+                    kh2.clear();
+                for (const auto& [name, title] : s.kh2_enemies)
+                    if (ImGui::Selectable((title + " (" + name + ")").c_str(), name == kh2))
+                        kh2 = name;
+                ImGui::EndCombo();
+            }
+            if (!kh2.empty()) {
+                bool alone = sp.kh2_alone[e];
+                if (ImGui::Checkbox(tr(lang, S::mmap_kh2_alone), &alone))
+                    sp.kh2_alone[e] = alone;
+            }
             ImGui::PopID();
         }
-        if (gone >= 0 && sp.enemies.size() > 1)
+        if (s.kh2_enemies.empty()) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", tr(lang, S::mmap_kh2_missing));
+            ImGui::PopTextWrapPos();
+        }
+        if (gone >= 0 && sp.enemies.size() > 1) {
             sp.enemies.erase(sp.enemies.begin() + gone);
-        if (ImGui::SmallButton(tr(lang, S::mmap_add_enemy)))
+            sp.kh2.erase(sp.kh2.begin() + gone);
+            sp.kh2_alone.erase(sp.kh2_alone.begin() + gone);
+        }
+        if (ImGui::SmallButton(tr(lang, S::mmap_add_enemy))) {
             sp.enemies.emplace_back(mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front(), 1);
+            sp.kh2.emplace_back();
+            sp.kh2_alone.push_back(false);
+        }
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("%s", tr(lang, S::mmap_waves_note));
         ImGui::PopTextWrapPos();
@@ -819,6 +857,7 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
         s.key = key;
         s.saved = mod_mission_spots(m.dir, key, &s.read_error);
         s.spots = s.saved;
+        s.kh2_enemies = kh2_mission_enemies(m.dir.parent_path());
         s.chosen = s.dragged = s.placing = -1;
         s.world = "\x01";
     }

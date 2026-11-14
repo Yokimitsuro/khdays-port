@@ -100,6 +100,11 @@ std::vector<MissionSpot> mod_mission_spots(const std::filesystem::path& mod_dir,
 // A place as its block's line: its setting (start, wave <n>, chest, emblem) and value.
 std::pair<std::string, std::string> mission_spot_line(const MissionSpot& s);
 
+// The KH2 enemies a mission's waves may place (kh2:<name>): the enemies and bosses (M_, B_; the data battles' too)
+// the port plays whole ("yes" in the covered column) in the lists (kh2_enemies.txt) of the mods in `mods_dir` -- the
+// installer's "Days - KH2 Enemies" or a mod's own -- each with its title, by name, each once.
+std::vector<std::pair<std::string, std::string>> kh2_mission_enemies(const std::filesystem::path& mods_dir);
+
 // Mission `key`'s start, waves, chests and emblems made `spots` at once: its block's lines of those replaced, in the
 // place of the first of them (else at its end), written when the mission reads as the port reads it and builds as
 // the port builds it; else left as it was. False with the reason.
