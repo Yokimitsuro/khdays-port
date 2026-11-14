@@ -5,6 +5,7 @@
 
 #include "solver.h"
 
+#include <initializer_list>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -68,6 +69,8 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
 {
     const std::size_t n = rig.particles.size();
     drive_.resize(n);
+    for (const Particle &p : rig.particles)
+        max_thickness_ = maxf(max_thickness_, p.thickness);
     for (std::size_t i = 0; i < n; ++i) {
         const ParamBlock &b = rig.params[static_cast<std::size_t>(rig.particles[i].params)];
         drive_[i].params = b;
@@ -1343,6 +1346,16 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             return p.x >= box.lo.x && p.x <= box.hi.x && p.y >= box.lo.y && p.y <= box.hi.y && p.z >= box.lo.z &&
                    p.z <= box.hi.z;
         };
+        // everything an edge or face can touch on this core (no contact reaches past its radius and the
+        // thickest particle's thickness, pair_reach): one whose own box misses it is passed over unchanged
+        Aabb touchable = box;
+        touchable.grow(maxf(0.0F, max_thickness_ - 0.03F));
+        const auto misses = [&](std::initializer_list<std::size_t> corners) {
+            Aabb own;
+            for (const std::size_t k : corners)
+                own.add(x_[k]);
+            return !own.overlaps(touchable);
+        };
         // controls: pushed out to the side of the core they belong on (their rest side, in the collider's
         // bone space), with friction
         for (std::size_t li = 0; li < collider_points_[c].size(); ++li) {
@@ -1397,6 +1410,8 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
         for (const int ei : collider_edges_[c]) {
             const auto &e = rig_.edges[static_cast<std::size_t>(ei)];
             const auto a = static_cast<std::size_t>(e[0]), b = static_cast<std::size_t>(e[1]);
+            if (misses({a, b}))
+                continue;
             // its bounding sphere against the core's first
             const Vec3 mid = (x_[a] + x_[b]) * 0.5F;
             float tm, rm;
@@ -1440,6 +1455,8 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             const Face &f = rig_.faces[static_cast<std::size_t>(fi)];
             const std::size_t v[3] = {static_cast<std::size_t>(f.a), static_cast<std::size_t>(f.b),
                                       static_cast<std::size_t>(f.c)};
+            if (misses({v[0], v[1], v[2]}))
+                continue;
             // its bounding sphere about its centre against the core's first
             const Vec3 centre = (x_[v[0]] + x_[v[1]] + x_[v[2]]) * (1.0F / 3.0F);
             const float fr =

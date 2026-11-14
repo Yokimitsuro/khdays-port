@@ -167,13 +167,15 @@ void Actor::drive(const ActorInput &in, float dt)
         winds[g] = rig.groups[g].wind.given ? wind_of(rig.groups[g].wind, rig.groups[g].wind_bone, in, g)
                                             : wind_of(rig.config.wind, rig.wind_bone, in, g);
     // controls by priority, the higher applied over the lower
-    std::vector<std::size_t> order(rig.controls.size());
-    for (std::size_t k = 0; k < order.size(); ++k)
-        order[k] = k;
-    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
-        return rig.controls[a].config->priority < rig.controls[b].config->priority;
-    });
-    for (const std::size_t k : order) {
+    if (control_order_.size() != rig.controls.size()) { // sorted once: the priorities are the file's
+        control_order_.resize(rig.controls.size());
+        for (std::size_t k = 0; k < control_order_.size(); ++k)
+            control_order_[k] = k;
+        std::stable_sort(control_order_.begin(), control_order_.end(), [&](std::size_t a, std::size_t b) {
+            return rig.controls[a].config->priority < rig.controls[b].config->priority;
+        });
+    }
+    for (const std::size_t k : control_order_) {
         const ControlRig &c = rig.controls[k];
         const ControlConfig &cfg = *c.config;
         float want = 0.0F;

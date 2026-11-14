@@ -7,6 +7,23 @@ static SDL_GPUDevice *device;
 static SDL_GPUComputePipeline *pipeline;
 static SDL_GPUBuffer *commands;
 static SDL_GPUTransferBuffer *upload;
+/* The last image drawn into each output: its words' hash and the HD buffer's generation then. The same words
+ * into an untouched buffer draw the same picture, so it is not drawn again (the HUD's images change rarely). */
+enum { DRAWN_SLOTS = 32 };
+static struct {
+    uint32_t output, generation, bytes;
+    uint64_t hash;
+} drawn[DRAWN_SLOTS];
+static uint32_t drawn_count;
+
+static uint64_t hash_of(const void *data, uint32_t bytes)
+{
+    const uint8_t *b = (const uint8_t *)data;
+    uint64_t h = 1469598103934665603ull; /* FNV-1a */
+    for (uint32_t i = 0; i < bytes; ++i)
+        h = (h ^ b[i]) * 1099511628211ull;
+    return h;
+}
 
 void khdays_sequence_gpu_close(void)
 {
@@ -19,9 +36,15 @@ void khdays_sequence_gpu_close(void)
             SDL_ReleaseGPUTransferBuffer(device, upload);
     }
     device = NULL;
+    drawn_count = 0;
     pipeline = NULL;
     commands = NULL;
     upload = NULL;
+}
+
+void khdays_sequence_gpu_forget(void)
+{
+    drawn_count = 0;
 }
 
 int khdays_sequence_gpu_open(SDL_GPUDevice *d)
@@ -77,6 +100,14 @@ int khdays_sequence_gpu_draw(SDL_GPUDevice *d, SDL_GPUCommandBuffer *cmd, const 
     if (image->words[KSI_COUNT] > KSI_MAX_QUADS || !khdays_sequence_gpu_open(d))
         return 0;
     const Uint32 bytes = (KSI_HEADER + image->words[KSI_COUNT] * KSI_QUAD_WORDS) * 4u;
+    const uint32_t output = image->words[KSI_OUTPUT], generation = khdays_gpu_hd_generation();
+    const uint64_t hash = hash_of(image, bytes);
+    uint32_t slot = 0;
+    while (slot < drawn_count && drawn[slot].output != output)
+        ++slot;
+    if (slot < drawn_count && drawn[slot].generation == generation && drawn[slot].bytes == bytes &&
+        drawn[slot].hash == hash)
+        return 1; /* already there */
     void *mapped = SDL_MapGPUTransferBuffer(device, upload, true);
     if (!mapped)
         return 0;
@@ -95,5 +126,13 @@ int khdays_sequence_gpu_draw(SDL_GPUDevice *d, SDL_GPUCommandBuffer *cmd, const 
     SDL_BindGPUComputeStorageBuffers(pass, 0, &commands, 1);
     SDL_DispatchGPUCompute(pass, (image->words[KSI_WIDTH] + 7u) / 8u, (image->words[KSI_HEIGHT] + 7u) / 8u, 1);
     SDL_EndGPUComputePass(pass);
+    if (slot == drawn_count && drawn_count < DRAWN_SLOTS)
+        ++drawn_count;
+    if (slot < drawn_count) {
+        drawn[slot].output = output;
+        drawn[slot].generation = khdays_gpu_hd_generation();
+        drawn[slot].bytes = bytes;
+        drawn[slot].hash = hash;
+    }
     return 1;
 }

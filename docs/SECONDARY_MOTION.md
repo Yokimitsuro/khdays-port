@@ -821,6 +821,13 @@ face-against-capsule contact costs that much more than the sampled faces did.
 At peak the coat's strips stretch well past their 6 % (the body wins over the
 cloth's length whenever both cannot hold): up to 3.6x in the run's knee lifts.
 
+Body contact's cost (2026-11-14, gameplay Saix, idle): the controls' tests 11 %, the edges' 33 %, the faces'
+56 %. An edge or face whose box misses everything a core can touch (its box grown by its radius and the
+thickest particle's thickness, `pair_reach`'s most) is passed over, the results unchanged byte for byte in
+every scenario. Running the edges and faces once a substep instead of three times halved the contact (270 to
+130 us) but doubled the run's worst penetration (1.5 to 3.2 cm); twice (the iterations' last and the last
+spread pass) kept Saix's metrics but gave Roxas's run two frames over 1 cm: kept at three.
+
 ### How contact keeps the legs out
 
 Each was found by measuring the legs against the coat's faces and reading why:

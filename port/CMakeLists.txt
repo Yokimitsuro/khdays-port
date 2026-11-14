@@ -289,7 +289,9 @@ add_library(khdays-gfx STATIC
     gfx/describe.c
     gfx/character_shadow.c
     gfx/g3d_geometry.c
-    gfx/g3d_interp.c)
+    gfx/g3d_interp.c
+    gfx/mips.c
+    runtime/core/phases.c) # KHDAYS_PROFILE's phases, timed in the 3D too
 target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
 target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
 add_executable(khdays-character-shadow-test tests/character_shadow_test.c)
@@ -448,7 +450,7 @@ target_compile_options(khdays-kh2-gpu-test PRIVATE
 add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
 set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
 # the HD pictures on the card: growth, the 3D's pictures coming and going past the most (needs a card)
-add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c)
+add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c gfx/mips.c)
 target_link_libraries(khdays-gpu-hd-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-gpu-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-gpu-hd COMMAND khdays-gpu-hd-test)
@@ -1005,7 +1007,7 @@ add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECON
 target_include_directories(khdays-secondary-replay PRIVATE ../assets/include ../sdk/include runtime/mods/secondary
                            "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}" "${KHDAYS_GEN}")
 target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
-target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx)
+target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx khdays-gfx)
 # A model's cloth reference shape computed once and written as `rest` lines (docs/SECONDARY_MOTION.md, "Rest shape").
 add_executable(khdays-secondary-rest tools/secondary_rest.cpp ${KHDAYS_SECONDARY_SOURCES}
     ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp

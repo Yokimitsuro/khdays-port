@@ -315,6 +315,11 @@ int khdays_textures_add(const char *, int, int, const uint8_t *)
     return -1;
 }
 
+int khdays_textures_add_info(const char *, int, int, const uint32_t *, uint32_t)
+{
+    return -1;
+}
+
 int khdays_textures_add_changing(const char *, int, int, uint32_t)
 {
     return -1;

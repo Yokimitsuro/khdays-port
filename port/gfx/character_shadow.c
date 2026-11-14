@@ -1,5 +1,6 @@
 /* Capture the current pose once, then project its silhouette onto nearby floor polygons. */
 #include "character_shadow.h"
+#include "../runtime/core/phases.h"
 #include "../host/app/hud_settings.h"
 #include <math.h>
 #include <stdlib.h>
@@ -238,7 +239,7 @@ int khdays_shadow_has_sprite(void)
     return 0;
 }
 
-void khdays_shadow_record(const KhdaysG3dList *list)
+static void shadow_record_body(const KhdaysG3dList *list)
 {
     if (!enabled || list->npre == 0)
         return;
@@ -299,6 +300,14 @@ void khdays_shadow_record(const KhdaysG3dList *list)
         }
     }
     ++count;
+}
+
+/* KHDAYS_PROFILE: timed (runtime/core/phases.h) */
+void khdays_shadow_record(const KhdaysG3dList *list)
+{
+    const unsigned long long t = khdays_phase_start();
+    shadow_record_body(list);
+    khdays_phase_end(KHDAYS_PHASE_SHADOW_RECORD, t);
 }
 
 static int clip_plane(const Point *in, int n, Point *out, int axis, float bound, int sign)
@@ -428,7 +437,7 @@ static float floor_below(const KhdaysG3dList *list, const float lo[3], const flo
     return top;
 }
 
-int khdays_shadow_finish(KhdaysG3dList *list)
+static int shadow_finish_body(KhdaysG3dList *list)
 {
     int changed = 0;
     enabled = 0; /* appending projected geometry must not enter the capture */
@@ -561,4 +570,13 @@ int khdays_shadow_finish(KhdaysG3dList *list)
     }
     khdays_shadow_reset();
     return changed;
+}
+
+/* KHDAYS_PROFILE: timed (runtime/core/phases.h) */
+int khdays_shadow_finish(KhdaysG3dList *list)
+{
+    const unsigned long long t = khdays_phase_start();
+    const int r = shadow_finish_body(list);
+    khdays_phase_end(KHDAYS_PHASE_SHADOW_FINISH, t);
+    return r;
 }

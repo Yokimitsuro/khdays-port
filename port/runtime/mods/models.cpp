@@ -5,6 +5,7 @@
 // animation (room_animation.cpp) by the game's frames, stopped while the game is paused.
 
 #include "model_parts.h"
+#include "../core/phases.h"
 
 #include "kh2_corridors.h"
 
@@ -314,6 +315,7 @@ void hold_on_bone(Model &m, const Mat &root, const HoldingBone &holding_bone)
 
 void draw(Model &m)
 {
+    const unsigned long long pose_at = khdays_phase_start(); // KHDAYS_PROFILE (phases.h)
     float pos[16], vecm[16], proj_f[16];
     khdays_g3d_matrices(pos, vecm, proj_f);
     Mat proj;
@@ -634,6 +636,8 @@ void draw(Model &m)
         }
         return;
     }
+    khdays_phase_end(KHDAYS_PHASE_MODEL_POSE, pose_at);
+    const unsigned long long cloth_at = m.secondary ? khdays_phase_start() : 0;
     // secondary motion over the finished pose (the game's or the KH2 motions', blended), before skinning
     if (m.secondary) {
         khdays::secondary::DrawInput in;
@@ -657,6 +661,8 @@ void draw(Model &m)
         }
         khdays::secondary::apply_model_secondary(*m.secondary, in, skin);
     }
+    khdays_phase_end(KHDAYS_PHASE_MODEL_CLOTH, cloth_at);
+    const unsigned long long pose_more = khdays_phase_start();
     // a joint's frame as drawn, without bones.txt's `scale`: what the game attaches to it keeps the game's size
     Mat unscale = kIdentity;
     unscale[0] = unscale[5] = unscale[10] = m.scale > 0.0F ? 1.0F / m.scale : 1.0F;
@@ -894,6 +900,8 @@ void draw(Model &m)
     // 31, and a translucent pixel takes no other translucent polygon of the same ID (the DS's rule), so a
     // mod's room, one ID, would show only what it drew first. A material fading
     // further keeps its alpha.
+    khdays_phase_more(KHDAYS_PHASE_MODEL_POSE, pose_more);
+    const unsigned long long skin_at = khdays_phase_start();
     const uint32_t tex = (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16); // 1024x1024, repeated
     const uint32_t game_alpha = (material.attr >> 16) & 31u;
     // what lies wholly past a side of the view is left out (unless [video] culling is off): whole meshes by their
@@ -936,6 +944,14 @@ void draw(Model &m)
         }
         clip.resize(mesh.vertices.size());
         clip_past.resize(mesh.vertices.size());
+        // no light on (the material's light bits clear: Days' own): every vertex the material's colour, so
+        // its normal is not skinned (khdays_g3d_light reads it only for a light)
+        const bool lit = (material.attr & 0xfu) != 0;
+        float unlit_rgb[3] = {0.0F, 0.0F, 0.0F};
+        if (!lit) {
+            const float up[3] = {0.0F, 0.0F, 0.0F};
+            khdays_g3d_light(&material, up, unlit_rgb);
+        }
         for (std::size_t i = 0; i < mesh.vertices.size(); ++i) {
             const auto &v = mesh.vertices[i];
             std::array<float, 3> p{0, 0, 0}, nrm{0, 0, 0};
@@ -948,16 +964,19 @@ void draw(Model &m)
                 const Mat &s = jt < skin.size() ? skin[jt] : unskinned;
                 // a sky stays around the camera: turned with the room, not moved
                 const auto q = mesh.sky != 0 ? vec(s, v.position) : point(s, v.position);
-                const auto n = vec(s, v.normal);
-                for (int c = 0; c < 3; ++c) {
+                for (int c = 0; c < 3; ++c)
                     p[static_cast<std::size_t>(c)] += weight * q[static_cast<std::size_t>(c)];
-                    nrm[static_cast<std::size_t>(c)] += weight * n[static_cast<std::size_t>(c)];
+                if (lit) {
+                    const auto n = vec(s, v.normal);
+                    for (int c = 0; c < 3; ++c)
+                        nrm[static_cast<std::size_t>(c)] += weight * n[static_cast<std::size_t>(c)];
                 }
                 total += weight;
             }
             if (total <= 0.0F) {
                 p = mesh.sky != 0 ? vec(unskinned, v.position) : point(unskinned, v.position);
-                nrm = vec(unskinned, v.normal);
+                if (lit)
+                    nrm = vec(unskinned, v.normal);
             } else if (std::fabs(total - 1.0F) > 1e-4F) {
                 for (int c = 0; c < 3; ++c)
                     p[static_cast<std::size_t>(c)] /= total;
@@ -968,14 +987,16 @@ void draw(Model &m)
             o.z = proj[2] * p[0] + proj[6] * p[1] + proj[10] * p[2] + proj[14];
             o.w = proj[3] * p[0] + proj[7] * p[1] + proj[11] * p[2] + proj[15];
             clip_past[i] = cull ? static_cast<unsigned char>(past_sides(o.x, o.y, o.w, side_x, side_y)) : 0;
-            const float ln = length(nrm);
-            float rgb[3];
-            if (ln > 1e-6F) {
-                const float unit[3] = {nrm[0] / ln, nrm[1] / ln, nrm[2] / ln};
-                khdays_g3d_light(&material, unit, rgb);
-            } else {
-                const float up[3] = {0.0F, 0.0F, 0.0F};
-                khdays_g3d_light(&material, up, rgb);
+            float rgb[3] = {unlit_rgb[0], unlit_rgb[1], unlit_rgb[2]};
+            if (lit) {
+                const float ln = length(nrm);
+                if (ln > 1e-6F) {
+                    const float unit[3] = {nrm[0] / ln, nrm[1] / ln, nrm[2] / ln};
+                    khdays_g3d_light(&material, unit, rgb);
+                } else {
+                    const float up[3] = {0.0F, 0.0F, 0.0F};
+                    khdays_g3d_light(&material, up, rgb);
+                }
             }
             o.r = rgb[0] * static_cast<float>(v.color[0]) / 255.0F;
             o.g = rgb[1] * static_cast<float>(v.color[1]) / 255.0F;
@@ -1040,6 +1061,7 @@ void draw(Model &m)
         khdays_log("models: %s draw %d: %zu of its %zu meshes past the view, left out", m.name.c_str(), m.draws,
                    left_out, m.meshes.size());
     khdays_g3d_set_clip_owner(0);
+    khdays_phase_end(KHDAYS_PHASE_MODEL_SKIN, skin_at);
 }
 
 // Whether `path` (a mod's model replacing `name`, `mi/wd/wd_<code>#<member>/mdl/<model>`)

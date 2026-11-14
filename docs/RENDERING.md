@@ -153,6 +153,9 @@ with the same texture, palette and attributes but alpha -- get their vertices
 placed between the two lists' at `alpha`, linearly in clip space, nothing
 extrapolated; then the list is clipped and put through the viewport like the
 game's (`khdays_g3d_finish`), so at `alpha` = 1 it is exactly the newer list.
+The match does not depend on `alpha`: the picture names the two lists by their game frames' times
+(`khdays_g3d_interp_pair`), and the refreshes between the same two take the match the first made and only
+place and finish (each newer polygon's older one kept, `older_of`).
 Their places, colours and alpha go between; their texture coordinates are the
 newer's (a texture scrolled round, a door's barrier or a Dark Corridor, ran back
 between the two). A model drawn more than once in a list (the field's prizes,
@@ -285,7 +288,8 @@ sharp scaling; with smooth scaling the four nearest, weighed by place and by
 their alpha, so a texel without 3D gives no colour. The HUD's own 3D (the
 polygons the field's panel and the game over screen send, `KHDAYS_G3D_HUD`) is
 then drawn apart at the 2D's scale (`khdays_raster3d_rasterize_hud`: those
-polygons alone, over no clear colour's alpha or fog and no rear plane; each size
+polygons alone, the world's not uploaded or walked and no character shadow prepared for that pass,
+over no clear colour's alpha or fog and no rear plane; each size
 keeps its targets, gpu_native3d.c and gpu_raster3d.c holding the other aside),
 the rest at the internal resolution without them, and the composition puts the
 HUD's over the rest as the DS draws a polygon over what is there (`over3d`). The
@@ -400,7 +404,10 @@ at the resolution drawn; each at the first frame presented from it on, named
 by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
-the time preparing the 3D took); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
+the time preparing the 3D took; and once a second a `phases:` line, `runtime/core/phases.h`: the milliseconds
+and runs of a replacement model's load, posing, cloth and skinning, the HD pictures' decoding, the character
+shadows' capture and build, the 3D lists' finish, the interpolation (with its finish), and the renderer's
+preparation and its upload and submission); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
 3D's and the composition's time on the card, each picture waited for);
 `KHDAYS_3D=compute` (the 3D by `raster3d.hlsl` alone).
 

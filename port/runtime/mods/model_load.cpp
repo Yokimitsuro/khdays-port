@@ -1,6 +1,13 @@
 // A mod's model loaded: its file's meshes, joints and textures, fitted to the game's skeleton.
 
 #include "model_parts.h"
+#include "../core/phases.h"
+#include "../../gfx/mips.h"
+
+#include <algorithm>
+#include <atomic>
+#include <iterator>
+#include <thread>
 
 namespace khdays::model_parts {
 
@@ -126,6 +133,7 @@ struct Loading {
     float k = 1.0F;                                // the model's scale
     std::vector<int> placed;                       // each file joint's index in Model::joints
     std::map<std::uint32_t, int> joint_of_palette; // a vertex's joint (its palette index) to Model::joints
+    std::vector<std::uint8_t> mdlx;                // a KH2 model's file, read once (its motions read it too)
 };
 
 // Whether joint `j` is `from` or under it.
@@ -194,9 +202,19 @@ bool read_mod_model(Loading &loading)
         const auto extension = u8(path).extension();
         if (extension == ".fbx" || extension == ".FBX")
             mod = assets::import_fbx(u8(path));
-        else if (extension == ".mdlx" || extension == ".MDLX")
-            mod = assets::kh2::import_mdlx(u8(path));
-        else
+        else if (extension == ".mdlx" || extension == ".MDLX") {
+            const auto file = u8(path);
+            std::ifstream in(file, std::ios::binary);
+            if (!in)
+                throw std::runtime_error("cannot open the file");
+            in.seekg(0, std::ios::end); // in one go: an istreambuf_iterator reads a byte at a time
+            loading.mdlx.resize(static_cast<std::size_t>(std::max<std::streamoff>(0, in.tellg())));
+            in.seekg(0, std::ios::beg);
+            in.read(reinterpret_cast<char *>(loading.mdlx.data()), static_cast<std::streamsize>(loading.mdlx.size()));
+            loading.mdlx.resize(static_cast<std::size_t>(in.gcount()));
+            mod = assets::kh2::import_mdlx(loading.mdlx.data(), loading.mdlx.size(), file.stem().string(),
+                                           file.parent_path() / file.stem());
+        } else
             mod = assets::import_gltf(u8(path));
     } catch (const std::exception &e) {
         std::fprintf(stderr, "models: %s cannot be read (%s): export it again; the game's is drawn\n", path.c_str(),
@@ -843,6 +861,12 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             block->animation, static_cast<std::uint32_t>(0x9E3779B9U * (model->face_blocks.size() + 1)));
         model->face_blocks.push_back(std::move(block));
     }
+    // still textures whose smaller copies are made below, on several threads, before anything draws them
+    struct MipsJob {
+        std::uint8_t *pixels;
+        int w, h;
+    };
+    std::vector<MipsJob> mips_jobs;
     auto texture_for = [&](const std::string &key, AlphaMode mode, float cutoff) -> const Made * {
         const auto t = texture_of.find(key);
         if (t == texture_of.end())
@@ -855,7 +879,13 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
         const auto &texture = *t->second;
         // kept for as long as the port runs: the renderer reads it from any thread
         const std::size_t bytes = texture.rgba.size();
-        auto *pixels = static_cast<std::uint8_t *>(std::malloc(bytes));
+        // room for the smaller copies after the texels (KHDAYS_REPLACEMENT_SMALLER): not made by the renderer
+        const std::size_t smaller = face_keys.count(key)
+                                        ? 0
+                                        : std::size_t{khdays_mips_words(static_cast<std::uint32_t>(texture.width),
+                                                                        static_cast<std::uint32_t>(texture.height))} *
+                                              4U;
+        auto *pixels = static_cast<std::uint8_t *>(std::malloc(bytes + smaller));
         if (pixels == nullptr)
             return nullptr;
         std::memcpy(pixels, texture.rgba.data(), bytes);
@@ -887,8 +917,10 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             m.replacement = f.replacement;
             model->face_textures.push_back(std::move(f));
         } else {
-            m.replacement =
-                khdays_textures_add((name + "/" + key + tag).c_str(), texture.width, texture.height, pixels);
+            m.replacement = khdays_textures_add_info((name + "/" + key + tag).c_str(), texture.width, texture.height,
+                                                     reinterpret_cast<const std::uint32_t *>(pixels),
+                                                     KHDAYS_REPLACEMENT_ON_DEMAND | KHDAYS_REPLACEMENT_SMALLER);
+            mips_jobs.push_back({pixels, texture.width, texture.height});
         }
         m.w = texture.width;
         m.h = texture.height;
@@ -976,6 +1008,27 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             "`limit_shapes <name|prefix*>...`: write which of the game's animations or shapes are its limit; the "
             "meshes stay as out of it",
             name.c_str());
+    // the still textures' smaller copies, several at once (the renderer made them as it uploaded each, on the
+    // picture's thread, as the model first showed)
+    if (!mips_jobs.empty()) {
+        std::atomic<std::size_t> next{0};
+        const auto work = [&] {
+            for (std::size_t j = next++; j < mips_jobs.size(); j = next++) {
+                const MipsJob &job = mips_jobs[j];
+                const std::size_t bytes = static_cast<std::size_t>(job.w) * static_cast<std::size_t>(job.h) * 4U;
+                khdays_mips_make(job.pixels, static_cast<std::uint32_t>(job.w), static_cast<std::uint32_t>(job.h),
+                                 job.pixels + bytes);
+            }
+        };
+        const unsigned threads =
+            std::max(1U, std::min({std::thread::hardware_concurrency(), 8U, static_cast<unsigned>(mips_jobs.size())}));
+        std::vector<std::thread> pool;
+        for (unsigned i = 1; i < threads; ++i)
+            pool.emplace_back(work);
+        work();
+        for (std::thread &t : pool)
+            t.join();
+    }
     return {vertices, triangles};
 }
 
@@ -1261,6 +1314,7 @@ void log_loaded(const Model *model, const Loading &loading, std::size_t vertices
 
 std::unique_ptr<Model> load(const std::string &name, const std::string &path, const char *file, u32 offset)
 {
+    const KhdaysPhaseScope timed(KHDAYS_PHASE_MODEL_LOAD); // KHDAYS_PROFILE (phases.h)
     auto model = std::make_unique<Model>();
     model->name = name;
     model->path = path;
@@ -1293,7 +1347,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     log_loaded(model.get(), loading, vertices, triangles);
     set_rest_size(*model);
     resolve_cuffs(*model, loading.bones.cuffs, loading.bones.cuff_pose, name);
-    load_kh2_motions(*model, path);
+    load_kh2_motions(*model, path, loading.mdlx.empty() ? nullptr : &loading.mdlx);
     box_meshes(*model); // last: the meshes as they are drawn
     return model;
 }

@@ -65,7 +65,7 @@ void ready_player(const Model &m, Kh2Track &track, std::size_t slot)
 // A KH2 model's own motions: `<model>.motions.txt` beside the .mdlx (docs/KH2_MODELS.md, "Motions"): the mset, the
 // sections of the game's animations that play its slots, and what its other lines ask for. A game animation without a
 // line, or a slot with no motion, keeps the game's.
-void load_kh2_motions(Model &model, const std::string &path)
+void load_kh2_motions(Model &model, const std::string &path, const std::vector<std::uint8_t> *mdlx_read)
 {
     namespace kh2 = khdays::assets::kh2;
     const auto file = u8(path);
@@ -862,9 +862,15 @@ void load_kh2_motions(Model &model, const std::string &path)
                 const auto name = p.filename().u8string();
                 throw std::runtime_error("cannot open " + std::string(name.begin(), name.end()));
             }
-            return std::vector<std::uint8_t>{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+            f.seekg(0, std::ios::end); // in one go: an istreambuf_iterator reads a byte at a time
+            std::vector<std::uint8_t> bytes(static_cast<std::size_t>(std::max<std::streamoff>(0, f.tellg())));
+            f.seekg(0, std::ios::beg);
+            f.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            bytes.resize(static_cast<std::size_t>(f.gcount()));
+            return bytes;
         };
-        const auto mdlx = read(file);
+        const std::vector<std::uint8_t> own_read = mdlx_read != nullptr ? std::vector<std::uint8_t>{} : read(file);
+        const std::vector<std::uint8_t> &mdlx = mdlx_read != nullptr ? *mdlx_read : own_read; // read once
         const auto set = read(file.parent_path() / u8(mset));
         auto own = std::make_shared<kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
         model.kh2_own_skeleton = own;

@@ -1030,7 +1030,7 @@ const khdays::assets::kh2::MotionSkeleton &skeleton_of(const Model &m, std::size
 void pose_on_model(const Model &m, std::size_t slot, const std::vector<khdays::assets::kh2::Mat4> &played,
                    std::vector<khdays::assets::kh2::Mat4> &out);
 void ready_player(const Model &m, Kh2Track &track, std::size_t slot);
-void load_kh2_motions(Model &model, const std::string &path);
+void load_kh2_motions(Model &model, const std::string &path, const std::vector<std::uint8_t> *mdlx = nullptr);
 void say_bad_motion(const Model &m, const char *set, int slot, const char *what);
 bool play_track(const Model &m, Kh2Track &track, std::size_t slot, const khdays::assets::kh2::Motion &motion,
                 float ticks, const Floor &ground, Mat &taken);

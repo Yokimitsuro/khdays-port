@@ -1204,7 +1204,12 @@ with N_EX830's setup.
 
 A folder beside the model with its name (`roxas_b_h.mdlx`, `roxas_b_h/`) replaces its textures, as the
 remaster's `remastered/obj/<name>.mdlx/` holds them: `-N.png` or `-N.dds` (the PNG first; `image.h`,
-`dds.h`: BC3 or plain 32-bit). The numbering is the rooms' (`TextureContainer`, `kh2_map.h`): each GS
+`dds.h`: BC3 or plain 32-bit), read and decoded on up to 8 threads at once with the sprite sheets
+(`kh2_mdlx.cpp`; each file read in one call: read a byte at a time, Roxas's 12 MB of plain DDS took ~90 ms
+of his load, now ~13 ms for the whole import, replay, 2026-11-14). Each still
+picture's smaller copies are made as the model loads, on several threads, after its texels
+(`KHDAYS_REPLACEMENT_SMALLER`, `gfx/mips.h`), not by the renderer as it first uploads it, and the `.mdlx` is
+read once for the model and its motions. The numbering is the rooms' (`TextureContainer`, `kh2_map.h`): each GS
 info in turn, each followed by one sprite sheet per TEXA drawn over it. N_EX830 (verified by the sizes
 against its GS infos and TEXAs, and by each sheet's alpha equal to the model's sprites'):
 

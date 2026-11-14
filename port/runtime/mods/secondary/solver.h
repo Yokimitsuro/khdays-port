@@ -176,7 +176,8 @@ private:
     // poses: the needed bones at the substep's start and end
     std::vector<Frame> sub0_, sub1_;
     std::vector<Shape> shape0_, shape1_;
-    Aabb bounds_; // the dynamic particles' this substep, grown by their reach
+    Aabb bounds_;                // the dynamic particles' this substep, grown by their reach
+    float max_thickness_ = 0.0F; // the thickest particle's: how far past a core any contact reaches
     std::vector<Triangle> env_;
     std::vector<Aabb> env_boxes_;
     std::vector<float> room_push_; // per env_ triangle: the most it pushed one point this tick

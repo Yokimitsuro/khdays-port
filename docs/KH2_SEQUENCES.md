@@ -232,7 +232,9 @@ replacement-image store before the normal 2D and one-screen composition passes.
 The atlas is registered once without unused mipmaps; the pipeline is created at
 startup. The face's palette conversion reuses the existing versioned image cache.
 Buffers are reused and command uploads cycle normally; the live pass performs no
-GPU readback or explicit fence wait.
+GPU readback or explicit fence wait. An image is drawn again only when its commands change or the store has
+uploaded or moved a picture since (`khdays_gpu_hd_generation`; `kh2_sequence_gpu.c` keeps each output's
+command hash), and a cancelled or failed frame forgets what it drew (`khdays_sequence_gpu_forget`).
 
 The quad edge calculation uses HLSL `precise` for its view transform and
 barycentric coordinates, preventing fused arithmetic from selecting a different
