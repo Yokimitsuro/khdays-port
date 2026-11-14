@@ -1,0 +1,88 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Marluxia (N_CM000_BTL) as Days' marluxia_h and marluxia, playing KH2's own motions for him (`own`: on
+# its own bones). His mset's slots are B_EX110's (the same names in slots 0-21), so the damage lines are axel_h's.
+mset N_CM000_BTL.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# What the game holds at its weapon joint, on N_CM000_BTL's scythe bone (258; bones.txt places it on that joint). Under
+# KH2 motions it follows the bone; under the game's own animations the joint. At rest the baked scythe's shaft runs
+# along 258's +x, its blade across it toward -z (135 cm; 50 toward +z), flat across y; Days' shaft runs along its +z,
+# its blade toward +y (126 cm; 60 toward -y). So Days x to -y, y to -z, z to +x (measured on both meshes).
+weapon ma_h_R 258 rotate -90 0 -90
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 133-154 235-256
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_ma_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_ma_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_ma_A004
+# The run stays the game's; the port's walk (the stick pushed short of running) plays KH2's 01A at its own pace
+walk b_ma_A001 1 blend 8
+# The jump, as roxas_b_h's: the take-off and the rise one KH2 jump (03A), the fall (04A) from the game's 12th frame
+# in the air, then the landing (05A), played out into the idle
+b_ma_A002 3 blend 8
+b_ma_A003 3 blend 8
+b_ma_A003@12 4 blend 8
+b_ma_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_ma_A005 10 finish blend 8
+b_ma_A006 11 finish blend 8
+b_ma_A007 13 finish blend 8
+b_ma_A008 12 finish blend 8
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# ledge (A009-A011: yours to give slots), the item and the magic (D000-D003), the limits (L000-L003)
+b_ma_A001 blend 8
+b_ma_A009 blend 8
+b_ma_A010 blend 8
+b_ma_A011 blend 8
+b_ma_D000 blend 8
+b_ma_D001 blend 8
+b_ma_D002 blend 8
+b_ma_D003 blend 8
+b_ma_L000 blend 8
+b_ma_L001 blend 8
+b_ma_L002 blend 8
+b_ma_L003 blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_ma_A005 16 land 17 finish blend 8
+air b_ma_A006 16 land 17 finish blend 8
+air b_ma_A007 18 land 19 finish blend 8
+air b_ma_A008 18 land 19 finish blend 8
+# The attacks (B000-B011, ba/ch/ma/am.p2), the guard and the other actions (Ca000-Ca008, A012, A013;
+# ab.p2): the game's own, each fading into the idle over 8 frames
+b_ma_A012 blend 8
+b_ma_A013 blend 8
+b_ma_B000 blend 8
+b_ma_B001 blend 8
+b_ma_B002 blend 8
+b_ma_B003 blend 8
+b_ma_B004 blend 8
+b_ma_B005 blend 8
+b_ma_B006 blend 8
+b_ma_B007 blend 8
+b_ma_B008 blend 8
+b_ma_B009 blend 8
+b_ma_B010 blend 8
+b_ma_B011 blend 8
+b_ma_Ca000 blend 8
+b_ma_Ca001 blend 8
+# b_ma_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_ma_Ca003 blend 8
+b_ma_Ca004 blend 8
+b_ma_Ca005 blend 8
+b_ma_Ca006 blend 8
+b_ma_Ca007 blend 8
+b_ma_Ca008 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (run +16, glide
+# hover +27, forward glide +23 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -19 2 for b_ma_A001
+ds_pose rotate 0 0 -38 2 for b_ma_Ca000
+ds_pose rotate 0 0 -27 2 for b_ma_Ca001

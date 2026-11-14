@@ -1,0 +1,190 @@
+# Secondary motion of KH2's Luxord (B_EX150) drawn as Days' luxord_h and luxord: axel_h's coat on the same bones, his
+# drawstrings and hood (no hair bones). Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every
+# line. His cuffs are fitted in bones.txt (`cuff`), not simulated.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. His legs, hands and pelvis are
+# demyx_h's vertex for vertex, so the fixed sizes are his (axel_h's); the pelvis, chest and thighs by his own bones'
+# lengths. ---
+collider pelvis   capsule 2 length 23 fit 0.85 tags body
+collider spine    capsule 96 98 fit 0.85 tags torso
+# 21 of the 26.7 from 98 to the collar (99), as demyx_h's 18 of 23.2: at its full length its end reaches the hood
+collider chest    capsule 98 length 21 fit 0.85 tags torso
+# the thighs sized on their thinned meshes (front/back 10-11 cm, 0.9 of it; fitted they stood 11.5)
+collider thigh_l  capsule 5 6 offset 16.2 0 0 radius 10.0 8.5 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
+collider thigh_r  capsule 14 15 offset 16.2 0 0 radius 10.0 8.5 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
+collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
+collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
+collider hand_l   sphere 133 offset 8.2 0 0 radius 4.8 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 139 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 182 183 fit 0.85 side motion tags arms
+collider forearm_r capsule 183 184 fit 0.85 side motion tags arms
+collider hand_r   sphere 204 offset 8.2 0 0 radius 4.8 side rest tags hands right_hand
+collider thumb_r  capsule 210 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
+# the head's vertices (his hair with them) stand -5.7 to 20.9 cm up the head bone (169), 8.7 behind to 15.5 in front;
+# the sphere on their middle
+collider head     sphere 169 offset 7.6 3.4 0 radius 12.5 tags head
+# the drawstrings' alone: over the chest's front, as demyx_h's (their roots 14.5 cm from 98-99's axis, his 13.8)
+collider chest_strings capsule 98 99 radius 16.2 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface (axel_h's, the same bones) ---
+# Each strip runs from just under the belt to the hem. 85 is shared: the front
+# forks under it into two panels (88-90 and 92-94) with the slit between them.
+group coat surface preset kh2_coat
+  # replay on axel_h, the game's own animations: swings held closer (the 2-hit attack stretched the strips 411%, 66% held)
+  # and the drawn shape eased less, so the guard pulling lagging faces off the legs jumps less (B002 82->27 cm,
+  # guard 51->37, run 27->19 cm p99)
+  swing_limit 40 hem 55
+  smoothing 0.05
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 85 88 89 90
+  strip 85 92 93 94
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 34 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  follow_bone 5 radius 34 weight 0.9 always 0.7
+  follow_bone 14 radius 34 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 88 92        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 -0.01 4.20 -0.23
+  rest 34 0.27 -6.72 -4.64
+  rest 42 -0.08 2.98 -2.95
+  rest 50 0.02 -1.26 -1.44
+  rest 58 -0.23 -6.34 4.20
+  rest 66 0.08 3.05 3.00
+  rest 74 -0.01 -0.61 1.48
+  rest 82 0.00 -0.51 -0.23
+  rest 29 0.01 5.76 0.18
+  rest 37 0.14 4.37 3.76
+  rest 45 0.02 -8.07 -0.28
+  rest 53 -0.10 6.14 -1.79
+  rest 61 -0.09 3.79 -2.76
+  rest 69 -0.04 -8.18 0.55
+  rest 77 0.09 5.50 1.89
+  rest 85 0.01 -7.14 -0.15
+  rest 30 -0.01 2.07 -0.66
+  rest 38 0.07 4.00 1.41
+  rest 46 0.44 8.01 3.90
+  rest 54 -0.27 -5.28 3.62
+  rest 62 -0.12 4.10 -2.07
+  rest 70 -0.35 8.16 -4.30
+  rest 78 0.16 -5.47 -3.81
+  rest 31 0.00 -2.07 0.01
+  rest 39 -0.27 -3.02 -1.46
+  rest 47 0.01 -1.83 -1.32
+  rest 55 0.23 0.33 -0.47
+  rest 63 0.19 -3.06 1.39
+  rest 71 -0.08 -1.89 1.35
+  rest 79 0.26 0.65 0.42
+  rest 32 0.00 -1.94 0.27
+  rest 40 0.55 1.93 0.12
+  rest 48 -0.16 -0.28 0.33
+  rest 56 -0.18 0.25 -0.24
+  rest 64 0.23 1.93 -0.05
+  rest 72 0.07 -0.32 -0.28
+  rest 80 -0.25 0.25 0.26
+  rest 88 0.14 8.03 1.94
+  rest 92 0.01 8.22 0.18
+  rest 89 -0.08 4.01 -2.19
+  rest 93 -0.13 4.08 0.60
+  rest 90 0.76 -9.52 0.33
+  rest 94 -0.88 -10.19 -0.22
+end
+
+# --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  # tips whipped when the hands crossed the chest: the body, torso and arms, more damping, slower
+  collide body torso arms
+  damping 3.5
+  max_speed 5
+  attach 99
+  chain 103 104 105 106
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 103 -9.05 -25.57 40.41
+  rest 104 1.60 7.51 21.96
+  rest 105 -0.20 2.06 0.00
+  rest 106 0.45 0.93 16.72
+end
+group string_r chain preset kh2_string
+  # tips whipped when the hands crossed the chest: the body, torso and arms, more damping, slower
+  collide body torso arms
+  damping 3.5
+  max_speed 5
+  attach 99
+  chain 174 175 176 177
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 174 9.12 25.90 40.22
+  rest 175 -2.08 -7.32 22.02
+  rest 176 0.20 -2.06 0.01
+  rest 177 -0.45 -0.89 16.70
+end
+
+# --- Hood: one bone (101) hanging behind the neck; it swings and lies on the back as one piece ---
+group hood chain preset kh2_hood
+  attach 99
+  chain 101
+  settle on steps 240
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 0.00 81.51 0.00
+end
+
+# --- Animation controls ---
+# B_EX150's own motions carry its coat and drawstrings as KH2 animated them: there they guide the cloth, and the
+# thighs carry none of it. The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end

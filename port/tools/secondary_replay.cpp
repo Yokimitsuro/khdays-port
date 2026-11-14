@@ -1,13 +1,17 @@
-// khdays-secondary-replay: a model's secondary motion played offline on KH2 motions, for tuning, validation and
-// profiling without the game. It drives the solver as the port does (models.cpp), skins the model with the bones the
-// solver rebuilt, measures clipping, stretch and cost and draws contact sheets. Its options and diagnostics:
-// docs/SECONDARY_MOTION.md, "Replay tool".
+// khdays-secondary-replay: a model's secondary motion played offline on KH2 motions, or (`--days`) on the game's own
+// animations posed onto the model by the port's models.cpp itself, for tuning, validation and profiling without the
+// game. It drives the solver as the port does (models.cpp), skins the model with the bones the solver rebuilt, measures
+// clipping, stretch and cost and draws contact sheets. Its options and diagnostics: docs/SECONDARY_MOTION.md, "Replay
+// tool".
 
 #include "actor.h"
+#include "replay_game_stubs.h"
 
+#include "khdays/assets/animation.h"
 #include "khdays/assets/kh2_bar.h"
 #include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/kh2_motion.h"
+#include "khdays/assets/mesh.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -22,11 +26,19 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <set>
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
+
+// port/runtime/mods/models.cpp: one draw of a mod's model posed by the game's node matrices, up to the cloth
+bool khdays_models_offline_pose(const char *file, unsigned offset, const std::vector<std::array<float, 16>> &nodes,
+                                const std::vector<std::tuple<std::string, float, float, float>> &animations,
+                                std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones,
+                                std::vector<std::pair<int, float>> &played);
 
 namespace kh2 = khdays::assets::kh2;
 using namespace khdays::secondary;
@@ -50,6 +62,8 @@ struct Motions {
     std::vector<std::pair<std::size_t, std::size_t>> own_slots; // `own` msets' slots, [from, to): not retargeted
     std::map<std::size_t, std::unique_ptr<kh2::MotionPlayer>> players;
     bool leg_printed = false;
+    // motions.txt's `rotate_motions`, as models.cpp: every pose turned by it (root motion with it)
+    kh2::Mat4 turn{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
     bool own(std::size_t slot) const
     {
@@ -120,7 +134,7 @@ struct Motions {
                              bend(at(g[5]), at(g[6]), at(g[7])));
             }
         }
-        const Mat4 taken = inverse_affine(m->root_motion(ticks));
+        const Mat4 taken = mul(turn, inverse_affine(m->root_motion(ticks))); // R T^-1 R^-1 times R g
         out.resize(g.size());
         for (std::size_t b = 0; b < g.size(); ++b)
             out[b] = mul(taken, g[b]);
@@ -173,6 +187,26 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
             }
         } else if (a == "carry" && w >> c >> d >> r && d == "at") {
             carries.push_back({std::atoi(b.c_str()), std::atoi(c.c_str()), std::atoi(r.c_str())});
+        } else if (a == "rotate_motions" && w >> c >> d) { // <x> <y> <z> [<height>], as models.cpp's turn_of
+            const float degrees[3] = {std::strtof(b.c_str(), nullptr), std::strtof(c.c_str(), nullptr),
+                                      std::strtof(d.c_str(), nullptr)};
+            const float height = w >> r ? std::strtof(r.c_str(), nullptr) : 0.0F;
+            kh2::Mat4 turn{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                const float rad = degrees[axis] * 0.0174532925F, co = std::cos(rad), si = std::sin(rad);
+                const std::size_t u = (axis + 1) % 3, v = (axis + 2) % 3;
+                kh2::Mat4 one{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+                one[u * 4 + u] = co;
+                one[v * 4 + v] = co;
+                one[u * 4 + v] = si;
+                one[v * 4 + u] = -si;
+                turn = mul(one, turn);
+            }
+            // about the point `height` cm over the root
+            turn[12] = turn[4] * -height;
+            turn[13] = turn[5] * -height + height;
+            turn[14] = turn[6] * -height;
+            m.turn = turn;
         } else if (a == "skeleton")
             skeleton = b;
         else if (a == "bone" && w >> c) {
@@ -254,6 +288,8 @@ struct Segment {
     std::size_t slot;   // mset slot
     std::string name;   // the game animation's name the controls see
     float fade = 0.15F; // the cross-fade in (by matrices, as the game's)
+    int days = -1;      // `--days`: the game's animation it plays instead (Days::anims), posed by models.cpp
+    float speed = 0.0F; // `--days-scenario`: metres a second it moves forward (+z) meanwhile
 };
 
 struct Scenario {
@@ -520,6 +556,12 @@ struct Metrics {
     bool finite = true;
     // frame-to-frame acceleration beyond the targets' (cm per frame^2) and the coat bones' angular (deg)
     float jitter_pos_p99 = 0.0F, jitter_pos_max = 0.0F, jitter_rot_p99 = 0.0F, jitter_rot_max = 0.0F;
+    // `--hair`: its edges through the drawn body's triangles (most in a frame, frames with any, each hair bone and
+    // body bone pair's count), and its vertices' frame-to-frame acceleration in its reference bone's frame (cm)
+    int hair_cross_max = 0, hair_cross_frames = 0;
+    std::map<std::pair<int, int>, int> hair_cross_pairs;
+    float twitch_p99 = 0.0F, twitch_max = 0.0F;
+    int twitch_bone = -1, twitch_frame = -1;
 };
 
 void skin(const Model &m, const std::vector<Frame> &bones, std::vector<Vec3> &out)
@@ -616,17 +658,243 @@ void draw(const Simulation &sim, const std::vector<Triangle> &room, Vec3 room_of
     }
 }
 
+// `--days`: the game model the mod's model replaces (its file as the game's origin table names it, its nodes at rest)
+// and the game's animations played on it, each by the name motions.txt and the controls know it
+struct Days {
+    std::string file;
+    khdays::assets::NeutralModel game;
+    std::vector<khdays::assets::SkeletalAnimation> anims;
+    std::vector<std::string> names;
+};
+
+// `--hair`: the groups measured as hair (their vertices), the bones whose triangles are not the body (`--hair-ignore`:
+// other hair, hidden weapons), the hair's edges, the body's triangles and the bone whose frame the twitch is read in
+struct Hair {
+    std::vector<std::uint8_t> vertex;
+    std::vector<std::uint32_t> list; // its vertices
+    std::vector<std::array<std::uint32_t, 2>> edges;
+    std::vector<std::size_t> body; // offsets into the mesh's triangle indices
+    int reference = -1;
+};
+
 struct Run {
     Model model;
     std::shared_ptr<Rig> rig;
     Motions motions;
+    Days days;
+    Hair hair;
+    // the last `--days` pose's animations as the game gives them to the cloth: each its name, KH2 slot and section
+    // (models.cpp's), the game's frame (looped) and length in seconds, and its share
+    std::vector<AnimationState> days_animations;
 };
+
+// A `--days` segment's pose: the game's animation at its frame (30 a second, looped) on the game model's nodes, posed
+// onto the mod's model by models.cpp, each joint at its KH2 bone (KH2 cm, model space as the motions' are)
+// `from`: a game animation fading out (its segment and time) while `s` fades in by `u`, as the game cross-fades: both
+// played at once by their shares, the nodes' local matrices mixed by them
+void days_pose(Run &run, const Segment &s, float local, std::vector<kh2::Mat4> &now, const Segment *from = nullptr,
+               float from_local = 0.0F, float u = 1.0F)
+{
+    const auto sampled = [&](const Segment &g, float at, float &frame) {
+        const auto &anim = run.days.anims[static_cast<std::size_t>(g.days)];
+        frame = at * 30.0F;
+        if (anim.frame_count > 0)
+            frame = std::fmod(frame, static_cast<float>(anim.frame_count));
+        return khdays::assets::sample_animation(anim, frame, run.days.game.object_matrices);
+    };
+    float frame = 0.0F, from_frame = 0.0F;
+    auto objects = sampled(s, local, frame);
+    // each animation's name, frame, share and length in frames (a `follow` section stretches onto it)
+    const auto frames_of = [&](const Segment &g) {
+        return static_cast<float>(run.days.anims[static_cast<std::size_t>(g.days)].frame_count);
+    };
+    std::vector<std::tuple<std::string, float, float, float>> animations;
+    if (from != nullptr && from->days >= 0 && u < 1.0F) {
+        const auto out = sampled(*from, from_local, from_frame);
+        for (std::size_t n = 0; n < objects.size() && n < out.size(); ++n)
+            for (std::size_t k = 0; k < 16; ++k)
+                objects[n][k] = out[n][k] * (1.0F - u) + objects[n][k] * u;
+        animations.emplace_back(run.days.names[static_cast<std::size_t>(from->days)], from_frame, 1.0F - u,
+                                frames_of(*from));
+    }
+    animations.emplace_back(run.days.names[static_cast<std::size_t>(s.days)], frame, animations.empty() ? 1.0F : u,
+                            frames_of(s));
+    const auto nodes = run.days.game.skinning != nullptr
+                           ? khdays::assets::compute_bone_world_matrices(*run.days.game.skinning, objects)
+                           : objects;
+    replay_game_tick();
+    std::vector<std::array<float, 16>> joints;
+    std::vector<int> bones;
+    std::vector<std::pair<int, float>> played;
+    if (!khdays_models_offline_pose(run.days.file.c_str(), 0, nodes, animations, joints, bones, played))
+        throw std::runtime_error("models.cpp drew no mod model for " + run.days.file +
+                                 ": give the model from its mod's graphics folder and the game model it replaces");
+    run.days_animations.clear();
+    for (std::size_t k = 0; k < animations.size(); ++k) {
+        const auto &[name, at, share, length] = animations[k];
+        run.days_animations.push_back({name, k < played.size() ? played[k].first : -1,
+                                       k < played.size() ? played[k].second : -1.0F, at / 30.0F, length / 30.0F,
+                                       share});
+    }
+    static std::vector<kh2::Mat4> last; // KHDAYS_REPLAY_DAYS_TRACE: the joint that moved most since the last draw
+    now.assign(run.model.skeleton.rest.size(), kh2::Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
+    for (std::size_t j = 0; j < joints.size(); ++j) {
+        const int b = bones[j];
+        if (b < 0 || static_cast<std::size_t>(b) >= now.size())
+            continue;
+        now[static_cast<std::size_t>(b)] = joints[j];
+        for (std::size_t c = 12; c < 15; ++c)
+            now[static_cast<std::size_t>(b)][c] *= 100.0F;
+    }
+    // KHDAYS_REPLAY_DAYS_BONES=<bone>,...: each listed KH2 bone's place (cm, model space) at every frame
+    if (const char *list = std::getenv("KHDAYS_REPLAY_DAYS_BONES"); list != nullptr) {
+        std::string line;
+        std::istringstream bones_in(list);
+        for (std::string b; std::getline(bones_in, b, ',');) {
+            const int bone = std::atoi(b.c_str());
+            if (bone < 0 || static_cast<std::size_t>(bone) >= now.size())
+                continue;
+            const auto &w = now[static_cast<std::size_t>(bone)];
+            char one[96];
+            std::snprintf(one, sizeof(one), " kh2_%d %.1f %.1f %.1f", bone, static_cast<double>(w[12]),
+                          static_cast<double>(w[13]), static_cast<double>(w[14]));
+            line += one;
+        }
+        std::fprintf(stderr, "days bones %s frame %.1f:%s\n", run.days.names[static_cast<std::size_t>(s.days)].c_str(),
+                     static_cast<double>(frame), line.c_str());
+    }
+    if (std::getenv("KHDAYS_REPLAY_DAYS_TRACE") != nullptr) {
+        if (last.size() == now.size()) {
+            float most = 0.0F;
+            std::size_t at = 0;
+            for (std::size_t b = 0; b < now.size(); ++b) {
+                const float d =
+                    std::hypot(now[b][12] - last[b][12], now[b][13] - last[b][13], now[b][14] - last[b][14]);
+                if (d > most) {
+                    most = d;
+                    at = b;
+                }
+            }
+            std::fprintf(stderr, "days %s frame %.1f: kh2_%zu moved %.1f cm\n",
+                         run.days.names[static_cast<std::size_t>(s.days)].c_str(), static_cast<double>(frame), at,
+                         static_cast<double>(most));
+        }
+        last = now;
+    }
+}
+
+// Whether the segment p-q passes through the triangle a b c (Moller-Trumbore, the segment's ends excluded)
+bool crosses(Vec3 p, Vec3 q, Vec3 a, Vec3 b, Vec3 c)
+{
+    const Vec3 d = q - p, e1 = b - a, e2 = c - a, h = cross(d, e2);
+    const float det = dot(e1, h);
+    if (std::fabs(det) < 1e-12F)
+        return false;
+    const float inv = 1.0F / det;
+    const Vec3 s = p - a;
+    const float u = dot(s, h) * inv;
+    if (u < 0.0F || u > 1.0F)
+        return false;
+    const Vec3 qv = cross(s, e1);
+    const float v = dot(d, qv) * inv;
+    if (v < 0.0F || u + v > 1.0F)
+        return false;
+    const float t = dot(e2, qv) * inv;
+    return t > 1e-4F && t < 1.0F - 1e-4F;
+}
+
+// `--hair`'s twitch: its vertices' places in the reference bone's frame the last two frames, each frame's largest
+// acceleration
+struct TwitchState {
+    std::vector<Vec3> x1, x2;
+    std::vector<float> values;
+    float to_60hz = 1.0F; // (draw rate / 60)^2: a second difference read as at 60 draws a second
+    int settle = 15;      // draws in the first quarter second, left out
+};
+
+// `--hair`, one frame of the drawn model: the hair's edges through the body's triangles (a grid of 4 cm cells finds
+// the candidates), and how sharply its vertices move in its reference bone's frame (their second difference, cm)
+void measure_hair(const Run &run, const std::vector<Frame> &bones, const std::vector<Vec3> &verts, int frame,
+                  Metrics &m, TwitchState &st)
+{
+    const auto &tri = run.model.mesh.triangles;
+    constexpr float kCell = 0.04F;
+    const auto cell_of = [](float v) { return static_cast<int>(std::floor(v / kCell)); };
+    const auto key = [](int x, int y, int z) {
+        return (static_cast<std::int64_t>(x) * 73856093LL) ^ (static_cast<std::int64_t>(y) * 19349663LL) ^
+               (static_cast<std::int64_t>(z) * 83492791LL);
+    };
+    const auto lowest = [](Vec3 a, Vec3 b) {
+        return Vec3{std::fmin(a.x, b.x), std::fmin(a.y, b.y), std::fmin(a.z, b.z)};
+    };
+    const auto highest = [](Vec3 a, Vec3 b) {
+        return Vec3{std::fmax(a.x, b.x), std::fmax(a.y, b.y), std::fmax(a.z, b.z)};
+    };
+    std::map<std::int64_t, std::vector<std::size_t>> grid;
+    for (const std::size_t t : run.hair.body) {
+        const Vec3 a = verts[tri[t]], b = verts[tri[t + 1]], c = verts[tri[t + 2]];
+        const Vec3 lo = lowest(lowest(a, b), c), hi = highest(highest(a, b), c);
+        for (int x = cell_of(lo.x); x <= cell_of(hi.x); ++x)
+            for (int y = cell_of(lo.y); y <= cell_of(hi.y); ++y)
+                for (int z = cell_of(lo.z); z <= cell_of(hi.z); ++z)
+                    grid[key(x, y, z)].push_back(t);
+    }
+    int count = 0;
+    std::vector<std::size_t> candidates;
+    for (const auto &e : run.hair.edges) {
+        const Vec3 p = verts[e[0]], q = verts[e[1]];
+        const Vec3 lo = lowest(p, q), hi = highest(p, q);
+        candidates.clear();
+        for (int x = cell_of(lo.x); x <= cell_of(hi.x); ++x)
+            for (int y = cell_of(lo.y); y <= cell_of(hi.y); ++y)
+                for (int z = cell_of(lo.z); z <= cell_of(hi.z); ++z)
+                    if (const auto it = grid.find(key(x, y, z)); it != grid.end())
+                        candidates.insert(candidates.end(), it->second.begin(), it->second.end());
+        std::sort(candidates.begin(), candidates.end());
+        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+        for (const std::size_t t : candidates)
+            if (crosses(p, q, verts[tri[t]], verts[tri[t + 1]], verts[tri[t + 2]])) {
+                ++count;
+                ++m.hair_cross_pairs[{run.model.dominant[e[0]], run.model.dominant[tri[t]]}];
+            }
+    }
+    m.hair_cross_max = std::max(m.hair_cross_max, count);
+    m.hair_cross_frames += count > 0 ? 1 : 0;
+    if (run.hair.reference < 0)
+        return;
+    const Frame &r = bones[static_cast<std::size_t>(run.hair.reference)];
+    std::vector<Vec3> x(run.hair.list.size());
+    for (std::size_t i = 0; i < x.size(); ++i)
+        x[i] = apply_inverse(r, verts[run.hair.list[i]]);
+    if (st.x2.size() == x.size() && frame >= st.settle) { // the first quarter second: the cloth settling onto its pose
+        float worst = 0.0F;
+        int bone = -1;
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            const float a = length(x[i] - st.x1[i] * 2.0F + st.x2[i]) * 100.0F * st.to_60hz;
+            if (a > worst) {
+                worst = a;
+                bone = run.model.dominant[run.hair.list[i]];
+            }
+        }
+        st.values.push_back(worst);
+        if (worst > m.twitch_max) {
+            m.twitch_max = worst;
+            m.twitch_bone = bone;
+            m.twitch_frame = frame;
+        }
+    }
+    st.x2 = st.x1;
+    st.x1 = std::move(x);
+}
 
 Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat, const std::filesystem::path &folder,
              Profile &total, bool sheets)
 {
     const Rig &rig = *run.rig;
     const std::size_t nb = rig.skeleton.names.size();
+    // the game's clock at this draw rate, after a gap: models.cpp's actors start afresh, as the cloth's do
+    replay_game_set_draw_hz(draw_hz);
+    replay_game_gap();
     std::vector<std::unique_ptr<Actor>> list;
     for (int a = 0; a < actors; ++a)
         list.push_back(std::make_unique<Actor>(run.rig, 1234U + static_cast<std::uint32_t>(a)));
@@ -637,6 +905,9 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
     std::vector<Frame> pose(nb), shown(nb), out(nb);
     std::vector<std::uint8_t> written(nb);
     std::vector<Vec3> verts;
+    TwitchState twitch_state;
+    twitch_state.to_60hz = (draw_hz / 60.0F) * (draw_hz / 60.0F);
+    twitch_state.settle = static_cast<int>(std::lround(draw_hz * 0.25F));
     // KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]: its frames, and fewer bigger pictures
     int sheet_cols = 10, cell = 1;
     if (const char *e = std::getenv("KHDAYS_REPLAY_SHEET"); e != nullptr) {
@@ -675,8 +946,16 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         }
         const Segment &s = sc.segments[seg];
         const float local = t - s.from;
-        run.motions.pose(s.slot, local * 60.0F, now);
-        if (!fade_from.empty() && local < seg_start_pose_fade) {
+        // a fade between two game animations: models.cpp plays both, as in the game (its KH2 motions' own blends too)
+        const bool game_fade = s.days >= 0 && seg > 0 && sc.segments[seg - 1].days >= 0 && local < seg_start_pose_fade;
+        if (game_fade)
+            days_pose(run, s, local, now, &sc.segments[seg - 1], t - sc.segments[seg - 1].from,
+                      local / seg_start_pose_fade);
+        else if (s.days >= 0)
+            days_pose(run, s, local, now);
+        else
+            run.motions.pose(s.slot, local * 60.0F, now);
+        if (!game_fade && !fade_from.empty() && local < seg_start_pose_fade) {
             const float u = local / seg_start_pose_fade;
             for (std::size_t b = 0; b < now.size(); ++b)
                 for (std::size_t k = 0; k < 16; ++k)
@@ -723,7 +1002,12 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         in.seconds = static_cast<double>(t);
         in.pose = &pose;
         in.placement = place;
-        in.animations = {{s.name, static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
+        // `--days`: what the game gives the cloth (the KH2 slot models.cpp plays, the game's own looping frame); KH2
+        // motions alone: the slot and the time since the segment began
+        if (s.days >= 0)
+            in.animations = run.days_animations;
+        else
+            in.animations = {{s.name, static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
         in.environment = &env;
         in.cut = sc.cut_at >= 0.0F && t >= sc.cut_at && t - 1.0F / draw_hz < sc.cut_at;
         in.pose_cut = pose_cut && std::getenv("KHDAYS_REPLAY_NO_POSE_CUT") == nullptr;
@@ -739,10 +1023,84 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count()));
             }
         }
+        // KHDAYS_REPLAY_CONTROLS: each frame's control weights and the animations the cloth was given
+        if (std::getenv("KHDAYS_REPLAY_CONTROLS") != nullptr && !list.empty()) {
+            std::string line;
+            char part[160];
+            for (const float w : list.front()->control_weights()) {
+                std::snprintf(part, sizeof(part), " %.2f", static_cast<double>(w));
+                line += part;
+            }
+            line += " |";
+            for (const auto &x : in.animations) {
+                std::snprintf(part, sizeof(part), " %s slot %d f%.1f/%.1f w%.2f", x.name.c_str(), x.slot,
+                              static_cast<double>(x.seconds * 30.0F), static_cast<double>(x.length * 30.0F),
+                              static_cast<double>(x.weight));
+                line += part;
+            }
+            std::fprintf(stderr, "controls: %s f%d%s\n", sc.name.c_str(), f, line.c_str());
+        }
         // measure the first actor's drawn model
         shown = out;
         skin(run.model, shown, verts);
         ++m.frames;
+        if (!run.hair.vertex.empty())
+            measure_hair(run, shown, verts, f, m, twitch_state);
+        // KHDAYS_REPLAY_SPREAD=<cm>[,<bone>-<bone>...]: each frame whose farthest vertex from the root bone is past that,
+        // with its bone (a mesh stretched off the body); the bones after it left out (hidden weapons)
+        if (const char *e = std::getenv("KHDAYS_REPLAY_SPREAD"); e != nullptr && !verts.empty()) {
+            static const std::vector<std::pair<int, int>> left_out = [e] {
+                std::vector<std::pair<int, int>> r;
+                for (const char *c = std::strchr(e, ','); c != nullptr; c = std::strchr(c + 1, ',')) {
+                    int a = 0, b = 0;
+                    if (std::sscanf(c + 1, "%d-%d", &a, &b) == 2)
+                        r.emplace_back(a, b);
+                    else if (std::sscanf(c + 1, "%d", &a) == 1)
+                        r.emplace_back(a, a);
+                }
+                return r;
+            }();
+            const Vec3 root = shown[0].t;
+            float most = 0.0F;
+            std::size_t at = 0;
+            for (std::size_t v = 0; v < verts.size(); ++v)
+                if (const float d = length(verts[v] - root);
+                    d > most && std::none_of(left_out.begin(), left_out.end(), [&](const auto &r) {
+                        return run.model.dominant[v] >= r.first && run.model.dominant[v] <= r.second;
+                    })) {
+                    most = d;
+                    at = v;
+                }
+            if (most * 100.0F > static_cast<float>(std::atof(e)))
+                std::fprintf(stderr, "spread %s frame %d (%.2f s, segment %zu): %.0f cm, kh2_%d\n", sc.name.c_str(), f,
+                             static_cast<double>(t), seg, static_cast<double>(most * 100.0F), run.model.dominant[at]);
+        }
+        // KHDAYS_REPLAY_MODEL_DUMP=<frame>: that frame's drawn model, to fit colliders to: "v x y z bone" for each vertex
+        // (metres, its heaviest bone) and "b index" with the 16 numbers of each bone's frame (column-major)
+        if (const char *dump = std::getenv("KHDAYS_REPLAY_MODEL_DUMP"); dump != nullptr && std::atoi(dump) == f) {
+            std::string file_name = "dump_" + sc.name + "_" + std::to_string(f) + ".txt";
+            std::replace(file_name.begin(), file_name.end(), ':', '_');
+            FILE *d = nullptr;
+            if (fopen_s(&d, (folder / file_name).string().c_str(), "w") != 0 || d == nullptr) {
+                std::fprintf(stderr,
+                             "KHDAYS_REPLAY_MODEL_DUMP: cannot write %s; check --out is a folder you can "
+                             "write to\n",
+                             (folder / file_name).string().c_str());
+            } else {
+                for (std::size_t v = 0; v < verts.size(); ++v)
+                    std::fprintf(d, "v %.5f %.5f %.5f %d\n", static_cast<double>(verts[v].x),
+                                 static_cast<double>(verts[v].y), static_cast<double>(verts[v].z),
+                                 run.model.dominant[v]);
+                for (std::size_t b = 0; b < shown.size(); ++b) {
+                    const Mat4 x = matrix_of(shown[b]);
+                    std::fprintf(d, "b %zu", b);
+                    for (const float e : x)
+                        std::fprintf(d, " %.5f", static_cast<double>(e));
+                    std::fprintf(d, "\n");
+                }
+                std::fclose(d);
+            }
+        }
         float frame_pen = 0.0F;
         const Simulation &sim = list.front()->simulation();
         // KHDAYS_REPLAY_POKE=<bone,...>: the body's vertices on those bones through the coat's drawn surface,
@@ -1023,7 +1381,15 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                 const float u = ll > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(verts[v] - c.a, ab) / ll)) : 0.0F;
                 const float pen = c.ra + (c.rb - c.ra) * u - length(verts[v] - (c.a + ab * u));
                 // only what goes deeper than it sits at rest (a hair root inside the head is its design)
-                frame_pen = std::fmax(frame_pen, pen - std::fmax(0.0F, run.model.rest_depth[v * nc + ci]));
+                const float deeper = pen - std::fmax(0.0F, run.model.rest_depth[v * nc + ci]);
+                // KHDAYS_REPLAY_DEBUG: each new deepest vertex past its rest depth, its bone and collider
+                static float pen_worst = 0.0F;
+                static const bool debug = std::getenv("KHDAYS_REPLAY_DEBUG") != nullptr;
+                if (debug && deeper > pen_worst && (pen_worst = deeper) > 0.0F)
+                    std::fprintf(stderr, "penetration: f%d vertex %zu bone %s collider %s %.2f cm\n", f, v,
+                                 rig.skeleton.names[static_cast<std::size_t>(run.model.dominant[v])].c_str(),
+                                 rig.colliders[ci].name.c_str(), static_cast<double>(deeper * 100.0F));
+                frame_pen = std::fmax(frame_pen, deeper);
             }
             for (const auto &tri : sc.room) {
                 const Vec3 a = tri.a + env_at, b = tri.b + env_at, c = tri.c + env_at;
@@ -1283,6 +1649,7 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         std::sort(v.begin(), v.end());
         return v[std::min(v.size() - 1, static_cast<std::size_t>(q * static_cast<float>(v.size())))];
     };
+    m.twitch_p99 = pct(twitch_state.values, 0.99F);
     m.jitter_pos_p99 = pct(jitter_pos, 0.99F);
     m.jitter_pos_max = pct(jitter_pos, 1.0F);
     m.jitter_rot_p99 = pct(jitter_rot, 0.99F);
@@ -1416,10 +1783,15 @@ int main(int argc, char **argv)
     if (argc < 4) {
         std::fprintf(stderr, "usage: khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> "
                              "[--out dir] [--scenario name] [--actors n] [--draw-hz hz] [--repeat n] "
-                             "[--slot-offset n] [--reference B.mdlx B.mset slot,slot]\n");
+                             "[--slot-offset n] [--reference B.mdlx B.mset slot,slot] [--days game.nsbmd "
+                             "[--days-anim name=file.nsbca#index]... [--days-scenario name=anim:seconds[:m/s],...]...] "
+                             "[--hair group,group [--hair-ignore bones]]\n");
         return 2;
     }
-    std::filesystem::path out = ".";
+    std::filesystem::path days_bmd;
+    std::vector<std::string> days_anim_specs, days_scenario_specs;
+    std::string hair_groups, hair_ignore;
+    std::filesystem::path out = std::filesystem::temp_directory_path() / "khdays-secondary-replay";
     std::string which = "all";
     int actors = 1, repeat = 1;
     float hz = 60.0F;
@@ -1447,10 +1819,25 @@ int main(int argc, char **argv)
             std::string n;
             while (std::getline(s, n, ','))
                 ref_slots.push_back(static_cast<std::size_t>(std::atoi(n.c_str())));
+        } else if (a == "--days" && i + 1 < argc) {
+            days_bmd = argv[++i];
+        } else if (a == "--days-anim" && i + 1 < argc) {
+            days_anim_specs.push_back(argv[++i]);
+        } else if (a == "--days-scenario" && i + 1 < argc) {
+            days_scenario_specs.push_back(argv[++i]);
+        } else if (a == "--hair" && i + 1 < argc) {
+            hair_groups = argv[++i];
+        } else if (a == "--hair-ignore" && i + 1 < argc) {
+            hair_ignore = argv[++i];
         } else {
             std::fprintf(stderr, "unknown option %s\n", a.c_str());
             return 2;
         }
+    }
+    if (days_bmd.empty() && (!days_anim_specs.empty() || !days_scenario_specs.empty())) {
+        std::fprintf(stderr, "--days-anim and --days-scenario play the game's animations: give the game model with "
+                             "--days game.nsbmd too\n");
+        return 2;
     }
     try {
         std::filesystem::create_directories(out);
@@ -1472,6 +1859,38 @@ int main(int argc, char **argv)
         const double cook_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         run.rig = std::make_shared<Rig>(std::move(rig));
         run.motions = load_motions(argv[3], argv[1]);
+        // `--days`: the mod's model as models.cpp finds it (<mods>/<mod>/graphics/<name>.mdlx, the game model's file
+        // the name up to its "/mdl/"), the game model's bytes, and the game's animations
+        if (!days_bmd.empty()) {
+            const std::filesystem::path model = std::filesystem::absolute(argv[1]);
+            std::vector<std::filesystem::path> parts(model.begin(), model.end());
+            const auto graphics = std::find(parts.begin(), parts.end(), std::filesystem::path("graphics"));
+            if (graphics == parts.end() || graphics - parts.begin() < 2)
+                throw std::runtime_error("--days: give the model from its mod's folder (<mods>/<mod>/graphics/...)");
+            std::filesystem::path mod; // <mods>/<mod>
+            for (auto p = parts.begin(); p != graphics; ++p)
+                mod /= *p;
+            std::string name;
+            for (auto p = graphics + 1; p != parts.end(); ++p)
+                name += (name.empty() ? "" : "/") + p->generic_string();
+            name = name.substr(0, name.size() - model.extension().string().size());
+            const auto mdl = name.find("/mdl/");
+            if (mdl == std::string::npos)
+                throw std::runtime_error("--days: the model's path has no /mdl/ folder: " + name);
+            run.days.file = name.substr(0, mdl);
+            const auto bmd = read_file(days_bmd);
+            run.days.game = khdays::assets::decode_model_geometry(bmd.data(), bmd.size(), 0);
+            replay_game_set_model(run.days.file, 0, name, bmd, mod);
+            for (const std::string &spec : days_anim_specs) {
+                const auto eq = spec.find('='), hash = spec.rfind('#');
+                if (eq == std::string::npos || hash == std::string::npos || hash < eq)
+                    throw std::runtime_error("--days-anim " + spec + ": write name=file.nsbca#index");
+                const auto bytes = read_file(spec.substr(eq + 1, hash - eq - 1));
+                run.days.anims.push_back(khdays::assets::load_nsbca(
+                    bytes.data(), bytes.size(), static_cast<std::size_t>(std::atoi(spec.c_str() + hash + 1))));
+                run.days.names.push_back(spec.substr(0, eq));
+            }
+        }
         // the vertices the simulation moves
         std::vector<char> simulated(run.model.skeleton.names.size(), 0);
         for (const auto &s : run.rig->bones_out)
@@ -1516,16 +1935,127 @@ int main(int argc, char **argv)
                                                length(v.position - (a + ab * u)));
             }
         }
+        // `--hair`: those groups' bones' vertices; the body's triangles, none of whose corners is hair or on an
+        // ignored bone; the hair's triangles' edges; the first group's reference bone
+        if (!hair_groups.empty()) {
+            std::vector<std::uint8_t> hair_bone(run.model.skeleton.names.size(), 0), ignored(hair_bone.size(), 0);
+            const std::string groups = "," + hair_groups + ",";
+            for (const auto &s : run.rig->bones_out)
+                if (groups.find("," + run.rig->groups[static_cast<std::size_t>(s.group)].name + ",") !=
+                    std::string::npos) {
+                    hair_bone[static_cast<std::size_t>(s.bone)] = 1;
+                    if (run.hair.reference < 0)
+                        run.hair.reference = run.rig->groups[static_cast<std::size_t>(s.group)].reference_bone;
+                }
+            for (const auto &c : run.rig->carried)
+                if (hair_bone[static_cast<std::size_t>(run.rig->bones_out[static_cast<std::size_t>(c.by)].bone)])
+                    hair_bone[static_cast<std::size_t>(c.bone)] = 1;
+            std::istringstream named(hair_groups);
+            for (std::string g; std::getline(named, g, ',');)
+                if (std::none_of(run.rig->groups.begin(), run.rig->groups.end(),
+                                 [&](const auto &group) { return group.name == g; }))
+                    throw std::runtime_error("--hair: no group " + g + " in " + std::string(argv[2]) +
+                                             "; name its `group` lines' names");
+            std::istringstream spans(hair_ignore);
+            for (std::string w; std::getline(spans, w, ',');) {
+                int from = 0, to = 0;
+                if (std::sscanf(w.c_str(), "%d-%d", &from, &to) != 2)
+                    to = from = std::atoi(w.c_str());
+                for (int b = from; b <= to; ++b)
+                    if (b >= 0 && static_cast<std::size_t>(b) < ignored.size())
+                        ignored[static_cast<std::size_t>(b)] = 1;
+            }
+            const std::size_t nv = run.model.mesh.vertices.size();
+            run.hair.vertex.assign(nv, 0);
+            for (std::size_t v = 0; v < nv; ++v) {
+                const int b = run.model.dominant[v];
+                if (b >= 0 && hair_bone[static_cast<std::size_t>(b)]) {
+                    run.hair.vertex[v] = 1;
+                    run.hair.list.push_back(static_cast<std::uint32_t>(v));
+                }
+            }
+            const auto &tri = run.model.mesh.triangles;
+            std::set<std::pair<std::uint32_t, std::uint32_t>> edges;
+            for (std::size_t t = 0; t + 2 < tri.size(); t += 3) {
+                bool hair = true, body = true;
+                for (std::size_t k = 0; k < 3; ++k) {
+                    const std::uint32_t v = tri[t + k];
+                    const int b = run.model.dominant[v];
+                    hair = hair && run.hair.vertex[v];
+                    body = body && !run.hair.vertex[v] && !(b >= 0 && ignored[static_cast<std::size_t>(b)]);
+                }
+                if (body)
+                    run.hair.body.push_back(t);
+                if (hair)
+                    for (std::size_t k = 0; k < 3; ++k) {
+                        const std::uint32_t a = tri[t + k], b = tri[t + (k + 1) % 3];
+                        edges.insert({std::min(a, b), std::max(a, b)});
+                    }
+            }
+            for (const auto &[a, b] : edges)
+                run.hair.edges.push_back({a, b});
+            std::fprintf(stderr, "hair: %zu vertices, %zu edges against %zu body triangles\n", run.hair.list.size(),
+                         run.hair.edges.size(), run.hair.body.size());
+        }
         FILE *report = nullptr;
-        if (fopen_s(&report, (out / "report.txt").string().c_str(), "w") != 0 || report == nullptr)
+        if (fopen_s(&report, (out / "report.txt").string().c_str(), "w") != 0 || report == nullptr) {
+            std::fprintf(stderr, "cannot write %s: the report goes to the console; check --out\n",
+                         (out / "report.txt").string().c_str());
             report = stdout;
+        } else {
+            std::fprintf(stderr, "writing to %s\n", out.string().c_str());
+        }
         std::fprintf(report, "%s\ncook and prepare: %.1f ms\n", run.rig->summary.c_str(), cook_ms);
         std::fprintf(report, "settings: %.0f Hz, %d substeps, %d iterations; draws at %.0f Hz x%d; %d actor(s)\n",
                      static_cast<double>(run.rig->config.rate), run.rig->config.substeps, run.rig->config.iterations,
                      static_cast<double>(hz), repeat, actors);
         Profile all;
-        for (auto sc : scenarios()) {
-            if (which != "all" && which != sc.name)
+        // `--days`: each game animation alone (two loops, 4 s at least), and `--days-scenario`s, one after another
+        std::vector<Scenario> list = scenarios();
+        const auto days_index = [&](const std::string &name) {
+            const auto it = std::find(run.days.names.begin(), run.days.names.end(), name);
+            if (it == run.days.names.end())
+                throw std::runtime_error("--days-scenario: no --days-anim named " + name);
+            return static_cast<int>(it - run.days.names.begin());
+        };
+        for (std::size_t d = 0; d < run.days.anims.size(); ++d) {
+            const float seconds = std::max(4.0F, 2.0F * static_cast<float>(run.days.anims[d].frame_count) / 30.0F);
+            list.push_back({"days:" + run.days.names[d],
+                            seconds,
+                            {{0.0F, 0, run.days.names[d], 0.15F, static_cast<int>(d), 0.0F}},
+                            [](float) { return yaw_at({}, 0.0F); },
+                            floor_plane(20),
+                            nullptr});
+        }
+        for (const std::string &spec : days_scenario_specs) {
+            const auto eq = spec.find('=');
+            if (eq == std::string::npos)
+                throw std::runtime_error("--days-scenario " + spec + ": write name=anim:seconds[:m/s],...");
+            Scenario sc{"days:" + spec.substr(0, eq), 0.0F, {}, nullptr, floor_plane(20), nullptr};
+            std::istringstream parts(spec.substr(eq + 1));
+            for (std::string part; std::getline(parts, part, ',');) {
+                std::istringstream fields(part);
+                std::string anim, seconds, speed;
+                std::getline(fields, anim, ':');
+                std::getline(fields, seconds, ':');
+                std::getline(fields, speed, ':');
+                sc.segments.push_back({sc.seconds, 0, anim, 0.15F, days_index(anim),
+                                       speed.empty() ? 0.0F : static_cast<float>(std::atof(speed.c_str()))});
+                sc.seconds += static_cast<float>(std::atof(seconds.c_str()));
+            }
+            const std::vector<Segment> segments = sc.segments;
+            sc.place = [segments](float t) { // forward by each segment's speed
+                float z = 0.0F;
+                for (std::size_t i = 0; i < segments.size(); ++i) {
+                    const float end = i + 1 < segments.size() ? segments[i + 1].from : t;
+                    z += segments[i].speed * std::fmax(0.0F, std::fmin(t, end) - segments[i].from);
+                }
+                return yaw_at({0.0F, 0.0F, z}, 0.0F);
+            };
+            list.push_back(std::move(sc));
+        }
+        for (auto sc : list) {
+            if (which != "all" && which != sc.name && !(which == "days" && sc.name.rfind("days:", 0) == 0))
                 continue;
             for (Segment &s : sc.segments) // P_EX110's slots where motions.txt adds its mset from a slot on
                 s.slot += slot_offset;
@@ -1559,6 +2089,26 @@ int main(int argc, char **argv)
                          "          jitter: controls %.2f cm p99, %.2f max; coat bones %.1f deg p99, %.1f max\n",
                          static_cast<double>(m.jitter_pos_p99), static_cast<double>(m.jitter_pos_max),
                          static_cast<double>(m.jitter_rot_p99), static_cast<double>(m.jitter_rot_max));
+            if (!run.hair.vertex.empty()) {
+                std::vector<std::pair<int, std::pair<int, int>>> worst;
+                for (const auto &[pair, n] : m.hair_cross_pairs)
+                    worst.push_back({n, pair});
+                std::sort(worst.rbegin(), worst.rend());
+                std::string top;
+                // KHDAYS_REPLAY_HAIR_PAIRS=<n>: that many pairs (6 by default)
+                const char *listed = std::getenv("KHDAYS_REPLAY_HAIR_PAIRS");
+                const std::size_t shown = listed != nullptr ? static_cast<std::size_t>(std::atoi(listed)) : 6U;
+                for (std::size_t i = 0; i < worst.size() && i < shown; ++i)
+                    top += (i ? ", " : "") + std::string("kh2_") + std::to_string(worst[i].second.first) +
+                           " through kh2_" + std::to_string(worst[i].second.second) + " " +
+                           std::to_string(worst[i].first);
+                std::fprintf(report,
+                             "          hair: through the body %d edges at most in a frame, %d frames with any%s%s; "
+                             "twitch %.2f cm p99, %.2f max (kh2_%d, frame %d)\n",
+                             m.hair_cross_max, m.hair_cross_frames, top.empty() ? "" : "; most: ", top.c_str(),
+                             static_cast<double>(m.twitch_p99), static_cast<double>(m.twitch_max), m.twitch_bone,
+                             m.twitch_frame);
+            }
             std::fflush(report);
         }
         std::fprintf(report, "all scenarios: per actor update p50 %.0f us, p95 %.0f us, p99 %.0f us, max %.0f us\n",

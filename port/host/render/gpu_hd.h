@@ -38,5 +38,7 @@ int khdays_gpu_hd_on_card(uint32_t id);
 void khdays_gpu_hd_set_most(uint64_t bytes);
 
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void);
+/* Counts each upload or move of a picture into the buffer: unchanged, what was drawn into it is still there. */
+uint32_t khdays_gpu_hd_generation(void);
 
 #endif

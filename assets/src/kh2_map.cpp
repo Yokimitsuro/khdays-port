@@ -302,7 +302,9 @@ void read_object_model(const Bytes& b, const std::size_t h, Model& model) {
         const std::size_t o = h + bone_table + i * 0x40U;
         Bone bone;
         bone.parent = b.i32(o + 4);
+        bone.no_envelope = (b.u32(o + 0xC) & 1U) != 0U;
         bone.scale = {b.f32(o + 0x10), b.f32(o + 0x14), b.f32(o + 0x18)};
+        bone.length = b.f32(o + 0x1C);
         bone.rotation = {b.f32(o + 0x20), b.f32(o + 0x24), b.f32(o + 0x28)};
         bone.translation = {b.f32(o + 0x30), b.f32(o + 0x34), b.f32(o + 0x38)};
         model.bones.push_back(bone);

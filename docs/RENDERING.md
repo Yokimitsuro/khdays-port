@@ -153,6 +153,9 @@ with the same texture, palette and attributes but alpha -- get their vertices
 placed between the two lists' at `alpha`, linearly in clip space, nothing
 extrapolated; then the list is clipped and put through the viewport like the
 game's (`khdays_g3d_finish`), so at `alpha` = 1 it is exactly the newer list.
+The match does not depend on `alpha`: the picture names the two lists by their game frames' times
+(`khdays_g3d_interp_pair`), and the refreshes between the same two take the match the first made and only
+place and finish (each newer polygon's older one kept, `older_of`).
 Their places, colours and alpha go between; their texture coordinates are the
 newer's (a texture scrolled round, a door's barrier or a Dark Corridor, ran back
 between the two). A model drawn more than once in a list (the field's prizes,
@@ -285,7 +288,8 @@ sharp scaling; with smooth scaling the four nearest, weighed by place and by
 their alpha, so a texel without 3D gives no colour. The HUD's own 3D (the
 polygons the field's panel and the game over screen send, `KHDAYS_G3D_HUD`) is
 then drawn apart at the 2D's scale (`khdays_raster3d_rasterize_hud`: those
-polygons alone, over no clear colour's alpha or fog and no rear plane; each size
+polygons alone, the world's not uploaded or walked and no character shadow prepared for that pass,
+over no clear colour's alpha or fog and no rear plane; each size
 keeps its targets, gpu_native3d.c and gpu_raster3d.c holding the other aside),
 the rest at the internal resolution without them, and the composition puts the
 HUD's over the rest as the DS draws a polygon over what is there (`over3d`). The
@@ -400,7 +404,10 @@ at the resolution drawn; each at the first frame presented from it on, named
 by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
-the time preparing the 3D took); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
+the time preparing the 3D took; and once a second a `phases:` line, `runtime/core/phases.h`: the milliseconds
+and runs of a replacement model's load, posing, cloth and skinning, the HD pictures' decoding, the character
+shadows' capture and build, the 3D lists' finish, the interpolation (with its finish), and the renderer's
+preparation and its upload and submission); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
 3D's and the composition's time on the card, each picture waited for);
 `KHDAYS_3D=compute` (the 3D by `raster3d.hlsl` alone).
 
@@ -591,7 +598,12 @@ turn, where +180 and -180 degrees are one pose: passing it flipped the cuff a wh
 the secondary motion (`models.cpp` draw, `kh2::twist_about` / `twist_turn`): N_EX830's
 cuffs ride the wrist (113: the sleeve's last ring on 115 and the cuff on 116), and
 P_EX110's motions and Days' animations turn the hand alone, so `twist kh2_114 kh2_133
-kh2_112 kh2_113` (and 231 250 229 230) turns them with it. `mesh_scale <joint>
+kh2_112 kh2_113` (and 231 250 229 230) turns them with it. A KH2 motion that turns the
+joint itself has authored that twist already, so its share of the pose is left out: the model's own mset's
+motions turn every bone, a retargeted one (`skeleton`) only the bones a `bone` line or `carry` gives it, and an
+idle fade's held pose counts as it was shown (`kh2_own_share`, `kh2_retargeted_share`). Twisted again on top,
+saix_h's cuffs in his KH2 idle stood up to 14.6 cm off KH2's (replay `--days`); riku_h's and roxas_b_h's cuffs,
+which P_EH000 and P_EX110 do not key, keep the whole twist in KH2 motions too. `swing` takes the same share. `mesh_scale <joint>
 <x> <y> <z>` scales that joint's own vertices in its own rest axes, applied last
 (skin x B x S x inverse(B), B its rest frame): its bone, its children, the
 weapons and the secondary motion's colliders keep their sizes (the secondary motion
@@ -609,7 +621,9 @@ drawn translucent, its parts covering each other wrongly). e_rox_hb: `hide kh2_2
 kh2_5 kh2_6 kh2_14 kh2_15 from 99 to 35 fade 8`, its legs from below the coat's
 waist ring down to halfway down the calves, fading into the coat's dark inside
 (206 triangles dropped, 28 fading).
-`place <joint> [<x> <y> <z>]` puts a paired joint on its game node's own place
+`place <joint> [<x> <y> <z>] [ride [<bone>]]` (`ride`, for a weapon bone: the paired bone
+named, or the nearest above, is left as it is, and the joint moves by how far that bone
+is from its own node, so it stands from the KH2 hand as the node from the game's) puts a paired joint on its game node's own place
 (plus the offset, the game's centimetres in the node's rest axes) instead of where
 its parent carries it, and the bone above it, when that is its only paired child,
 swings and stretches along itself to reach it, with the unpaired joints riding it
@@ -618,7 +632,7 @@ its elbows and hands, so a hand the cutscene brings to the chest lands where the
 game's does; its legs keep `ik exact`. Placing its shoulders tore them from the
 chest (the clavicle swung out to the game's shoulder, the chest and hood stayed on
 KH2's torso). A bone with several paired children (the pelvis) is not stretched.
-`spine <base> <end> [hips <joint>]` makes the torso follow the game's: the base
+`spine <base> <end> [hips <joint>] [onto]` makes the torso follow the game's: the base
 goes where the game node of the chain's first paired joint carries it (the whole
 body with it), and the chain, as the game's turns pose it, is turned about the base
 onto the end's place and every bone lengthened or shortened alike to reach it: the
@@ -629,7 +643,44 @@ pelvis (that joint's nearest paired joint above) turned as the base's node, then
 swung and stretched so the joint is where the pelvis's own node carries it. The
 joints off the chain are posed again from their parents, so the shoulders and
 head keep the game's turn from wherever the bent spine puts them
-(`model_parts.h` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. Over the
+(`model_parts.h` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. With `onto` the end goes on the
+game node's own place (as `place`), so the chain takes the game's torso length, not the
+model's: for a model built otherwise than the game's (xaldin_h: hips to neck 76.1 cm to
+the game's 66.9), with its limbs `place`d. `hips` still swings the pelvis where its node
+carries the model's own hip joint: swung toward the node's own place of a larger game
+skeleton (`game_scale`) it squashed the pelvis under the coat's waist.
+
+`game_scale <k>` takes the game's skeleton k times larger about the actor's origin before
+the model is posed on it: each node's D(p) becomes O + k (D(p / k) - O), its turn kept, and
+the nodes' rest places are scaled at load, so `place`, `spine ... onto` and the `ik` limbs
+reach a skeleton of the model's size while the game's turns stay as they are. xaldin_h:
+1.041, the game's neck where his own stands; his legs' knees and ankles then land about
+on his own. `align <joint> rest` gives a joint no rest correction at all, so the turns its
+parents take at rest (a shin turned onto the game's) do not tilt it: a foot's sole stays as
+built (xaldin_h's toes stood 5.5-6.2 cm up in the game's idle). `lower_hips <share>`
+lowers the whole body in the game's own animations (along the root's up, after the
+spine and before the limbs reach) by the most any `exact` leg needs for its hip to stand
+from its foot, over the leg's length, as far as the game's thigh node from its foot over
+the game's leg: the height of moving the hip toward the foot by what it lacks (never
+raising it; `model_stance.cpp` `lower_hips`), so a hanging leg is matched and one trailing
+behind asks little. The feet stay on the game's, so the knees bend as the game's do.
+Solving for the drop that reaches the wanted distance instead dropped the body to the
+foot's height wherever no drop could reach it, and back: with the pelvis turned under
+(KH2_MODELS.md, `ds_pose`), its hips forward, marluxia_h's run bobbed 39 cm, 20 in a
+frame; now 12, at most 2.5 a frame. KH2 legs that are shorter for
+their hips locked straight where the game's bent: marluxia_h's right knee 175 degrees in
+`b_ma_Ca005`, the game's 166, larxene_h's 175 to 141 (`Ca006`), riku_h's 175 to 159
+(`Ca006`); with it 166, 133 and 158, his body 3.5 cm lower there, 5 (up to 9) in the run. A
+`place`d leg already follows the game's knee and gains nothing; where the legs reach out
+level with the hips (xemnas_h's `Ca006`) moving down cannot bend them. KH2 motions keep
+their own hips. An `exact` leg bends the way the game's knee stands off the game's own
+hip-to-foot line (seen from KH2's hip, which stands a few centimetres apart, a straight
+game leg seemed bent aside), and toward the model's front (KH2's +z, as the hips turn)
+where the game's knee is within a tenth of its thigh of that line: in the game's glide
+hover (`b_ma_Ca000`) marluxia_h's right leg is straight (179 degrees, a degree backward),
+and lowered by the other leg's need, his knee bent 6 cm aside and back; now 6.5 cm
+forward (165 degrees). `ik_side kh2_hip` keeps the bend as it was before (toward the game's knee as seen
+from the model's own hip): demyx_h, set up as before all of this (user). Over the
 161 cutscene animations its neck was 3.7 cm from the game's (p90 13.5, max 36) and
 its shoulders 4.9 (max 36); bent, the neck 0.0 (max 0.4), the shoulders 2.5 (max
 6), the chest 0.3; the spine 0.94-1.28 its length (1st-99th percentile, max 1.36). On the

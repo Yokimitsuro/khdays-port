@@ -104,6 +104,9 @@ struct Collider {
     float radius = 0.0F, end_radius = 0.0F;
     std::uint32_t tags = 0;
     bool rest_side = true; // contact keeps the rest side, else the side a control came from
+    // its bone's and end bone's index into Rig::bones_out when the simulation moves them (-1 not): it then follows
+    // that bone as simulated (the last tick's, on its group's reference bone now), not as animated
+    int sim = -1, end_sim = -1;
 };
 
 // A bone rebuilt from its particle: rotation swung from its reference onto the solved point, twist
@@ -131,6 +134,8 @@ struct GroupRig {
     int wind_bone = -1; // a `wind bone <b>`'s bone
     bool settle = false;
     int settle_steps = 0;
+    // `rest`: its bones' turns on their parents in its reference shape (none: prepared at load, prepare_references)
+    std::vector<std::pair<int, Quat>> rest;
     bool twist_from_neighbours = true;
     int self_group = -1;
     std::uint32_t shell_push = 0; // `shell_push`: the collider tags pushing `cutscene_sim`'s shell
@@ -181,6 +186,10 @@ struct Rig {
 // groups claim, rigs without the freedom asked of them) are reported in `out`; with any, the result
 // is not usable (has_errors).
 Rig cook(const Config &config, const SkeletonDesc &skeleton, const MeshDesc &mesh, Diagnostics &out);
+
+// `rest`'s turn: degrees about x, then y, then z (each about the parent's fixed axes), and back
+Quat rest_turn(Vec3 degrees);
+Vec3 rest_degrees(Quat q);
 
 // Whether group `g` takes the replaced game model's places: `game_shape` or `cutscene_sim` on one of its controls,
 // or set on them by an animation control

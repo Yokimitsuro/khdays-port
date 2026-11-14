@@ -1,0 +1,94 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Xemnas (B_EX170) as Days' xemnas_h and xemnas, playing KH2's own motions for him (`own`: on his own
+# bones). Its slots: 0 idle (00A), 1 and 2 the walk (01A both: no run of its own), no jump (3 is empty), 4 the fall
+# (04A, a loop from its first tick), 5 the landing (05A), 10-15 damage (20A-25A), 16-19 the aerial damage (30A, 31A its
+# landing; 32A, 33A).
+mset B_EX170.mset own
+# B_EX170_LAST.mset (made for B_EX170_LAST.mdlx, whose 320 bones are B_EX170's bone for bone: the same parents, every
+# head within 1 cm) after B_EX170.mset's 256 slots, on his own bones: its slot 0 (00M) is 256
+motions B_EX170_LAST.mset at 256 own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# His weapons (Days' xe_h_L, xe_h_R, on the game's hands at rest) carried by his KH2 hands as the game's hands carry
+# them: in his fists in KH2 motions; sent off by the game, they leave with the game's (B_EX170 has none of its own)
+weapon xe_h_L hand 148
+weapon xe_h_R hand 286
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 150-171 288-309
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_xe_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_xe_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_xe_A004
+# The run stays the game's; the port's walk (the stick pushed short of running) plays KH2's 01A at its own pace
+walk b_xe_A001 1 blend 8
+# The fall (04A) from the game's 12th frame in the air; the take-off and the rise stay the game's (he has no jump).
+# The landing (05A), played out into the idle
+b_xe_A003@12 4 blend 8
+b_xe_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_xe_A005 10 finish blend 8
+b_xe_A006 11 finish blend 8
+b_xe_A007 13 finish blend 8
+b_xe_A008 12 finish blend 8
+# The aerial damage (30A front, 32A back) and their landings (31A, 33A)
+air b_xe_A005 16 land 17 finish blend 8
+air b_xe_A006 16 land 17 finish blend 8
+air b_xe_A007 18 land 19 finish blend 8
+air b_xe_A008 18 land 19 finish blend 8
+# B_EX170_LAST's 00M (slot 256) for the game's glide hover (Ca000)
+b_xe_Ca000 256 blend 8
+# The game's forward glide (Ca001) stays the game's (user: only the hover from KH2), fading into the idle over 8
+# frames; it played B_EX170_LAST's 01M (slot 408) held at its end
+b_xe_Ca001 blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B006, B010-B016, ba/ch/xe/am.p2), the guard and the
+# other actions (Ca002-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L003)
+b_xe_A001 blend 8
+b_xe_A002 blend 8
+b_xe_A009 blend 8
+b_xe_A010 blend 8
+b_xe_A011 blend 8
+b_xe_A012 blend 8
+b_xe_A013 blend 8
+b_xe_B000 blend 8
+b_xe_B001 blend 8
+b_xe_B002 blend 8
+b_xe_B003 blend 8
+b_xe_B004 blend 8
+b_xe_B005 blend 8
+b_xe_B006 blend 8
+b_xe_B010 blend 8
+b_xe_B011 blend 8
+b_xe_B012 blend 8
+b_xe_B013 blend 8
+b_xe_B014 blend 8
+b_xe_B015 blend 8
+b_xe_B016 blend 8
+# b_xe_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_xe_Ca003 blend 8
+b_xe_Ca004 blend 8
+b_xe_Ca005 blend 8
+b_xe_Ca006 blend 8
+b_xe_Ca007 blend 8
+b_xe_Ca008 blend 8
+b_xe_D000 blend 8
+b_xe_D001 blend 8
+b_xe_D002 blend 8
+b_xe_D003 blend 8
+b_xe_L000 blend 8
+b_xe_L001 blend 8
+b_xe_L002 blend 8
+b_xe_L003 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (forward glide +38
+# degrees, replay) taken to about +3
+ds_pose rotate 0 0 -38 2 for b_xe_Ca001

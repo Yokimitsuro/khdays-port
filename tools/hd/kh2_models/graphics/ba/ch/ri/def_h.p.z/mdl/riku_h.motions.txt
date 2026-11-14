@@ -1,0 +1,129 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is the coat Riku (N_EX950); the mset is the playable Riku's (P_EH000), who has no coat. Its slots are
+# numbered as P_EX110's (roxas_b_h.motions.txt).
+mset P_EH000.mset
+# off: the game places Riku and KH2's root motion is taken out of the bones (as KH2 does)
+root_motion off
+# The game's weapon (ri_h_R) on KH2's bone past the right hand (262), turned from that bone's axes into the frame the
+# game's weapon is made in: ri_h_R's rest frame on the game's model, the same turn as roxas_b_h's keyblade
+weapon ri_h_R 262 rotate 0 -90 90
+# What he holds plays W_EH000.mset's slots as his own play P_EH000's (on W_EH000's bones; bone 2 the blade)
+weapon_motions W_EH000.mset W_EH000.mdlx 2
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the calm idle) turns
+# them at its first frame
+ds_pose 2 135-156 263-284
+# The back hair (172 at the back of the head, 173-187 under it) hangs at rest straight through the hood, which
+# lies flat behind his neck (148-154 cm high, 19-38 cm back); KH2's motions key it where it belongs. Under the
+# game's own animations it is turned 30 degrees back about the head's left-right axis (172's own z): over the hood,
+# 1.9 cm off it at rest with no edge of it through the hood, 3.5 cm off his back
+ds_pose rotate 0 0 30 172
+# The glides (Ca000 hover, Ca001 forward): the game leans its upper spine back 33 degrees further than in its idle,
+# so on KH2's model the pelvis tipped forward on the lumbar bone (30 degrees in the hover, 36 forward; the game's run
+# -26, KH2's rest 17): the back arched at the waist and the seat, its colliders and the coat on it stood out behind
+# (user). The pelvis turned 30 degrees back (its bottom forward) there: pelvis on lumbar 3 and 6 degrees, the coat's
+# back rows 23/27/30/36 -> 13/9/12/19 cm behind the spine line in the hover (forward 23/26/29/33 -> 14/9/6/6), no
+# body through it (replay)
+ds_pose rotate 0 0 -30 2 for b_ri_Ca000 b_ri_Ca001
+
+b_ri_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_ri_A000
+# The game's landing animation (`air` lines' `land`)
+landing b_ri_A004
+b_ri_A001 8 blend 8
+b_ri_A002 14 blend 8
+b_ri_A003 14 blend 8
+b_ri_A003@12 18 blend 8
+b_ri_A004 22 finish 24 blend 8
+# Ledge: KH2's grab (30) holds its loop from tick 60, so the game's hang plays on there; the hand on the ledge
+# moved onto the game's (KH2 cm, the model's axes: x left, y up, z forward). Both hang by the left hand alone:
+# the game's at (3.9, 168.4, 36.6) in the root node's frame, KH2's (slot 30's loop on this model through the bone
+# map, root motion out) at (0.8, 128.6, 84.4), so KH2 hangs 47.8 cm too far forward, into the wall, and 39.8 cm too
+# low. The climb (34, 24 ticks against the game's 30: `follow` ends it with the game's) glides from there to where
+# the game's climb ends against its idle: there the game's hips are 28.4 cm over its idle's (A000) and 1.3 further
+# back, KH2's 40.9 over its idle's (slot 0) and 9.0 further back. Slot 34 starts with the hips 14 cm over slot 30's
+# loop (the hand where it was), eased by the blend.
+b_ri_A009 30 blend 8 offset 3.1 39.8 -47.8
+b_ri_A010 30 start_loop blend 8 offset 3.1 39.8 -47.8
+b_ri_A011 34 follow blend 8 offset 3.1 39.8 -47.8 to -3.5 -12.5 7.7
+# Damage, as roxas_b_h's: KH2 returns to its calm idle after these, then readies (slot 24, A010) back into the
+# battle stance when the game goes back to its idle
+b_ri_A008 50 finish 24 blend 8
+b_ri_A005 42 finish 24 blend 8
+b_ri_A007 54 finish 24 blend 8
+b_ri_A006 46 finish 24 blend 8
+# Damage in the air: KH2's aerial damage loops (66 front, 74 back); landing straight out of it plays KH2's landing
+# (70, 78), then readies (24)
+air b_ri_A005 66 land 70 finish 24 blend 8
+air b_ri_A006 66 land 70 finish 24 blend 8
+air b_ri_A007 74 land 78 finish 24 blend 8
+air b_ri_A008 74 land 78 finish 24 blend 8
+
+# Every line above fades over 8 frames. The game's own animations (no KH2 motion for them: his attacks, guard,
+# magic, limit and weaponless set) fade into the idle over 8 frames when the game goes back to it
+b_ri_A012 blend 8
+b_ri_A013 blend 8
+b_ri_B000 blend 8
+b_ri_B001 blend 8
+b_ri_B002 blend 8
+b_ri_B003 blend 8
+b_ri_B004 blend 8
+b_ri_B005 blend 8
+b_ri_B006 blend 8
+b_ri_B007 blend 8
+b_ri_Ca000 blend 8
+b_ri_Ca001 blend 8
+# b_ri_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_ri_Ca003 blend 8
+b_ri_Ca004 blend 8
+b_ri_Ca005 blend 8
+b_ri_Ca006 blend 8
+b_ri_Ca007 blend 8
+b_ri_Ca008 blend 8
+b_ri_D000 blend 8
+b_ri_D001 blend 8
+b_ri_D002 blend 8
+b_ri_D003 blend 8
+b_ri_L000 blend 8
+b_ri_L001 blend 8
+b_ri_L002 blend 8
+b_ri_e000 blend 8
+b_ri_e001 blend 8
+b_ri_e002 blend 8
+
+# The mset plays on P_EH000's bones, then each line gives one of this model's bones (or a range) the turn of one of
+# P_EH000's: bone <N_EX950 bone> <P_EH000 bone>. The two share their rest places bone for bone where both have
+# them. Bones without a line (the coat, sleeves, cuffs, collar, hood, drawstrings, blindfold) stay at rest under
+# their parents.
+skeleton P_EH000.mdlx
+
+# Root and waist; bone 3 follows the waist, as roxas_b_h's
+bone 0-2 0-2
+# Legs: hip joint to toe
+bone 4-12 8-16
+bone 13-21 19-27
+# Spine to chest (P_EH000's 32-33 sit between its 31 and 34)
+bone 95 30
+bone 96 31
+bone 97 34
+bone 98 35
+bone 99 36
+# Left arm: clavicle to wrist, the hand and fingers, the elbow's helper
+bone 107-113 41-47
+bone 129-156 48-75
+bone 157-158 76-77
+# Right arm
+bone 235-241 151-157
+bone 257-284 158-185
+bone 285-286 186-187
+# Neck, head and hair (N_EX950's 188-189 and 209-213 are the blindfold)
+bone 165-187 94-116
+bone 190-208 117-135
+bone 214-226 136-148
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk at its own
+# pace, crossing from and to the run over 6 frames
+walk b_ri_A001 4 blend 6

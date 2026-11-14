@@ -7,6 +7,7 @@
 #endif
 
 #include "g3d.h"
+#include "../runtime/core/phases.h"
 #include "character_shadow.h"
 
 #include <math.h>
@@ -1130,8 +1131,9 @@ void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t repl
     /* both sides, alpha 31 (the blend is the GS's, the vertices' alpha its source alpha), polygon ID 0; a 1024 x
      * 1024 texture repeated as a mod model's when it has a picture */
     const uint32_t tex = replacement >= 0 ? (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16) : 0u;
-    const int flags = KHDAYS_G3D_EFFECT | (int)(effect_flags & (KHDAYS_G3D_EFFECT_DEPTH_WRITE | KHDAYS_G3D_EFFECT_DEPTH_ONLY |
-                                                               KHDAYS_G3D_EFFECT_NO_DEPTH_TEST));
+    const int flags =
+        KHDAYS_G3D_EFFECT | (int)(effect_flags & (KHDAYS_G3D_EFFECT_DEPTH_WRITE | KHDAYS_G3D_EFFECT_DEPTH_ONLY |
+                                                  KHDAYS_G3D_EFFECT_NO_DEPTH_TEST));
     mod_polygon(v, n, 0xc0u | (31u << 16), tex, gs_alpha & 0xffu, replacement, 1, 0, flags);
 }
 
@@ -1257,12 +1259,14 @@ static void into_drawing_order(List *l)
     into_drawing_order_with(l, &order, &order_capacity, 1);
 }
 
-int khdays_g3d_finish(const KhdaysG3dList *from, const KhdaysG3dPreVertex *vertices, KhdaysG3dList *out)
+static int finish_body(const KhdaysG3dList *from, const KhdaysG3dPreVertex *vertices, KhdaysG3dList *out)
 {
     const KhdaysG3dPreVertex *source = vertices != NULL ? vertices : from->pre_verts;
     int32_t ds[2] = {0, 0};
-    Polygon *order = NULL;
-    int32_t order_capacity = 0;
+    /* the sort's room kept per thread (the game's thread and the picture's both finish lists), not
+     * allocated and freed on every call */
+    static __declspec(thread) Polygon *order;
+    static __declspec(thread) int32_t order_capacity;
     out->npolys = out->nverts = out->beyond_ds = 0;
     out->npre = out->npre_verts = 0;
     out->swap_params = from->swap_params;
@@ -1280,8 +1284,16 @@ int khdays_g3d_finish(const KhdaysG3dList *from, const KhdaysG3dPreVertex *verti
         }
     }
     into_drawing_order_with(out, &order, &order_capacity, 0);
-    free(order);
     return out->npolys == 0 || out->polys != NULL;
+}
+
+/* KHDAYS_PROFILE: timed (runtime/core/phases.h) */
+int khdays_g3d_finish(const KhdaysG3dList *from, const KhdaysG3dPreVertex *vertices, KhdaysG3dList *out)
+{
+    const unsigned long long t = khdays_phase_start();
+    const int r = finish_body(from, vertices, out);
+    khdays_phase_end(KHDAYS_PHASE_G3D_FINISH, t);
+    return r;
 }
 
 /* --- The model draws' keys ------------------------------------------------------- */
@@ -1342,15 +1354,7 @@ int khdays_g3d_base(float base[16])
 {
     if (!base_flushed)
         return 0;
-    /* the GE's MTX_MULT_4x3 of rotation rows and translation, then MTX_SCALE:
-     * a vertex scaled, turned, moved; columns as khdays_g3d_camera's */
-    memset(base, 0, 16 * sizeof(float));
-    for (int c = 0; c < 3; ++c)
-        for (int r = 0; r < 3; ++r)
-            base[c * 4 + r] = (float)flushed_base[c * 3 + r] / 4096.0f * ((float)flushed_base[12 + c] / 4096.0f);
-    for (int r = 0; r < 3; ++r)
-        base[12 + r] = (float)flushed_base[9 + r] / 4096.0f;
-    base[15] = 1.0f;
+    khdays_g3d_base_matrix(flushed_base, base);
     return base_flushed;
 }
 
@@ -1404,11 +1408,14 @@ static void swap_buffers(uint32_t params)
     l->widen = (float)g.widen / WIDEN_ONE;
     const int original_pre = l->npre, original_vertices = l->npre_verts;
     if (khdays_shadow_finish(l)) {
-        List rebuilt = {0};
+        /* rebuilt into a spare list whose buffers then trade places with the closing list's: kept from
+         * frame to frame, not allocated and freed each time */
+        static List rebuilt;
         if (l->npre <= INT32_MAX / 10 && khdays_g3d_list_reserve(&rebuilt, l->npre, l->npre * 10)) {
+            Polygon *polys = l->polys;
+            Vertex *verts = l->verts;
+            const int32_t poly_capacity = l->poly_capacity, vert_capacity = l->vert_capacity;
             khdays_g3d_finish(l, NULL, &rebuilt);
-            free(l->polys);
-            free(l->verts);
             l->polys = rebuilt.polys;
             l->verts = rebuilt.verts;
             l->npolys = rebuilt.npolys;
@@ -1416,8 +1423,11 @@ static void swap_buffers(uint32_t params)
             l->poly_capacity = rebuilt.poly_capacity;
             l->vert_capacity = rebuilt.vert_capacity;
             l->beyond_ds = rebuilt.beyond_ds;
+            rebuilt.polys = polys;
+            rebuilt.verts = verts;
+            rebuilt.poly_capacity = poly_capacity;
+            rebuilt.vert_capacity = vert_capacity;
         } else {
-            khdays_g3d_list_free(&rebuilt);
             l->npre = original_pre;
             l->npre_verts = original_vertices;
             for (int i = 0; i < original_pre; ++i)

@@ -664,6 +664,17 @@ void Cook::group(std::size_t gi)
             }
         }
     }
+    for (const auto &[ref, degrees] : g.rest) {
+        const int b = resolve_bone(sk, ref, file, out);
+        if (b < 0)
+            continue;
+        const int pi = particle_of[static_cast<std::size_t>(b)];
+        if (pi < gr.first || !rig.particles[static_cast<std::size_t>(pi)].dynamic)
+            error(ref.line, "rest " + ref.text + ": not one of group " + g.name +
+                                "'s controls; name a bone of its strips or chains (or rerun khdays-secondary-rest)");
+        else
+            gr.rest.push_back({b, rest_turn(degrees)});
+    }
     rig.groups.push_back(gr);
     // rig freedom: a surface whose controls are mostly unconnected cannot fold as one piece
     if (g.kind == GroupKind::surface) {
@@ -709,6 +720,13 @@ void Cook::finish()
         const GroupRig &gr = rig.groups[static_cast<std::size_t>(s.group)];
         s.reference = relative(rest[static_cast<std::size_t>(gr.reference_bone)], rest[static_cast<std::size_t>(b)]);
         rig.bones_out.push_back(s);
+    }
+    // a collider on a simulated bone follows it as simulated
+    for (Collider &k : rig.colliders) {
+        if (k.bone >= 0)
+            k.sim = sim_index[static_cast<std::size_t>(k.bone)];
+        if (k.kind == ShapeKind::capsule && k.end_bone >= 0)
+            k.end_sim = sim_index[static_cast<std::size_t>(k.end_bone)];
     }
     // anchors under a simulated bone ride it
     for (auto &p : rig.particles) {
@@ -904,6 +922,28 @@ void Cook::finish()
 }
 
 } // namespace
+
+Quat rest_turn(Vec3 degrees)
+{
+    const Quat x = axis_angle({1, 0, 0}, degrees.x * kDegrees), y = axis_angle({0, 1, 0}, degrees.y * kDegrees),
+               z = axis_angle({0, 0, 1}, degrees.z * kDegrees);
+    return normalized(z * (y * x));
+}
+
+Vec3 rest_degrees(Quat q)
+{
+    // R = Rz Ry Rx; R's columns are the turned axes
+    const Vec3 ex = rotate(q, {1, 0, 0}), ey = rotate(q, {0, 1, 0}), ez = rotate(q, {0, 0, 1});
+    const float sy = clampf(-ex.z, -1.0F, 1.0F);
+    if (std::fabs(sy) > 0.99999F) // straight up or down about y: x and z turn about one axis, all of it on z
+        return {0.0F, std::asin(sy) / kDegrees, std::atan2(-ey.x, ey.y) / kDegrees};
+    const Vec3 a{std::atan2(ey.z, ez.z) / kDegrees, std::asin(sy) / kDegrees, std::atan2(ex.y, ex.x) / kDegrees};
+    // the same turn the other way round (x and z half a turn on, y past 90): the one with the smaller numbers
+    const auto half = [](float v) { return v > 0.0F ? v - 180.0F : v + 180.0F; };
+    const Vec3 b{half(a.x), (a.y >= 0.0F ? 180.0F : -180.0F) - a.y, half(a.z)};
+    const auto size = [](Vec3 v) { return std::fabs(v.x) + std::fabs(v.y) + std::fabs(v.z); };
+    return size(b) < size(a) ? b : a;
+}
 
 bool group_follows_game(const Rig &rig, std::size_t g)
 {

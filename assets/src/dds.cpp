@@ -1,5 +1,6 @@
 #include "khdays/assets/dds.h"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <iterator>
@@ -78,20 +79,6 @@ void decode_bc3(const std::uint8_t* body, const int width, const int height, std
     }
 }
 
-// A channel by its mask: the bits under it moved down and widened to 8 bits; a
-// channel with no mask is full (alpha) or zero.
-std::uint8_t channel(const std::uint32_t pixel, const std::uint32_t mask, const std::uint8_t absent) {
-    if (mask == 0) {
-        return absent;
-    }
-    unsigned shift = 0;
-    while (((mask >> shift) & 1U) == 0) {
-        ++shift;
-    }
-    const std::uint32_t max = mask >> shift;
-    return static_cast<std::uint8_t>(((pixel & mask) >> shift) * 255U / max);
-}
-
 }  // namespace
 
 DecodedTexture decode_dds(const std::uint8_t* data, const std::size_t size, const std::string& name) {
@@ -127,10 +114,29 @@ DecodedTexture decode_dds(const std::uint8_t* data, const std::size_t size, cons
         const std::uint32_t masks[4] = {read_u32(data, 92), read_u32(data, 96), read_u32(data, 100),
                                         read_u32(data, 104)};
         texture.format_name = "RGBA32";
+        // each mask's shift and width found once, not per texel; 8-bit masks need no widening
+        unsigned shifts[4] = {0, 0, 0, 0};
+        std::uint32_t maxes[4] = {0, 0, 0, 0};
+        bool bytes_only = true;
+        for (int c = 0; c < 4; ++c) {
+            if (masks[c] == 0) {
+                bytes_only = false;
+                continue;
+            }
+            while (((masks[c] >> shifts[c]) & 1U) == 0) {
+                ++shifts[c];
+            }
+            maxes[c] = masks[c] >> shifts[c];
+            bytes_only = bytes_only && maxes[c] == 255U;
+        }
+        std::uint8_t* out = texture.rgba.data();
         for (std::size_t i = 0; i < static_cast<std::size_t>(width) * height; ++i) {
             const std::uint32_t pixel = read_u32(body, i * 4U);
             for (int c = 0; c < 4; ++c) {
-                texture.rgba[i * 4U + c] = channel(pixel, masks[c], c == 3 ? 255 : 0);
+                out[i * 4U + c] = bytes_only ? static_cast<std::uint8_t>((pixel & masks[c]) >> shifts[c])
+                                  : maxes[c] == 0
+                                      ? static_cast<std::uint8_t>(c == 3 ? 255 : 0)
+                                      : static_cast<std::uint8_t>(((pixel & masks[c]) >> shifts[c]) * 255U / maxes[c]);
             }
         }
         return texture;
@@ -149,7 +155,12 @@ DecodedTexture read_dds(const std::filesystem::path& path) {
         const auto text = path.u8string();
         throw std::runtime_error("cannot open " + std::string(text.begin(), text.end()));
     }
-    const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    // read in one go (an istreambuf_iterator takes it a byte at a time, the most of an HD model's load)
+    file.seekg(0, std::ios::end);
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(std::max<std::streamoff>(0, file.tellg())));
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<std::size_t>(file.gcount()));
     const auto stem = path.stem().u8string();
     return decode_dds(bytes.data(), bytes.size(), std::string(stem.begin(), stem.end()));
 }

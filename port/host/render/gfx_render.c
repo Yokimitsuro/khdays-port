@@ -37,9 +37,9 @@ typedef struct OneScreenParams {
     uint32_t fog_table[8];
     uint32_t frame, rule, masters, backdrop;
     uint32_t a_upper, backdrop_w, backdrop_h, hide3d;
-    float backdrop_scale, backdrop_x, backdrop_y; /* picture texels per its texel, its top-left */
-    uint32_t piece_count;                         /* an animated picture's pieces this frame */
-    uint32_t animated, unused[3];                 /* 1: an animated picture (`backdrop` its ground) */
+    float backdrop_scale, backdrop_x, backdrop_y;  /* picture texels per its texel, its top-left */
+    uint32_t piece_count;                          /* an animated picture's pieces this frame */
+    uint32_t animated, unused[3];                  /* 1: an animated picture (`backdrop` its ground) */
     uint32_t scale3d, width3d, height3d, smooth3d; /* the 3D's own scale (the picture finer than it) */
     uint32_t hud3d, unused5[3];                    /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
 } OneScreenParams;
@@ -1203,22 +1203,26 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     }
     if (!khdays_gpu_hd_sync(cmd)) { /* upload the HD replacements the card does not have yet */
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     if (!khdays_sequence_gpu_draw(device, cmd, &p->sequence_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     if (!khdays_sequence_gpu_draw(device, cmd, &p->enemy_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     for (int i = 0; i < 2; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->information_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
@@ -1226,6 +1230,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < 4; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->minimap_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
@@ -1233,27 +1238,32 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < 3; ++i)
         if (!khdays_sequence_gpu_draw(device, cmd, &p->notification_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
     if (one && !khdays_sequence_gpu_draw(device, cmd, &p->radar_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     if (!khdays_sequence_gpu_draw(device, cmd, &p->mission_panel_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     if (!khdays_sequence_gpu_draw(device, cmd, &p->obtained_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
+        khdays_sequence_gpu_forget(); /* what it drew never reached the card */
         valid = 0;
         return 0;
     }
     for (int i = 0; i < 3; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->party_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
@@ -1261,6 +1271,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < 4; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->portrait_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
@@ -1268,6 +1279,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < 5; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->label_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
             valid = 0;
             return 0;
         }
@@ -1577,6 +1589,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         }
     }
     if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+        khdays_sequence_gpu_forget();
         valid = 0;
         return 0;
     }

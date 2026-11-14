@@ -1,5 +1,6 @@
 /* The replacement graphics on the graphics card (see gpu_hd.h). */
 #include "gpu_hd.h"
+#include "../../gfx/mips.h"
 
 #include "../../runtime/core/session_log.h"
 #include "../../runtime/mods/textures.h"
@@ -17,6 +18,7 @@ static int white_pending;                       /* the first texel (WHITE) not o
 static int refused, full_said, table_said;      /* the card refused a larger buffer; the full said */
 static int at_most;                             /* the buffer is as large as MOST_BYTES lets it be */
 static uint32_t now = 1;                        /* the picture being drawn (khdays_gpu_hd_next_frame) */
+static uint32_t generation;                     /* counts each upload or move into the buffer */
 static uint32_t pinned_out;                     /* pictures kept on the card that did not fit yet */
 static uint64_t let_go;                         /* on-demand pictures let go since the full was said */
 
@@ -69,50 +71,8 @@ static int has_smaller(uint32_t id, const KhdaysTextureReplacement *r)
 /* The words a replacement takes on the card: its texels, and the smaller copies of a still picture. */
 static uint32_t words_of(uint32_t id, const KhdaysTextureReplacement *r)
 {
-    uint32_t w = (uint32_t)r->width, h = (uint32_t)r->height, words = w * h;
-    if (!has_smaller(id, r)) {
-        return words;
-    }
-    while (w > 1 || h > 1) {
-        w = w > 1 ? w / 2 : 1;
-        h = h > 1 ? h / 2 : 1;
-        words += w * h;
-    }
-    return words;
-}
-
-/* The smaller copies of `rgba` (w x h, 8-bit RGBA, red first) one after the other into `out`:
- * each texel the four under it, their colours weighted by their alpha (a clear texel does not
- * darken its neighbours). */
-static void make_smaller(const uint8_t *rgba, uint32_t w, uint32_t h, uint8_t *out)
-{
-    const uint8_t *from = rgba;
-    while (w > 1 || h > 1) {
-        const uint32_t nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
-        for (uint32_t y = 0; y < nh; ++y) {
-            for (uint32_t x = 0; x < nw; ++x) {
-                uint32_t c[3] = {0, 0, 0}, plain[3] = {0, 0, 0}, a = 0;
-                uint8_t *o = out + ((size_t)y * nw + x) * 4u;
-                for (uint32_t k = 0; k < 4; ++k) {
-                    const uint32_t sx = SDL_min(x * 2u + (k & 1u), w - 1u), sy = SDL_min(y * 2u + (k >> 1), h - 1u);
-                    const uint8_t *t = from + ((size_t)sy * w + sx) * 4u;
-                    for (int i = 0; i < 3; ++i) {
-                        c[i] += (uint32_t)t[i] * t[3];
-                        plain[i] += t[i];
-                    }
-                    a += t[3];
-                }
-                for (int i = 0; i < 3; ++i) {
-                    o[i] = (uint8_t)(a > 0 ? (c[i] + a / 2u) / a : (plain[i] + 2u) / 4u);
-                }
-                o[3] = (uint8_t)((a + 2u) / 4u);
-            }
-        }
-        from = out;
-        out += (size_t)nw * nh * 4u;
-        w = nw;
-        h = nh;
-    }
+    const uint32_t w = (uint32_t)r->width, h = (uint32_t)r->height;
+    return w * h + (has_smaller(id, r) ? khdays_mips_words(w, h) : 0u);
 }
 
 /* A buffer of `table` entries and `texels` words (at most MOST_BYTES together). */
@@ -175,6 +135,11 @@ void khdays_gpu_hd_set_most(uint64_t bytes)
 int khdays_gpu_hd_on_card(uint32_t id)
 {
     return id < known && places[id] < QUEUED;
+}
+
+uint32_t khdays_gpu_hd_generation(void)
+{
+    return generation;
 }
 
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void)
@@ -367,6 +332,7 @@ static int sync_changed(SDL_GPUCommandBuffer *cmd)
             dst.buffer = buffer;
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = n;
+            generation++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             at += n;
         }
@@ -442,6 +408,7 @@ static int grow(SDL_GPUCopyPass *copy, uint32_t count, uint64_t need)
         from.offset = table_capacity * 16u;
         to.buffer = grown;
         to.offset = table * 16u;
+        generation++;
         SDL_CopyGPUBufferToBuffer(copy, &from, &to, texel_end * 4u, false);
     }
     SDL_ReleaseGPUBuffer(device, buffer); /* (released once the card is done with it) */
@@ -498,11 +465,13 @@ static void fill(uint32_t id, const KhdaysTextureReplacement *r, uint8_t *out)
     khdays_textures_read_begin((int)id);
     versions[id] = khdays_textures_version((int)id);
     SDL_memcpy(out, r->rgba, bytes);
-    if (smaller > 0) {
+    if (smaller > 0 && (r->info & KHDAYS_REPLACEMENT_SMALLER)) {
+        SDL_memcpy(out + bytes, (const uint8_t *)r->rgba + bytes, smaller); /* made ahead, as it was read */
+    } else if (smaller > 0) {
         /* made in memory of the program's (the mapped buffer may be slow to read back) */
         uint8_t *copies = (uint8_t *)SDL_malloc(smaller);
         if (copies != NULL) {
-            make_smaller((const uint8_t *)r->rgba, (uint32_t)r->width, (uint32_t)r->height, copies);
+            khdays_mips_make((const uint8_t *)r->rgba, (uint32_t)r->width, (uint32_t)r->height, copies);
             SDL_memcpy(out + bytes, copies, smaller);
             SDL_free(copies);
         } else {
@@ -655,10 +624,10 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
     for (uint32_t id = 0; id < entries; ++id) {
         const KhdaysTextureReplacement *r = khdays_textures_replacement((int)id);
         const int out = places[id] >= QUEUED;
-        const uint32_t entry[4] = {table_capacity * 4u + (out ? 0u : places[id]), out ? 1u : (uint32_t)r->width,
-                                   out ? 1u : (uint32_t)r->height,
-                                   out ? 0u
-                                       : (r->info & ~KHDAYS_REPLACEMENT_ON_DEMAND) | (has_smaller(id, r) ? SMALLER : 0u)};
+        const uint32_t entry[4] = {
+            table_capacity * 4u + (out ? 0u : places[id]), out ? 1u : (uint32_t)r->width,
+            out ? 1u : (uint32_t)r->height,
+            out ? 0u : (r->info & ~KHDAYS_REPLACEMENT_ON_DEMAND) | (has_smaller(id, r) ? SMALLER : 0u)};
         SDL_memcpy(mapped + at, entry, sizeof(entry));
         at += 16u;
     }
@@ -684,7 +653,8 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         dst.offset = 0;
         dst.size = entries * 16u;
         if (dst.size > 0)
-            SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+            generation++;
+        SDL_UploadToGPUBuffer(copy, &src, &dst, false);
         src.offset = entries * 16u;
         for (uint32_t i = 0; i < nwanted; ++i) {
             const uint32_t id = wanted[i];
@@ -693,12 +663,14 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
             }
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = words_of(id, khdays_textures_replacement((int)id)) * 4u;
+            generation++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             src.offset += dst.size;
         }
         if (white_pending) {
             dst.offset = table_capacity * 16u;
             dst.size = 4u;
+            generation++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             white_pending = 0;
         }

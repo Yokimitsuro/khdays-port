@@ -1,0 +1,100 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Xaldin (B_EX130) as Days' xaldin_h and xaldin, playing KH2's own motions for him (`own`: on his own
+# bones). He flies in KH2: his mset has no walk, run, jump or landing, so one line only, the rest the game's.
+mset B_EX130.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# His two lances: the game draws them as an object of their own (ba/ch/xa/w_.p2, the `a` models: xa_w_L and xa_w_R01
+# under xa_w_R at the player's base, each resting just under its hand), animated apart from the body. No KH2 bone:
+# each is carried by his drawn hand as the game's hand carries it, rigid while near the game's hand; one the game
+# sends off (from 0.6 to 1.5 forearms away) is only moved by how far his hand stands from the game's. The `b` models'
+# four lances (xa_w00-03) are left as the game draws them
+weapon_model ba/ch/xa/w_ xa_w_L hand 133
+weapon_model ba/ch/xa/w_ xa_w_R01 hand 274
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 135-156 276-297
+# His coat in the game's own animations: as slot 0's first frame flares it (secondary.txt's `days_shape` guides the
+# cloth to it). KH2's rest hangs it as a narrow tube (hem radius 30.5 cm, the hover's 54.5) in the game's wide
+# stance (ankles 47-49 cm out): it hung stretched over his legs. From 25: 22-24 carry a 90 degree turn about the hips.
+# Not in B000 (kept at rest; its kick crosses the bell's front: jitter 20 -> 55 cm, 70 -> 120 degrees in the replay)
+ds_pose 0 25-94
+ds_pose rotate 0 0 0 25-94 for b_xa_B000
+
+# His braids in the game's own animations: KH2's rest hangs them straight down from beside his head, through his
+# shoulders, back and hood (4.6-12.2 cm inside). Each is turned out of the body at its root, about its own axes (x
+# down the braid, y back, z his left: a positive y swings it to his right, a positive z back), some bent at their
+# second bone, by the least turn found that leaves every vertex of the braid 1.2 cm or more outside his body at rest;
+# left and right mirrored. secondary.txt's braids are simulated from this pose (the KH2 motion's own in his KH2 idle).
+# The front pair (187, 214): outward and a little forward
+ds_pose rotate 0 -20 -10 187
+ds_pose rotate 0 20 -10 214
+# The pair by the ears (190, 217): bent forward at their second bone, off the shoulders
+ds_pose rotate 0 0 -20 191 218
+# The four pairs down the back of the head, outermost first (194/221, 199/226, 204/231, 209/236): outward, the outer
+# pair bent forward at its second bone, the others back
+ds_pose rotate 0 -60 0 194
+ds_pose rotate 0 60 0 221
+ds_pose rotate 0 0 -20 195 222
+ds_pose rotate 0 -20 0 199
+ds_pose rotate 0 20 0 226
+ds_pose rotate 0 -50 0 204 209
+ds_pose rotate 0 50 0 231 236
+ds_pose rotate 0 0 20 200 227 205 232 210 237
+# The back piece's three braids (178 in the middle, 181 and 184 either side), clear of his hood
+ds_pose rotate 0 10 0 178
+ds_pose rotate 0 -30 0 181
+ds_pose rotate 0 30 0 184
+
+# KH2's idle (00A, hovering) for the game's Ca000. Every line crosses from what played before over 8 frames.
+b_xa_Ca000 0 blend 8
+# The game's idle, which the game's own animations below fade into
+idle b_xa_A000
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The moves
+# (A001-A013), the attacks (B000-B011, ba/ch/xa/am.p2), the guard and the other actions (Ca001-Ca008, ab.p2), the item
+# and the magic (D000-D003), the limits (L000-L004)
+b_xa_A001 blend 8
+b_xa_A002 blend 8
+b_xa_A003 blend 8
+b_xa_A004 blend 8
+b_xa_A005 blend 8
+b_xa_A006 blend 8
+b_xa_A007 blend 8
+b_xa_A008 blend 8
+b_xa_A009 blend 8
+b_xa_A010 blend 8
+b_xa_A011 blend 8
+b_xa_A012 blend 8
+b_xa_A013 blend 8
+b_xa_B000 blend 8
+b_xa_B001 blend 8
+b_xa_B002 blend 8
+b_xa_B003 blend 8
+b_xa_B004 blend 8
+b_xa_B005 blend 8
+b_xa_B006 blend 8
+b_xa_B007 blend 8
+b_xa_B008 blend 8
+b_xa_B009 blend 8
+b_xa_B010 blend 8
+b_xa_B011 blend 8
+b_xa_Ca001 blend 8
+# b_xa_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_xa_Ca003 blend 8
+b_xa_Ca004 blend 8
+b_xa_Ca005 blend 8
+b_xa_Ca006 blend 8
+b_xa_Ca007 blend 8
+b_xa_Ca008 blend 8
+b_xa_D000 blend 8
+b_xa_D001 blend 8
+b_xa_D002 blend 8
+b_xa_D003 blend 8
+b_xa_L000 blend 8
+b_xa_L001 blend 8
+b_xa_L002 blend 8
+b_xa_L003 blend 8
+b_xa_L004 blend 8

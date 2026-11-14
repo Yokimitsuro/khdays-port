@@ -1,6 +1,13 @@
 // A mod's model loaded: its file's meshes, joints and textures, fitted to the game's skeleton.
 
 #include "model_parts.h"
+#include "../core/phases.h"
+#include "../../gfx/mips.h"
+
+#include <algorithm>
+#include <atomic>
+#include <iterator>
+#include <thread>
 
 namespace khdays::model_parts {
 
@@ -126,6 +133,7 @@ struct Loading {
     float k = 1.0F;                                // the model's scale
     std::vector<int> placed;                       // each file joint's index in Model::joints
     std::map<std::uint32_t, int> joint_of_palette; // a vertex's joint (its palette index) to Model::joints
+    std::vector<std::uint8_t> mdlx;                // a KH2 model's file, read once (its motions read it too)
 };
 
 // Whether joint `j` is `from` or under it.
@@ -194,9 +202,19 @@ bool read_mod_model(Loading &loading)
         const auto extension = u8(path).extension();
         if (extension == ".fbx" || extension == ".FBX")
             mod = assets::import_fbx(u8(path));
-        else if (extension == ".mdlx" || extension == ".MDLX")
-            mod = assets::kh2::import_mdlx(u8(path));
-        else
+        else if (extension == ".mdlx" || extension == ".MDLX") {
+            const auto file = u8(path);
+            std::ifstream in(file, std::ios::binary);
+            if (!in)
+                throw std::runtime_error("cannot open the file");
+            in.seekg(0, std::ios::end); // in one go: an istreambuf_iterator reads a byte at a time
+            loading.mdlx.resize(static_cast<std::size_t>(std::max<std::streamoff>(0, in.tellg())));
+            in.seekg(0, std::ios::beg);
+            in.read(reinterpret_cast<char *>(loading.mdlx.data()), static_cast<std::streamsize>(loading.mdlx.size()));
+            loading.mdlx.resize(static_cast<std::size_t>(in.gcount()));
+            mod = assets::kh2::import_mdlx(loading.mdlx.data(), loading.mdlx.size(), file.stem().string(),
+                                           file.parent_path() / file.stem());
+        } else
             mod = assets::import_gltf(u8(path));
     } catch (const std::exception &e) {
         std::fprintf(stderr, "models: %s cannot be read (%s): export it again; the game's is drawn\n", path.c_str(),
@@ -230,15 +248,24 @@ void read_settings(Model *model, Loading &loading)
     loading.bones = read_bones(path);
     const BonesFile &bones = loading.bones;
     model->scale = bones.scale;
+    model->game_scale = bones.game_scale;
+    model->lower_hips = bones.lower_hips;
+    model->upright = bones.upright;
+    model->ik_side_from_hip = bones.ik_side_from_hip;
     model->cull = bones.cull;
     model->pose_degrees = bones.pose_degrees;
     model->held_name = bones.held;
     model->held_rest = bones.held_rest;
     model->held_own_turn = bones.held_own_turn;
+    model->held_body = bones.held_body;
     if (bones.held_own_turn)
         model->held_from_game = inverse(turn_of(bones.held_turn));
+    if (bones.held_onto)
+        model->held_onto = turn_of(bones.held_turn);
     model->cuff_settings = bones.cuff_settings;
+    model->cuff_motion_flaps = bones.cuff_motion_flaps;
     model->setting = setting_named(name, bones.setting);
+    model->limit_lists = named_lists(name, loading.game, bones.limit_shapes);
     model->kept_lists = kept_lists(name, loading.game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
     if (loading.character != nullptr && loading.character->model_scale > 0.0F) {
@@ -293,6 +320,13 @@ void add_joints(Model *model, Loading &loading)
         out.inverse_bind = ibm;
         const auto h = translation(world);
         out.head = {h[0] * k, h[1] * k, h[2] * k};
+        out.length = in.length * k;
+        out.mix_parent = out.parent;
+        for (int up = in.no_envelope ? -1 : in.parent;
+             up >= 0 && mod.joints[static_cast<std::size_t>(up)].no_envelope;) {
+            up = mod.joints[static_cast<std::size_t>(up)].parent;
+            out.mix_parent = up >= 0 ? placed[static_cast<std::size_t>(up)] : -1;
+        }
         joint_of_palette[in.palette_index] = static_cast<int>(model->joints.size());
         model->joints.push_back(std::move(out));
     }
@@ -351,7 +385,13 @@ void correct_rest_pose(Model *model, const Loading &loading)
         }
         // `align`: an end (a hand, a foot) turned whole onto the game's at rest by its shape (the way above only
         // turns a bone toward its one paired child, never about itself; ends have none)
-        if (const auto al = bones.aligns.find(joint.name); al != bones.aligns.end()) {
+        // `align ... rest`: no correction at all, the joint at its own rest turn when the game's node is at its own, so
+        // its parents' turns at rest (a shin turned onto the game's) do not tilt it (a foot's sole stays as built)
+        if (const auto al = bones.aligns.find(joint.name); al != bones.aligns.end() && al->second == "rest") {
+            joint.correction = kIdentity;
+            khdays_log("models: %s: %s keeps its own rest turn on %s (align rest)", name.c_str(), joint.name.c_str(),
+                       game.object_names[static_cast<std::size_t>(joint.node)].c_str());
+        } else if (al != bones.aligns.end()) {
             std::vector<std::array<float, 3>> own, its;
             const Mat &wg = rest[static_cast<std::size_t>(joint.node)];
             for (const auto &mesh : mod.model.meshes)
@@ -516,8 +556,12 @@ void carry_attachments(Model *model, const Loading &loading)
                     model->node_local[g] = mul(inverse(rest[static_cast<std::size_t>(a)]), rest[g]);
                     break;
                 }
-    for (const Mat &w : rest)
-        model->node_rest_place.push_back(translation(w));
+    for (const Mat &w : rest) { // `game_scale`: the game's skeleton at rest that much larger about the origin
+        auto at = translation(w);
+        for (float &c : at)
+            c *= model->game_scale;
+        model->node_rest_place.push_back(at);
+    }
 }
 
 // `place`: joints on their game nodes' own places; the bone above each (when that joint's only paired
@@ -535,15 +579,25 @@ void place_joints(Model *model, const Loading &loading)
         }
         const auto j = static_cast<std::size_t>(found);
         model->joints[j].placed = true;
+        if (const auto ride = bones.places_riding.find(joint_name); ride != bones.places_riding.end()) {
+            const int on = ride->second.empty() ? paired_above(*model, found) : joint_named(*model, ride->second);
+            if (on < 0 || model->joints[static_cast<std::size_t>(on)].node < 0)
+                khdays_log("models: %s: place %s ride %s: no paired joint to ride; pair it in bones.txt or name "
+                           "another; the joint stays on its node",
+                           name.c_str(), joint_name.c_str(), ride->second.c_str());
+            else
+                model->joints[j].rides = on;
+        }
         model->joints[j].place_offset = {by[0] * 0.01F, by[1] * 0.01F, by[2] * 0.01F};
     }
     for (std::size_t c = 0; c < model->joints.size(); ++c) {
-        if (!model->joints[c].placed)
+        if (!model->joints[c].placed || model->joints[c].rides >= 0)
             continue;
         const int p = paired_above(*model, static_cast<int>(c));
         int children = 0;
         for (std::size_t o = 0; o < model->joints.size(); ++o)
-            if (model->joints[o].node >= 0 && paired_above(*model, static_cast<int>(o)) == p)
+            if (model->joints[o].node >= 0 && paired_above(*model, static_cast<int>(o)) == p &&
+                model->joints[o].rides < 0)
                 ++children;
         if (p < 0 || children != 1)
             continue; // a bone with several paired children (the pelvis) is left; its mesh takes up the difference
@@ -557,8 +611,40 @@ void place_joints(Model *model, const Loading &loading)
                 st.riders.push_back(static_cast<int>(o));
         model->stretches.push_back(std::move(st));
     }
+    for (Joint &joint : model->joints) // parents first
+        joint.after_rides = joint.rides >= 0 ||
+                            (joint.parent >= 0 && model->joints[static_cast<std::size_t>(joint.parent)].after_rides);
     std::sort(model->stretches.begin(), model->stretches.end(),
               [](const Stretch &x, const Stretch &y) { return x.joint < y.joint; });
+    // a weapon that rides a hand mixes from that hand: B_EX390's keyblades (95, 106) hang from the root, so a cross-fade
+    // between KH2's pose and the game's moved them in a line while the arm swung, off his hands mid-fade
+    for (std::size_t j = 0; j < model->joints.size(); ++j) {
+        Joint &joint = model->joints[j];
+        for (int up = static_cast<int>(j); up >= 0 && up != joint.mix_parent;
+             up = model->joints[static_cast<std::size_t>(up)].parent)
+            if (const int hand = model->joints[static_cast<std::size_t>(up)].rides;
+                hand >= 0 && !descends(*model, joint.mix_parent, hand)) {
+                joint.mix_parent = hand;
+                break;
+            }
+    }
+    {
+        std::vector<char> ordered(model->joints.size(), 0);
+        for (bool more = true; more;) {
+            more = false;
+            for (std::size_t j = 0; j < model->joints.size(); ++j) {
+                const int up = model->joints[j].mix_parent;
+                if (ordered[j] == 0 && (up < 0 || ordered[static_cast<std::size_t>(up)] != 0)) {
+                    ordered[j] = 1;
+                    model->mix_order.push_back(static_cast<int>(j));
+                    more = true;
+                }
+            }
+        }
+        for (std::size_t j = 0; j < model->joints.size(); ++j)
+            if (ordered[j] == 0)
+                model->mix_order.push_back(static_cast<int>(j)); // (a loop: mixed on its own)
+    }
 }
 
 // `spine`: its chain, the node carrying its base, the pelvis it swings.
@@ -592,6 +678,7 @@ void add_spine(Model *model, const Loading &loading)
             ok = sp.pelvis >= 0 && sp.pelvis != sp.root &&
                  std::find(sp.chain.begin(), sp.chain.end(), sp.pelvis) == sp.chain.end();
         }
+        sp.onto = spine_line[3] == "onto";
         if (ok) {
             model->spine = std::move(sp);
         } else {
@@ -747,6 +834,7 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
 {
     namespace assets = khdays::assets;
     const std::string &name = loading.name;
+    const BonesFile &bones = loading.bones;
     auto &mod = loading.mod;
     const std::map<std::uint32_t, int> &joint_of_palette = loading.joint_of_palette;
     using AlphaMode = assets::NeutralMesh::AlphaMode;
@@ -773,6 +861,12 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             block->animation, static_cast<std::uint32_t>(0x9E3779B9U * (model->face_blocks.size() + 1)));
         model->face_blocks.push_back(std::move(block));
     }
+    // still textures whose smaller copies are made below, on several threads, before anything draws them
+    struct MipsJob {
+        std::uint8_t *pixels;
+        int w, h;
+    };
+    std::vector<MipsJob> mips_jobs;
     auto texture_for = [&](const std::string &key, AlphaMode mode, float cutoff) -> const Made * {
         const auto t = texture_of.find(key);
         if (t == texture_of.end())
@@ -785,7 +879,13 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
         const auto &texture = *t->second;
         // kept for as long as the port runs: the renderer reads it from any thread
         const std::size_t bytes = texture.rgba.size();
-        auto *pixels = static_cast<std::uint8_t *>(std::malloc(bytes));
+        // room for the smaller copies after the texels (KHDAYS_REPLACEMENT_SMALLER): not made by the renderer
+        const std::size_t smaller = face_keys.count(key)
+                                        ? 0
+                                        : std::size_t{khdays_mips_words(static_cast<std::uint32_t>(texture.width),
+                                                                        static_cast<std::uint32_t>(texture.height))} *
+                                              4U;
+        auto *pixels = static_cast<std::uint8_t *>(std::malloc(bytes + smaller));
         if (pixels == nullptr)
             return nullptr;
         std::memcpy(pixels, texture.rgba.data(), bytes);
@@ -817,8 +917,10 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             m.replacement = f.replacement;
             model->face_textures.push_back(std::move(f));
         } else {
-            m.replacement =
-                khdays_textures_add((name + "/" + key + tag).c_str(), texture.width, texture.height, pixels);
+            m.replacement = khdays_textures_add_info((name + "/" + key + tag).c_str(), texture.width, texture.height,
+                                                     reinterpret_cast<const std::uint32_t *>(pixels),
+                                                     KHDAYS_REPLACEMENT_ON_DEMAND | KHDAYS_REPLACEMENT_SMALLER);
+            mips_jobs.push_back({pixels, texture.width, texture.height});
         }
         m.w = texture.width;
         m.h = texture.height;
@@ -871,6 +973,61 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
         vertices += out.vertices.size();
         triangles += out.indices.size() / 3;
         model->meshes.push_back(std::move(out));
+    }
+    // `hide_mesh`: the file's meshes by number (still its own order here), their triangles dropped and their vertices
+    // kept, as `hide` leaves them
+    for (const int at : bones.hide_meshes) {
+        if (at < 0 || static_cast<std::size_t>(at) >= model->meshes.size()) {
+            khdays_log("models: %s: hide_mesh %d: the file has %zu meshes (0 to %zu); it is left out", name.c_str(), at,
+                       model->meshes.size(), model->meshes.empty() ? 0U : model->meshes.size() - 1U);
+            continue;
+        }
+        khdays_log("models: %s: hide_mesh %d: %zu triangles not drawn", name.c_str(), at,
+                   model->meshes[static_cast<std::size_t>(at)].indices.size() / 3U);
+        model->meshes[static_cast<std::size_t>(at)].indices.clear();
+    }
+    for (const auto &[list, mode, what] : {std::tuple{&bones.limit_show_meshes, 1, "limit_show_mesh"},
+                                           std::tuple{&bones.limit_hide_meshes, -1, "limit_hide_mesh"}}) {
+        for (const int at : *list) {
+            if (at < 0 || static_cast<std::size_t>(at) >= model->meshes.size()) {
+                khdays_log("models: %s: %s %d: the file has %zu meshes (0 to %zu); it is left out", name.c_str(), what,
+                           at, model->meshes.size(), model->meshes.empty() ? 0U : model->meshes.size() - 1U);
+                continue;
+            }
+            model->meshes[static_cast<std::size_t>(at)].limit = static_cast<signed char>(mode);
+            model->limit_meshes = true;
+            khdays_log("models: %s: %s %d: %zu triangles %s", name.c_str(), what, at,
+                       model->meshes[static_cast<std::size_t>(at)].indices.size() / 3U,
+                       mode > 0 ? "drawn only in its limit animations" : "not drawn in its limit animations");
+        }
+    }
+    model->limit_animations = bones.limit_animations;
+    if (model->limit_meshes && model->limit_animations.empty() && bones.limit_shapes.empty())
+        khdays_log(
+            "models: %s: limit_show_mesh / limit_hide_mesh without `limit_animations <name|prefix*>...` or "
+            "`limit_shapes <name|prefix*>...`: write which of the game's animations or shapes are its limit; the "
+            "meshes stay as out of it",
+            name.c_str());
+    // the still textures' smaller copies, several at once (the renderer made them as it uploaded each, on the
+    // picture's thread, as the model first showed)
+    if (!mips_jobs.empty()) {
+        std::atomic<std::size_t> next{0};
+        const auto work = [&] {
+            for (std::size_t j = next++; j < mips_jobs.size(); j = next++) {
+                const MipsJob &job = mips_jobs[j];
+                const std::size_t bytes = static_cast<std::size_t>(job.w) * static_cast<std::size_t>(job.h) * 4U;
+                khdays_mips_make(job.pixels, static_cast<std::uint32_t>(job.w), static_cast<std::uint32_t>(job.h),
+                                 job.pixels + bytes);
+            }
+        };
+        const unsigned threads =
+            std::max(1U, std::min({std::thread::hardware_concurrency(), 8U, static_cast<unsigned>(mips_jobs.size())}));
+        std::vector<std::thread> pool;
+        for (unsigned i = 1; i < threads; ++i)
+            pool.emplace_back(work);
+        work();
+        for (std::thread &t : pool)
+            t.join();
     }
     return {vertices, triangles};
 }
@@ -1157,6 +1314,7 @@ void log_loaded(const Model *model, const Loading &loading, std::size_t vertices
 
 std::unique_ptr<Model> load(const std::string &name, const std::string &path, const char *file, u32 offset)
 {
+    const KhdaysPhaseScope timed(KHDAYS_PHASE_MODEL_LOAD); // KHDAYS_PROFILE (phases.h)
     auto model = std::make_unique<Model>();
     model->name = name;
     model->path = path;
@@ -1189,7 +1347,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     log_loaded(model.get(), loading, vertices, triangles);
     set_rest_size(*model);
     resolve_cuffs(*model, loading.bones.cuffs, loading.bones.cuff_pose, name);
-    load_kh2_motions(*model, path);
+    load_kh2_motions(*model, path, loading.mdlx.empty() ? nullptr : &loading.mdlx);
     box_meshes(*model); // last: the meshes as they are drawn
     return model;
 }

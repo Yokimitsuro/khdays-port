@@ -1,0 +1,113 @@
+# KH2 bones (kh2_<index>) to Days' Marluxia nodes, one pair a line: <joint> <node>.
+# This model is Marluxia (N_CM000_BTL), drawn as Days' marluxia_h and marluxia. Bones 0-92 (the legs and the coat's
+# strips) are numbered as B_EX110's; his arms and cuffs are B_EX390's renumbered (left -17, right +12). Unpaired KH2
+# bones (coat, sleeves, twists, fingers, hood, hair) follow their parents. These pairs pose the model for Days
+# animations without a KH2 motion; a mapped KH2 motion poses every bone itself. No `scale`: his legs are 2% shorter
+# than the game's and his arms 2% longer, and his shoulders stand 7 cm higher.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, marluxia_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips, spine, neck and head (kh2_96 carries the chest; the hair hangs from the head's end, 168). kh2_94's vertices
+# lie as high as Axel's kh2_97's (the bone he pairs with Bip01_Spine): Marluxia has one waist bone fewer.
+kh2_2 Bip01_Pelvis
+kh2_94 Bip01_Spine
+kh2_96 Bip01_Spine1
+kh2_164 Bip01_Neck
+kh2_167 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_105 Bip01_L_Clavicle
+kh2_109 Bip01_L_UpperArm
+kh2_110 Bip01_L_Forearm
+kh2_131 Bip01_L_Hand
+
+# Right arm
+kh2_207 Bip01_R_Clavicle
+kh2_211 Bip01_R_UpperArm
+kh2_212 Bip01_R_Forearm
+kh2_233 Bip01_R_Hand
+
+# Two-bone limbs, knees and elbows bending the way Days' do. `exact` (the legs): the feet go where the game's are. The
+# offset keeps KH2's sole on the game's: his ankle is 14.9 over its sole, the game's 11.7 (the 1.6 is roxas_bf_h's).
+ik kh2_5 kh2_6 kh2_9 exact 0 3.2 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 3.2 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (his right knee 175 degrees in the game's Ca005 (the game's 166))
+lower_hips 1
+ik kh2_109 kh2_110 kh2_131
+ik kh2_211 kh2_212 kh2_233
+
+# The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
+# roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+# The pelvis inside the coat's closed top hidden: from under its waist (136.2 cm) to above its front slit (117.6 cm),
+# where it closes all round, so nothing hidden shows through the slit (the hip joints at 114.2)
+hide kh2_2 from 134 to 120 fade 4
+# the thighs 0.9 front to back (their own y), as riku_h's, so they push less through the coat
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+
+# `align`: the hands and feet turned onto the game's at rest by their shape.
+align kh2_9 foot
+align kh2_18 foot
+align kh2_131 hand
+align kh2_233 hand
+
+# The weapon bone (258, the scythe's own, under 257 at the right hand's end) on the game's weapon joint, ma_h_R, exactly
+# where it is, so what the game holds there is where Days puts it. 258, not 257: his motions turn it 6.6 degrees off 257.
+# `ride`: moved by how far the KH2 hand is from the game's, so it stands from his hand as the game's from its own. The
+# hand stays as it is (a plain `place` would stretch it toward the joint).
+kh2_258 ma_h_R
+place kh2_258 ride
+
+# N_CM000_BTL's scythe is part of its mesh, in his right hand (bone 258, its 1101 vertices; 257 none). Its triangles are
+# not drawn; the game's weapon is drawn on that bone instead (the `weapon` line in motions.txt).
+hide kh2_257 kh2_258 from 1000 to -1000
+
+# The cuffs, as roxas_bf_h's (his arms and cuffs are B_EX390's, renumbered; rest axes the same, his cuff 1.34 times as
+# wide). They turn with the hand: the wrist ring of the sleeve (kh2_113, under 112) and the cuff (114 on) take the
+# hand's twist about the forearm
+twist kh2_112 kh2_131 kh2_110 kh2_111
+twist kh2_214 kh2_233 kh2_212 kh2_213
+# The cuff's root tilts with the hand as it bends, most of the way (it sits at the wrist)
+swing kh2_114 kh2_131 kh2_111 0.7 kh2_121
+swing kh2_216 kh2_233 kh2_213 0.7 kh2_223
+# The cuffs fitted round the hands, not simulated: `cuff <root> <hand> <flaps in order round the ring>`
+cuff kh2_114 kh2_131 kh2_115 kh2_124 kh2_121 kh2_118
+cuff kh2_216 kh2_233 kh2_217 kh2_226 kh2_223 kh2_220
+# clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+# the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees
+cuff_thumb 0.5 28
+# His own motions flare the flaps themselves (the right up to 58 degrees, the scythe's hand): the fit opens them from
+# rest instead, as in the game's own animations, rather than a second time on top
+cuff_motion_flaps off
+cuff_pose 110 2.86
+cuff_pose_bone kh2_113 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_116 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_118 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_119 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_122 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_215 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_218 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_220 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_221 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_224 0.02 -78.02 -0.03 0.322 1.000 1.000

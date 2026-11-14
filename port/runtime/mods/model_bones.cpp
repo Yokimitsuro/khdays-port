@@ -23,6 +23,34 @@ BonesFile read_bones(const std::string &model_file)
             bones.scale = std::strtof(b.c_str(), nullptr);
             if (!(bones.scale > 0.0F))
                 bones.scale = 1.0F;
+        } else if (a == "game_scale") {
+            bones.game_scale = std::strtof(b.c_str(), nullptr);
+            if (!(bones.game_scale > 0.0F)) {
+                std::fprintf(stderr, "models: %s: write `game_scale <factor over 0>`; the line is ignored\n",
+                             path.c_str());
+                bones.game_scale = 1.0F;
+            }
+        } else if (a == "ik_side") {
+            if (b == "kh2_hip" || b == "game")
+                bones.ik_side_from_hip = b == "kh2_hip";
+            else
+                std::fprintf(stderr, "models: %s: write `ik_side kh2_hip` or `ik_side game`; the line is ignored\n",
+                             path.c_str());
+        } else if (a == "upright") { // upright on|off (a line needs two words)
+            if (b == "on" || b == "off")
+                bones.upright = b == "on";
+            else
+                std::fprintf(stderr, "models: %s: write `upright on` or `upright off`; the line is ignored\n",
+                             path.c_str());
+        } else if (a == "lower_hips") {
+            bones.lower_hips = std::strtof(b.c_str(), nullptr);
+            if (!(bones.lower_hips > 0.0F && bones.lower_hips <= 2.0F)) {
+                std::fprintf(stderr,
+                             "models: %s: write `lower_hips <share over 0, up to 2; 1 lowers the hips by all the legs "
+                             "lack>`; the line is ignored\n",
+                             path.c_str());
+                bones.lower_hips = 0.0F;
+            }
         } else if (a == "keep") {
             for (std::string node = b; !node.empty(); node.clear(), words >> node)
                 bones.keep.push_back(node);
@@ -79,13 +107,56 @@ BonesFile read_bones(const std::string &model_file)
             }
         } else if (a == "place") {
             std::array<float, 3> at{};
-            if (words >> at[0] && !(words >> at[1] >> at[2])) {
-                std::fprintf(stderr,
-                             "models: %s: write `place <joint> [<x> <y> <z>]` (the offset in the game's centimetres); "
-                             "the line is ignored\n",
-                             path.c_str());
+            std::vector<std::string> rest;
+            for (std::string w; words >> w;)
+                rest.push_back(w);
+            const auto ride = std::find(rest.begin(), rest.end(), "ride");
+            const bool riding = ride != rest.end();
+            const std::string ridden = riding && ride + 1 != rest.end() ? *(ride + 1) : std::string{};
+            const bool extra = riding && ride + 1 != rest.end() && ride + 2 != rest.end();
+            if (riding)
+                rest.erase(ride, rest.end());
+            std::istringstream offset(rest.size() == 3 ? rest[0] + " " + rest[1] + " " + rest[2] : "");
+            if (extra || (!rest.empty() && !(offset >> at[0] >> at[1] >> at[2]))) {
+                std::fprintf(
+                    stderr,
+                    "models: %s: write `place <joint> [<x> <y> <z>] [ride [<bone>]]` (the offset in the game's "
+                    "centimetres); the line is ignored\n",
+                    path.c_str());
             } else {
                 bones.places[b] = at;
+                if (riding)
+                    bones.places_riding[b] = ridden;
+            }
+        } else if (a == "limit_animations" || a == "limit_shapes") { // <name|prefix*>...
+            auto &to = a == "limit_animations" ? bones.limit_animations : bones.limit_shapes;
+            std::string w = b;
+            do
+                to.push_back(w);
+            while (words >> w);
+        } else if (a == "hide_mesh" || a == "limit_show_mesh" || a == "limit_hide_mesh") {
+            // hide_mesh <index>...: whole meshes of the file not drawn (a weapon made into the hand's own mesh);
+            // limit_show_mesh, limit_hide_mesh: drawn only while a `limit_animations` animation plays, or then not
+            std::vector<int> meshes;
+            bool ok = true;
+            std::string w = b;
+            do {
+                char *end = nullptr;
+                const long n = std::strtol(w.c_str(), &end, 10);
+                ok = ok && !w.empty() && end != nullptr && *end == '\0' && n >= 0;
+                if (ok)
+                    meshes.push_back(static_cast<int>(n));
+            } while (ok && words >> w);
+            if (ok) {
+                auto &to = a == "hide_mesh"         ? bones.hide_meshes
+                           : a == "limit_show_mesh" ? bones.limit_show_meshes
+                                                    : bones.limit_hide_meshes;
+                to.insert(to.end(), meshes.begin(), meshes.end());
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `%s <index>...` (the file's meshes, whole numbers from 0); the line is "
+                             "ignored\n",
+                             path.c_str(), a.c_str());
             }
         } else if (a == "hide") {
             HideLine h;
@@ -111,12 +182,21 @@ BonesFile read_bones(const std::string &model_file)
                              path.c_str());
             }
         } else if (a == "spine") {
-            std::string end, word, hips;
-            if (words >> end && (!(words >> word) || (word == "hips" && words >> hips))) {
-                bones.spine = {b, end, hips};
+            std::string end, word, hips, onto;
+            bool ok = static_cast<bool>(words >> end);
+            while (ok && words >> word) {
+                if (word == "hips" && hips.empty())
+                    ok = static_cast<bool>(words >> hips);
+                else if (word == "onto" && onto.empty())
+                    onto = word;
+                else
+                    ok = false;
+            }
+            if (ok) {
+                bones.spine = {b, end, hips, onto};
             } else {
                 std::fprintf(stderr,
-                             "models: %s: write `spine <base joint> <end joint> [hips <joint>]`; the line is "
+                             "models: %s: write `spine <base joint> <end joint> [hips <joint>] [onto]`; the line is "
                              "ignored\n",
                              path.c_str());
             }
@@ -152,6 +232,15 @@ BonesFile read_bones(const std::string &model_file)
                     "models: %s: write `cuff_fit <clearance cm> <most open degrees> <shortest> <neighbours> <band "
                     "from> <band to> <most shift cm>`; the line is ignored\n",
                     path.c_str());
+            }
+        } else if (a == "cuff_motion_flaps") {
+            // cuff_motion_flaps on|off: off, the flaps stand at rest on the cuff before the fit opens them, as in the
+            // game's own animations; a KH2 motion flaring them (N_CM000_BTL's right, up to 58 degrees) was opened twice
+            if (b == "on" || b == "off") {
+                bones.cuff_motion_flaps = b == "on";
+            } else {
+                std::fprintf(stderr, "models: %s: write `cuff_motion_flaps on` or `off`; the line is ignored\n",
+                             path.c_str());
             }
         } else if (a == "cuff_thumb") {
             // cuff_thumb <more clearance cm> [<most open degrees>]: the last flap of each `cuff`
@@ -230,15 +319,28 @@ BonesFile read_bones(const std::string &model_file)
             std::string how;
             // ... rest: made at the holding bone's rest, no motions; rest <x> <y> <z>: the turn into the game's weapon
             // frame given here (as a `weapon` line's), for what no `weapon` line holds (a cutscene's own object)
-            bones.held_rest = words >> how && how == "rest";
-            bones.held_own_turn = bones.held_rest && static_cast<bool>(words >> bones.held_turn[0] >>
-                                                                       bones.held_turn[1] >> bones.held_turn[2]);
+            // ... turn <x> <y> <z>: posed by the motions, its joint's rest frame turned so (degrees about its own x,
+            // y, z) into the weapon bone's, for a model made in other axes than the weapon the motions are for
+            // ... body: posed so, on the frame the body's `weapon` line gave its weapon (the game draws it elsewhere)
+            const bool has_word = static_cast<bool>(words >> how);
+            bones.held_rest = has_word && how == "rest";
+            bones.held_onto = has_word && how == "turn";
+            bones.held_body = has_word && how == "body";
+            const bool turn_given =
+                (bones.held_rest || bones.held_onto) &&
+                static_cast<bool>(words >> bones.held_turn[0] >> bones.held_turn[1] >> bones.held_turn[2]);
+            bones.held_own_turn = bones.held_rest && turn_given;
+            if (bones.held_onto && !turn_given) {
+                bones.held_onto = false;
+                std::fprintf(stderr, "models: %s: write `held %s turn <x> <y> <z>` (degrees); held without a turn\n",
+                             path.c_str(), b.c_str());
+            }
         } else if (a == "align") {
             std::string kind;
-            if (words >> kind && (kind == "foot" || kind == "hand")) {
+            if (words >> kind && (kind == "foot" || kind == "hand" || kind == "rest")) {
                 bones.aligns[b] = kind;
             } else {
-                std::fprintf(stderr, "models: %s: write `align <joint> foot|hand`; the line is ignored\n",
+                std::fprintf(stderr, "models: %s: write `align <joint> foot|hand|rest`; the line is ignored\n",
                              path.c_str());
             }
         } else {
@@ -253,8 +355,8 @@ int setting_named(const std::string &name, const std::string &key)
 {
     if (key.empty())
         return -1;
-    for (int s = 0; s < KHDAYS_OPT_COUNT; ++s)
-        if (key == khdays_hud_setting_keys[s])
+    for (int s = 0; s < KHDAYS_OPT_COUNT; ++s) // (offline tools stand in for the table with no names)
+        if (khdays_hud_setting_keys[s] != nullptr && key == khdays_hud_setting_keys[s])
             return s;
     std::fprintf(
         stderr,
@@ -292,6 +394,26 @@ std::set<std::uint32_t> kept_lists(const std::string &name, const khdays::assets
         }
         if (kept)
             lists.insert(mesh.list_offset);
+    }
+    return lists;
+}
+
+// bones.txt's `limit_shapes`: the game's shapes of those names (a prefix ending in *), by their lists' places. A shape
+// whose material is fully transparent is never sent (NNSi_G3dFuncSbc_MAT, _SHP), so one drawn shows the look.
+std::set<std::uint32_t> named_lists(const std::string &name, const khdays::assets::NeutralModel &game,
+                                    const std::vector<std::string> &wanted)
+{
+    std::set<std::uint32_t> lists;
+    for (const auto &want : wanted) {
+        const bool prefix = !want.empty() && want.back() == '*';
+        std::size_t found = 0;
+        for (const auto &mesh : game.meshes)
+            if (prefix ? mesh.name.compare(0, want.size() - 1, want, 0, want.size() - 1) == 0 : mesh.name == want) {
+                lists.insert(mesh.list_offset);
+                ++found;
+            }
+        khdays_log("models: %s: limit_shapes %s: %zu of the game's shapes%s", name.c_str(), want.c_str(), found,
+                   found == 0 ? "; check the name against the game's (--dump-graphics)" : "");
     }
     return lists;
 }
@@ -356,9 +478,10 @@ std::size_t hand_pose_index(const std::string &name)
                              : kHandPoses;
 }
 
-// The rules as each joint's turn per game animation (Model::ds_turns): later lines win for a bone, and an
-// animation's own lines over the default's
-void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
+// The rules as each joint's turn per game animation (into `out`): later lines win for a bone, and an animation's own
+// lines over the default's
+void resolve_ds_scope(Model &model, const std::vector<DsPoseRule> &rules,
+                      std::map<std::string, std::vector<std::pair<std::size_t, Mat>>> &out, std::set<std::string> &told,
                       const std::function<void(const std::string &)> &say)
 {
     namespace kh2 = khdays::assets::kh2;
@@ -396,9 +519,8 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
         }
         return &out;
     };
-    std::set<std::string> told;
     for (const auto &[a, bones] : scopes) {
-        auto &turns = model.ds_turns[a];
+        auto &turns = out[a];
         for (const auto &[b, i] : bones) {
             const DsPoseRule &rule = rules[i];
             const std::string bone = "ds_pose: bone " + std::to_string(b);
@@ -410,11 +532,14 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
             }
             const auto j = static_cast<std::size_t>(it - model.kh2_bone.begin());
             const Joint &joint = model.joints[j];
-            if (joint.node >= 0 || joint.parent < 0) {
+            // a joint on a game node takes a `rotate` on top of the node's turn (riku_h's pelvis in his glides), not a slot's
+            if ((joint.node >= 0 && rule.slot >= 0) || joint.parent < 0) {
                 if (told.insert(bone).second)
                     say(bone +
-                        (joint.node >= 0 ? ": it follows a game node (bones.txt), which poses it"
-                                         : ": it has no parent to turn from") +
+                        (joint.node >= 0
+                             ? ": it follows a game node (bones.txt), which poses it; only `ds_pose rotate` "
+                               "turns it further"
+                             : ": it has no parent to turn from") +
                         "; take it off the line; the line leaves it");
                 continue;
             }
@@ -443,6 +568,23 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
             turns.emplace_back(j, mul(frame, mul(turn, inverse(frame))));
         }
     }
+}
+
+// Model::ds_turns from the lines without `limit`, and Model::ds_turns_limit from all of them, the `limit` ones last
+void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
+                      const std::function<void(const std::string &)> &say)
+{
+    std::vector<DsPoseRule> plain, in_limit;
+    for (const DsPoseRule &r : rules)
+        (r.limit ? in_limit : plain).push_back(r);
+    model.ds_turns.clear();
+    model.ds_turns_limit.clear();
+    std::set<std::string> told;
+    resolve_ds_scope(model, plain, model.ds_turns, told, say);
+    if (in_limit.empty())
+        return;
+    plain.insert(plain.end(), in_limit.begin(), in_limit.end());
+    resolve_ds_scope(model, plain, model.ds_turns_limit, told, say);
 }
 
 void resolve_hands(Model &model, const std::vector<HandRule> &rules, const std::vector<HandPoseRule> &poses,
@@ -670,6 +812,21 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
             tips[f] = model.joints[tip_joint[f]].head;
             cuff.tip_joints[f] = subtree(tip_joint[f]);
         }
+        // a flap whose bones all stand at its hinge (B_EX400's: one bone each, its head the root's, no tip bone) ends
+        // its last bone's own length along that bone's x (the file's: 7.3 cm there), and has no tip of its own to bend
+        for (std::size_t f = 0; f < CuffFit::kFlaps; ++f) {
+            if (length(hand_sub(tips[f], hinges[f])) > 1e-4F)
+                continue;
+            for (const std::size_t j : cuff.flap_joints[f]) {
+                if (model.joints[j].length <= 0.0F)
+                    continue;
+                const Mat axes = axes_of(inverse(model.joints[j].inverse_bind));
+                const HandVec x = hand_unit({axes[0], axes[1], axes[2]});
+                tips[f] = hand_add(model.joints[j].head, x, model.joints[j].length);
+                tip_joint[f] = j;
+            }
+            cuff.tip_joints[f].clear();
+        }
         cuff.slides = subtree(
             model.joints[cuff.root].parent >= 0 ? static_cast<std::size_t>(model.joints[cuff.root].parent) : cuff.root);
         std::vector<char> ring(model.joints.size(), 0); // what the cuff's surface is: the flaps and the root's own
@@ -684,9 +841,16 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
         std::vector<std::array<std::size_t, 3>> triangle_joints; // each corner's joint
         std::set<std::array<int, 3>> taken; // the hand's vertices, thinned to a centimetre apart at rest
         for (const Mesh &mesh : model.meshes) {
-            for (const auto &v : mesh.vertices) {
+            // only what is drawn: a `hide`n weapon baked into the hand (N_CM000_BTL's scythe, 2 m long) is not fitted
+            // round, its vertices kept after its triangles are dropped
+            std::vector<char> drawn(mesh.vertices.size(), 0);
+            for (const std::uint32_t i : mesh.indices)
+                if (i < drawn.size())
+                    drawn[i] = 1;
+            for (std::size_t vi = 0; vi < mesh.vertices.size(); ++vi) {
+                const auto &v = mesh.vertices[vi];
                 const std::uint32_t j = v.joints[heaviest_weight(v)];
-                if (j >= on_hand.size() || !on_hand[j])
+                if (j >= on_hand.size() || !on_hand[j] || !drawn[vi])
                     continue;
                 const auto rest = point(model.joints[j].bind, v.position);
                 const std::array<int, 3> cell = {static_cast<int>(std::floor(rest[0] * 100.0F)),

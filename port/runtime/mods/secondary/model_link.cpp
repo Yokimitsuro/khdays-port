@@ -7,7 +7,6 @@
 #include "actor.h"
 #include "days_environment.h"
 
-#include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/model_import.h"
 
 extern "C" {
@@ -16,7 +15,6 @@ extern "C" {
 #include "../../core/window.h" // KHDAYS_W, khdays_game_ram
 #include "../../core/session_log.h"
 #include "../../scripts/game_link.h" // the game's frame count and rate
-#include "../list.h"                 // the mods on as the game started
 }
 
 #include <algorithm>
@@ -26,12 +24,8 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <condition_variable>
 #include <map>
-#include <mutex>
-#include <set>
 #include <system_error>
-#include <thread>
 
 namespace khdays::secondary {
 
@@ -179,7 +173,7 @@ struct ModelSecondary {
     ConfigWatch watch; // its configuration's files, read again when one changes
     u32 checked = 0, swept = 0, reported = 0;
     bool debug = false, profile = false, trace = false;
-    bool said_placement = false, said_base = false, said_camera = false, said_shared = false;
+    bool said_placement = false, said_base = false, said_camera = false, said_shared = false, said_object = false;
     struct ActorState {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
@@ -243,130 +237,8 @@ void ModelSecondaryDeleter::operator()(ModelSecondary *m) const
 
 namespace {
 
-// Rigs cooked and prepared ahead on a thread of their own (prewarm), by their .secondary.txt: a model loaded
-// later (a cutscene's, mid-scene) takes its rig from here instead of stalling the game ~0.1-0.25 s to cook it
-struct Prepared {
-    std::shared_ptr<const Rig> rig;
-    Diagnostics diagnostics;
-    ConfigWatch watch;
-    std::size_t bones = 0, vertices = 0; // the model it was cooked against
-};
-std::mutex prepared_lock;
-std::condition_variable prepared_done;
-std::map<std::string, Prepared> prepared;
-std::set<std::string> preparing;
-
-// a file's key there: its full path, normalised (the game names its files with mixed slashes)
-std::string prepared_key(const std::filesystem::path &file)
-{
-    std::error_code ec;
-    std::filesystem::path full = std::filesystem::weakly_canonical(file, ec);
-    if (ec)
-        full = file.lexically_normal();
-    full.make_preferred();
-    const auto f8 = full.u8string();
-    return {f8.begin(), f8.end()};
-}
-
-struct Prewarm {
-    std::thread worker;
-    ~Prewarm()
-    {
-        if (worker.joinable())
-            worker.join();
-    }
-} prewarm;
-
-// Every model with secondary motion of the mods on (mods/<Mod>/graphics/.../<name>.secondary.txt beside <name>.mdlx),
-// but `skip` (cooked already), cooked and prepared on a thread of its own
-void prewarm_model_secondary(const std::string &skip)
-{
-    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> work; // .secondary.txt, .mdlx
-    std::error_code ec;
-    for (int m = 0; m < khdays_mods_started_count(); ++m) {
-        const char *mod = khdays_mods_started_path(m);
-        if (mod == nullptr)
-            continue;
-        const auto graphics = u8(mod) / "graphics";
-        if (!std::filesystem::is_directory(graphics, ec))
-            continue;
-        for (std::filesystem::recursive_directory_iterator it(graphics, ec), end; !ec && it != end; it.increment(ec)) {
-            const auto &e = *it;
-            const std::u8string fname = e.path().filename().u8string(); // any name a mod's file may have
-            const std::u8string tail = u8".secondary.txt";
-            if (fname.size() <= tail.size() || fname.compare(fname.size() - tail.size(), tail.size(), tail) != 0)
-                continue;
-            const auto model = e.path().parent_path() / (fname.substr(0, fname.size() - tail.size()) + u8".mdlx");
-            const std::string key = prepared_key(e.path());
-            if (key == prepared_key(u8(skip)) || !std::filesystem::exists(model, ec))
-                continue;
-            work.emplace_back(e.path(), model);
-            std::lock_guard<std::mutex> lock(prepared_lock);
-            preparing.insert(key);
-        }
-    }
-    if (work.empty())
-        return;
-    prewarm.worker = std::thread([work] {
-        for (const auto &[file, model] : work) {
-            const std::string key = prepared_key(file);
-            Prepared p;
-            try {
-                const auto imported = assets::kh2::import_mdlx(model);
-                SkeletonDesc skeleton;
-                MeshDesc mesh;
-                describe(imported, skeleton, mesh);
-                p.bones = skeleton.names.size();
-                p.vertices = mesh.vertices.size();
-                const Config config = read_config(file, p.diagnostics);
-                if (!has_errors(p.diagnostics)) {
-                    auto cooked = std::make_shared<Rig>(cook(config, skeleton, mesh, p.diagnostics));
-                    if (!has_errors(p.diagnostics)) {
-                        prepare_references(*cooked, &p.diagnostics);
-                        p.rig = std::move(cooked);
-                    }
-                }
-                p.watch.record(config.files);
-            } catch (...) {
-                p.rig.reset(); // cooked again when loaded, which reports why
-            }
-            std::lock_guard<std::mutex> lock(prepared_lock);
-            if (p.rig)
-                prepared[key] = std::move(p);
-            preparing.erase(key);
-            prepared_done.notify_all();
-        }
-    });
-}
-
-// The rig prepared ahead for this model's file, when its files are as they were then (waits while it is being
-// prepared); null to cook it here
-std::shared_ptr<const Rig> take_prepared(ModelSecondary &m)
-{
-    const std::string key = prepared_key(u8(m.file));
-    std::unique_lock<std::mutex> lock(prepared_lock);
-    prepared_done.wait(lock, [&] { return preparing.count(key) == 0; });
-    const auto it = prepared.find(key);
-    if (it == prepared.end())
-        return nullptr;
-    const Prepared &p = it->second;
-    if (p.bones != m.skeleton.names.size() || p.vertices != m.mesh.vertices.size() || p.watch.changed())
-        return nullptr;
-    for (const auto &x : p.diagnostics)
-        say(m.name + ": " + format(x));
-    m.watch = p.watch;
-    return p.rig;
-}
-
 std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
 {
-    if (auto ready = take_prepared(m)) {
-        say(m.name + ": " + ready->summary + " (prepared ahead)");
-        m.debug = ready->config.debug || flag("KHDAYS_SECONDARY_DEBUG");
-        m.profile = ready->config.profile || flag("KHDAYS_SECONDARY_PROFILE");
-        m.trace = flag("KHDAYS_SECONDARY_TRACE");
-        return ready;
-    }
     Diagnostics d;
     const Config config = read_config(u8(m.file), d);
     std::shared_ptr<Rig> rig;
@@ -1159,13 +1031,6 @@ ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std:
     if (m->rig)
         khdays_log("secondary: %s: cooked and prepared in %.1f ms", name.c_str(),
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-    // the first model with secondary motion: every other one prepared ahead, so a model loaded mid-scene does
-    // not stall the game to cook it
-    static bool prewarmed = false;
-    if (!prewarmed && !flag("KHDAYS_SECONDARY_NO_PREWARM")) {
-        prewarmed = true;
-        prewarm_model_secondary(m->file);
-    }
     const std::size_t n = m->skeleton.names.size();
     m->pose.assign(n, {});
     m->out.assign(n, {});
@@ -1249,6 +1114,25 @@ bool fx_close(const Mat4 &a, const Mat4 &b)
     return true;
 }
 
+// Gfx_ApplyBaseTransform (0x0201574c), as Obj_RenderModel draws a model object (the ov107 enemies, the boss Riku):
+// the camera multiplied onto the projection, the position matrix NNS_G3dGlb's base alone, unflushed (NNS_G3dGlb at
+// 0x02047394: rotation at +0x94, translation +0xb8, scale +0xc4). Such a draw starts in the world: the live base is
+// its place, taken only when it is exactly the matrix the draw started from.
+bool live_base_world(const Mat4 &start, Mat4 &out)
+{
+    constexpr KhdaysRef kBase = 0x02047394U + 0x94U;
+    if (!khdays_game_ram(kBase) || !khdays_game_ram(kBase + 15U * 4U - 1U))
+        return false;
+    std::int32_t w[15];
+    std::memcpy(w, KHDAYS_W(kBase), sizeof(w));
+    Mat4 m;
+    khdays_g3d_base_matrix(w, m.data()); // as khdays_g3d_base reads a flushed one
+    if (!fx_close(m, start))
+        return false;
+    out = m;
+    return true;
+}
+
 // The root node in its placement's space, inverse(start) x root, is the game's own (camera-free) node
 // matrix, but rebuilt from the GE's fixed-point products of the camera with it: every turn of the camera
 // changes its rounding, and the body seen in the world shook by a fraction of a millimetre, which hair and
@@ -1296,6 +1180,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     // flushed camera (that cancels it only up to the GE's rounding, and the cloth feels the camera turn)
     Mat4 world_of_view, placed;
     bool camera_free = true, verified = false; // verified: its start is exactly its place under the camera
+    bool start_world = false;                  // the camera in the projection, the draw starting in the world
     const char *placed_by = "the camera";
     const bool own = actor_world(in.actor, placed);
     const bool shared =
@@ -1306,6 +1191,14 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         if (!m.said_placement)
             say(m.name + ": placed in the world by its actor's matrix (camera-independent)");
         m.said_placement = true;
+    } else if (live_base_world(in.start, placed)) { // its start is its own place, the camera in the projection
+        verified = true;
+        start_world = true;
+        placed_by = "its model object";
+        if (!m.said_object)
+            say(m.name + ": placed in the world by its model object's base transform, the camera in the projection "
+                         "(camera-independent)");
+        m.said_object = true;
     } else if (!(in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) &&
                !(in.base_kind == 2 && fx_close(kIdentity4, in.start)) && shared) {
         // drawn from a matrix not its own place (a weapon at the hand): this frame's view as another model found it
@@ -1380,7 +1273,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
             mul(placed, mul(hold_root(state, mul(inverse_affine(in.start), in.root)), inverse_affine(in.root)));
     // the view's way to the world for this frame's other draws under this camera, as held: the same as this
     // model's own, so a weapon drawn from its hand's matrix lies in the world where the hand does
-    if (verified && in.has_camera)
+    if (verified && in.has_camera && !start_world) // a world start is no way from the view for the others
         shared_view = {world_of_view, in.camera, now, true};
     const Mat4 view = inverse_affine(world_of_view);
     // the needed bones in the solver's space
@@ -1399,7 +1292,8 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     a.epoch = clock_.epoch;
     a.pose = &m.pose;
     a.placement = frame_of(mul(to_sim, root));
-    a.camera_distance = length(Vec3{in.root[12], in.root[13], in.root[14]}) / units;
+    const Mat4 seen = start_world && in.has_camera ? mul(in.camera, root) : in.root; // the root in view space
+    a.camera_distance = length(Vec3{seen[12], seen[13], seen[14]}) / units;
     a.environment = rig.config.environment ? &room_ : nullptr;
     // a camera cut: the camera's view of the actor jumped further in one draw than a camera moves (a new shot;
     // cutscenes re-stage their actors across one, and the cloth would take that as a fling). Judged about the

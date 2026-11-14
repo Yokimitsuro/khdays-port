@@ -114,22 +114,81 @@ group coat surface preset kh2_coat
   # coat's inside, not the wall; 2 mm outside its drawn controls (on them, the skin's blending left a line
   # of floor showing where it met the coat's inside)
   clip_world inset -0.2
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 0.00 0.00 0.00
+  rest 34 0.00 0.00 0.00
+  rest 42 0.00 0.00 0.00
+  rest 50 0.00 0.00 0.00
+  rest 58 0.00 0.00 0.00
+  rest 66 0.00 0.00 0.00
+  rest 74 0.00 0.00 0.00
+  rest 82 0.00 0.00 0.00
+  rest 29 0.00 0.00 0.00
+  rest 37 0.00 0.00 0.00
+  rest 45 0.00 0.00 0.00
+  rest 53 0.00 0.00 0.00
+  rest 61 0.00 0.00 0.00
+  rest 69 0.00 0.00 0.00
+  rest 77 0.00 0.00 0.00
+  rest 85 0.00 0.00 0.00
+  rest 30 0.00 0.00 0.00
+  rest 38 0.29 0.00 0.00
+  rest 46 -0.14 0.00 0.00
+  rest 54 0.12 0.00 0.00
+  rest 62 -0.10 0.00 0.00
+  rest 70 0.01 0.00 0.00
+  rest 78 -0.14 0.00 0.00
+  rest 31 0.00 0.00 0.00
+  rest 39 -0.12 0.00 0.00
+  rest 47 0.15 0.00 0.00
+  rest 55 -0.04 0.00 0.00
+  rest 63 0.08 0.00 0.00
+  rest 71 -0.11 0.00 0.00
+  rest 79 0.15 0.00 0.00
+  rest 32 0.00 0.00 0.00
+  rest 40 0.23 0.00 0.00
+  rest 48 -0.10 0.00 0.00
+  rest 56 -0.17 0.00 0.00
+  rest 64 0.05 0.00 0.00
+  rest 72 -0.12 0.00 0.00
+  rest 80 -0.10 0.00 0.00
+  rest 88 0.00 0.00 0.00
+  rest 92 0.00 0.00 0.00
+  rest 89 -0.01 0.00 0.00
+  rest 93 0.00 0.00 0.00
+  rest 90 0.01 0.00 0.00
+  rest 94 0.00 0.00 0.00
 end
 
 # --- Drawstrings: chains from the chest helpers, hung at load ---
 group string_l chain preset kh2_string
+  # calmer tips: KH2's run drawn jitter p99 10.1 -> 7.5 cm
+  damping 3.5
+  max_speed 5
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
   settle on steps 360
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 103 -11.20 -27.88 48.71
+  rest 104 2.76 3.18 26.51
+  rest 105 0.80 6.09 12.29
+  rest 106 0.18 3.13 5.83
 end
 group string_r chain preset kh2_string
+  damping 3.5
+  max_speed 5
   attach 99
   chain 220 221 222 223
   hang 0 -1 0.35
   settle on steps 360
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 220 11.25 28.02 48.65
+  rest 221 -2.93 -3.10 26.52
+  rest 222 -0.80 -6.09 12.29
+  rest 223 -0.18 -3.18 5.81
 end
 
 # --- Hood: one bone (101) hanging behind the neck; it swings and lies on the back as one piece
@@ -139,6 +198,8 @@ group hood chain preset kh2_hood
   chain 101
   settle on steps 240
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 -0.01 91.71 -0.01
 end
 
 # --- Sleeve cuffs: fitted round the hands by bones.txt's `cuff`, not simulated ---
@@ -147,6 +208,25 @@ end
 group hair hair preset kh2_hair
   attach 170
   tufts 172 174 176 187 189 191 193 195 197 199 201 203 205 207 209 211 213 215
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 172 0.00 0.00 0.00
+  rest 174 0.00 0.00 0.00
+  rest 176 0.00 0.00 0.00
+  rest 187 0.00 0.00 0.00
+  rest 189 0.00 0.00 0.00
+  rest 191 0.00 0.00 0.00
+  rest 193 0.00 0.00 0.00
+  rest 195 0.00 0.00 0.00
+  rest 197 0.00 0.00 0.00
+  rest 199 0.00 0.00 0.00
+  rest 201 0.00 0.00 0.00
+  rest 203 0.00 0.00 0.00
+  rest 205 0.00 0.00 0.00
+  rest 207 0.00 0.00 0.00
+  rest 209 0.00 0.00 0.00
+  rest 211 0.00 0.00 0.00
+  rest 213 0.00 0.00 0.00
+  rest 215 0.00 0.00 0.00
 end
 
 # The flat cards on the back of the head and the tuft they hang on: held closer
@@ -154,6 +234,11 @@ group hair_back hair preset kh2_hair_card
   attach 170
   tuft 178
   tufts 181 183 185
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 178 0.00 0.00 0.00
+  rest 181 0.00 0.00 0.00
+  rest 183 0.00 0.00 0.00
+  rest 185 0.00 0.00 0.00
 end
 
 # --- Animation controls ---

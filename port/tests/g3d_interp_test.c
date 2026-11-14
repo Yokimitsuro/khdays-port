@@ -132,6 +132,19 @@ int main(void)
     CHECK(near(x_of(&work, &newer, 4, &s), 0.8));  /* the jump not drawn between */
     CHECK(work.jumped == 1);
     CHECK(near(x_of(&work, &newer, 5, &s), 0.05)); /* the room between, its wall's far place not a jump */
+    /* the pair named (the picture's refreshes between two game frames): matched once, then each alpha
+     * placed from the match kept, as a call that matches again places it */
+    khdays_g3d_interp_pair(&work, 1, 2);
+    CHECK(khdays_g3d_interpolate(&work, &older.list, &newer.list, 0.25f, &out));
+    CHECK(near(x_of(&work, &newer, 0, &s), 0.505));
+    CHECK(khdays_g3d_interpolate(&work, &older.list, &newer.list, 0.75f, &out)); /* from the kept match */
+    CHECK(work.cached && work.jumped == 1);
+    CHECK(near(x_of(&work, &newer, 0, &s), 0.515));
+    CHECK(near(x_of(&work, &newer, 1, &s), -0.485));
+    CHECK(near(x_of(&work, &newer, 2, &s), 0.3));
+    CHECK(near(x_of(&work, &newer, 4, &s), 0.8));
+    khdays_g3d_interp_pair(&work, 2, 3); /* another pair: matched again */
+    CHECK(!work.cached);
     khdays_g3d_list_free(&out);
     khdays_g3d_interp_free(&work);
     if (failures == 0) {

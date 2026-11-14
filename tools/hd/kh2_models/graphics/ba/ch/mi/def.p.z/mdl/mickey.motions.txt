@@ -1,0 +1,77 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is KH2's Mickey (P_EX200), playing his own mset on his own bones.
+mset P_EX200.mset
+root_motion off
+# The game's weapon (mi_w_tg_R) on KH2's bone past the right hand (169), turned from that bone's axes into the frame
+# the game's weapon is made in (mi_w_tg_R's rest frame on the game's model)
+weapon mi_w_tg_R 169 rotate 90 -90 0
+# What he holds plays W_EX200.mset's slots as he plays P_EX200's (on W_EX200's bones; bone 2 the blade): its 14
+# motions are P_EX200's slots, names and lengths. The replaced keyblades (`held kh2_2`) are posed by it.
+weapon_motions W_EX200.mset W_EX200.mdlx 2
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 (his idle; P_EX200 has no
+# calm idle) turns them at its first frame
+ds_pose 0 126-140 170-184
+
+b_mi_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_mi_A000
+# The game's landing animation
+landing b_mi_A004
+b_mi_A001 8 blend 8
+b_mi_A002 12 blend 8
+b_mi_A003 12 blend 8
+# the fall from the game's 12th frame in the air
+b_mi_A003@12 16 blend 8
+b_mi_A004 20 finish blend 8
+# Damage: two motions, 40 from the front (the game's A005, A006), 44 from behind (A007, A008)
+b_mi_A005 40 finish blend 8
+b_mi_A006 40 finish blend 8
+b_mi_A007 44 finish blend 8
+b_mi_A008 44 finish blend 8
+
+# The game's own animations (no KH2 motion for them: the ledge, attacks, guard, magic, limit) fade into the idle over
+# 8 frames when the game goes back to it
+b_mi_A009 blend 8
+b_mi_A010 blend 8
+b_mi_A011 blend 8
+b_mi_A012 blend 8
+b_mi_A013 blend 8
+b_mi_B000 blend 8
+b_mi_B001 blend 8
+b_mi_B002 blend 8
+b_mi_B003 blend 8
+b_mi_B004 blend 8
+b_mi_B005 blend 8
+b_mi_B006 blend 8
+b_mi_B007 blend 8
+b_mi_Ca000 blend 8
+b_mi_Ca001 blend 8
+# b_mi_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_mi_Ca003 blend 8
+b_mi_Ca004 blend 8
+b_mi_Ca005 blend 8
+b_mi_Ca006 blend 8
+b_mi_Ca007 blend 8
+b_mi_Ca008 blend 8
+b_mi_D000 blend 8
+b_mi_D001 blend 8
+b_mi_D002 blend 8
+b_mi_D003 blend 8
+b_mi_L000 blend 8
+b_mi_L001 blend 8
+b_mi_L002 blend 8
+b_mi_L003 blend 8
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk at its own
+# pace, crossing from and to the run over 6 frames
+walk b_mi_A001 4 blend 6
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (glide hover +18,
+# forward glide +37 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -16 2 for b_mi_Ca000
+ds_pose rotate 0 0 -38 2 for b_mi_Ca001

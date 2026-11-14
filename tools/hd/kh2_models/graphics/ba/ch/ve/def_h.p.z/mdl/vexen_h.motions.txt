@@ -1,0 +1,85 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Vexen (N_CM040) as Days' vexen_h and vexen, playing KH2's own motions for him (`own`: on his own bones),
+# N_CM040_BTL's, whose skeleton is N_CM040's. Its slots are B_EX370's (0, 4, 5, 10-21 the same names) but for the walk:
+# his slot 1 is empty, and 02A (slot 2) is both his walk and his run. No jump (3 is empty).
+mset N_CM040_BTL.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# What the game holds at its weapon joint (ve_w_tg), on N_CM040's shield bone (156; bones.txt places it on that joint).
+# Under KH2 motions it follows the bone; under the game's own animations the joint. No turn: Days' shield (ve_w00600)
+# lies in its own axes as the baked one in 156's: x -101..84 against -114..74, y -50..55 against -53..53, z 0..19
+# against -3..22 (both longer toward -x and bulging toward +z; measured on both meshes)
+weapon ve_w_tg 156
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 133-154 244-265
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_ve_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_ve_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_ve_A004
+# Moving: 02A (slot 2) for the game's run, and for the port's walk (the stick pushed short of running) at its own pace
+b_ve_A001 2 blend 8
+walk b_ve_A001 2 blend 8
+# The fall (04A) from the game's 12th frame in the air, from its loop (tick 18 of 38: before it, it comes out of a KH2
+# jump he has none of), as larxene_h's; the take-off and the rise stay the game's. The landing (05A), played out
+b_ve_A003@12 4 start_loop blend 8
+b_ve_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_ve_A005 10 finish blend 8
+b_ve_A006 11 finish blend 8
+b_ve_A007 13 finish blend 8
+b_ve_A008 12 finish blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_ve_A005 16 land 17 finish blend 8
+air b_ve_A006 16 land 17 finish blend 8
+air b_ve_A007 18 land 19 finish blend 8
+air b_ve_A008 18 land 19 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The
+# take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B011, ba/ch/ve/am.p2), the guard and the other
+# actions (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L002)
+b_ve_A002 blend 8
+b_ve_A009 blend 8
+b_ve_A010 blend 8
+b_ve_A011 blend 8
+b_ve_A012 blend 8
+b_ve_A013 blend 8
+b_ve_B000 blend 8
+b_ve_B001 blend 8
+b_ve_B002 blend 8
+b_ve_B003 blend 8
+b_ve_B004 blend 8
+b_ve_B005 blend 8
+b_ve_B006 blend 8
+b_ve_B007 blend 8
+b_ve_B008 blend 8
+b_ve_B009 blend 8
+b_ve_B010 blend 8
+b_ve_B011 blend 8
+b_ve_Ca000 blend 8
+b_ve_Ca001 blend 8
+# b_ve_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_ve_Ca003 blend 8
+b_ve_Ca004 blend 8
+b_ve_Ca005 blend 8
+b_ve_Ca006 blend 8
+b_ve_Ca007 blend 8
+b_ve_Ca008 blend 8
+b_ve_D000 blend 8
+b_ve_D001 blend 8
+b_ve_D002 blend 8
+b_ve_D003 blend 8
+b_ve_L000 blend 8
+b_ve_L001 blend 8
+b_ve_L002 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (forward glide +14
+# degrees, replay) taken to about +3
+ds_pose rotate 0 0 -12 2 for b_ve_Ca001

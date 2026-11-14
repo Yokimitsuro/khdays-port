@@ -1,5 +1,6 @@
 /* A picture between two of the game's 3D lists (see g3d_interp.h). */
 #include "g3d_interp.h"
+#include "../runtime/core/phases.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -290,15 +291,50 @@ static int32_t match_drawings(KhdaysG3dInterp *work, const KhdaysG3dList *older,
     return count;
 }
 
-int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, const KhdaysG3dList *newer, float alpha,
-                           KhdaysG3dList *out)
+/* Each matched polygon's vertices between the older's and the newer's at t (older_of: the match). */
+static void blend(KhdaysG3dInterp *work, const KhdaysG3dList *older, const KhdaysG3dList *newer, double t)
+{
+    for (int32_t i = 0; i < newer->npre; ++i) {
+        const KhdaysG3dPolygon *p = &newer->pre[i];
+        const int32_t j = work->older_of[i];
+        const KhdaysG3dPolygon *q;
+        if (j < 0) {
+            continue;
+        }
+        q = &older->pre[j];
+        for (int32_t k = 0; k < p->count; ++k) {
+            const KhdaysG3dPreVertex *a = &older->pre_verts[q->first + k];
+            KhdaysG3dPreVertex *b = &work->verts[p->first + k];
+            /* place (0-3), colour (4-6) and alpha (9); the texture coordinates (7, 8) are the newer's */
+            if (p->flags & KHDAYS_G3D_MOD) {
+                float fa[10], fb[10];
+                memcpy(fa, a->word, sizeof(fa));
+                memcpy(fb, b->word, sizeof(fb));
+                for (int w = 0; w < 10; ++w) {
+                    if (w != 7 && w != 8) {
+                        fb[w] = (float)((double)fa[w] + ((double)fb[w] - (double)fa[w]) * t);
+                    }
+                }
+                memcpy(b->word, fb, sizeof(fb));
+            } else {
+                for (int w = 0; w < 10; ++w) {
+                    if (w != 7 && w != 8) {
+                        b->word[w] = between_fixed(a->word[w], b->word[w], t);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static int interpolate_body(KhdaysG3dInterp *work, const KhdaysG3dList *older, const KhdaysG3dList *newer, float alpha,
+                            KhdaysG3dList *out)
 {
     int32_t size, groups, older_groups = 0;
     const double t = alpha < 0.0f ? 0.0 : alpha > 1.0f ? 1.0 : (double)alpha;
     work->matched = 0;
     work->jumped = 0;
     work->jumped_mod = 0;
-    memset(work->jumped_in, 0, sizeof(work->jumped_in));
     work->polygons = newer->npre;
     if (older == NULL || t >= 1.0 || older->npre == 0) {
         return khdays_g3d_finish(newer, NULL, out);
@@ -313,13 +349,34 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
         work->verts = grown;
         work->vert_capacity = newer->npre_verts;
     }
+    memcpy(work->verts, newer->pre_verts, sizeof(KhdaysG3dPreVertex) * (size_t)newer->npre_verts);
+    if (work->keyed && work->cached && work->cached_npre == newer->npre) { /* the same pair: its match kept */
+        work->matched = work->cached_matched;
+        work->jumped = work->cached_jumped;
+        work->jumped_mod = work->cached_jumped_mod;
+        blend(work, older, newer, t);
+        return khdays_g3d_finish(newer, work->verts, out);
+    }
+    work->cached = 0;
+    memset(work->jumped_in, 0, sizeof(work->jumped_in));
+    if (newer->npre > work->older_of_capacity) {
+        int32_t *grown = (int32_t *)realloc(work->older_of, sizeof(int32_t) * (size_t)newer->npre);
+        if (grown == NULL) {
+            khdays_g3d_finish(newer, NULL, out);
+            return 0;
+        }
+        work->older_of = grown;
+        work->older_of_capacity = newer->npre;
+    }
     size = index_older(work, older);
     groups = size != 0 ? match_drawings(work, older, newer, &older_groups) : -1;
     if (groups < 0) {
         khdays_g3d_finish(newer, NULL, out);
         return 0;
     }
-    memcpy(work->verts, newer->pre_verts, sizeof(KhdaysG3dPreVertex) * (size_t)newer->npre_verts);
+    for (int32_t i = 0; i < newer->npre; ++i) {
+        work->older_of[i] = -1;
+    }
     for (int32_t i = 0; i < newer->npre; ++i) {
         const KhdaysG3dPolygon *p = &newer->pre[i];
         KhdaysG3dPreInfo key = newer->pre_info[i];
@@ -362,34 +419,40 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
             continue;
         }
         ++work->matched;
-        for (int32_t k = 0; k < p->count; ++k) {
-            const KhdaysG3dPreVertex *a = &older->pre_verts[q->first + k];
-            KhdaysG3dPreVertex *b = &work->verts[p->first + k];
-            /* place (0-3), colour (4-6) and alpha (9); the texture coordinates (7, 8) are the newer's */
-            if (p->flags & KHDAYS_G3D_MOD) {
-                float fa[10], fb[10];
-                memcpy(fa, a->word, sizeof(fa));
-                memcpy(fb, b->word, sizeof(fb));
-                for (int w = 0; w < 10; ++w) {
-                    if (w != 7 && w != 8) {
-                        fb[w] = (float)((double)fa[w] + ((double)fb[w] - (double)fa[w]) * t);
-                    }
-                }
-                memcpy(b->word, fb, sizeof(fb));
-            } else {
-                for (int w = 0; w < 10; ++w) {
-                    if (w != 7 && w != 8) {
-                        b->word[w] = between_fixed(a->word[w], b->word[w], t);
-                    }
-                }
-            }
-        }
+        work->older_of[i] = j;
     }
+    work->cached = work->keyed;
+    work->cached_npre = newer->npre;
+    work->cached_matched = work->matched;
+    work->cached_jumped = work->jumped;
+    work->cached_jumped_mod = work->jumped_mod;
+    blend(work, older, newer, t);
     return khdays_g3d_finish(newer, work->verts, out);
+}
+
+/* KHDAYS_PROFILE: timed with the finish it ends in (runtime/core/phases.h) */
+int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, const KhdaysG3dList *newer, float alpha,
+                           KhdaysG3dList *out)
+{
+    const unsigned long long t = khdays_phase_start();
+    const int r = interpolate_body(work, older, newer, alpha, out);
+    khdays_phase_end(KHDAYS_PHASE_INTERP, t);
+    return r;
+}
+
+void khdays_g3d_interp_pair(KhdaysG3dInterp *work, uint64_t older, uint64_t newer)
+{
+    if (!work->keyed || work->pair_older != older || work->pair_newer != newer) {
+        work->cached = 0;
+    }
+    work->pair_older = older;
+    work->pair_newer = newer;
+    work->keyed = 1;
 }
 
 void khdays_g3d_interp_free(KhdaysG3dInterp *work)
 {
+    free(work->older_of);
     free(work->verts);
     free(work->slots);
     free(work->groups);

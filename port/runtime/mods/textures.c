@@ -2,6 +2,7 @@
  * palette slots, their bank, the bank's origin (origin.c) and the names there (names.cpp); looked up
  * once per slot place, format and palette, and again only after its bank changed. */
 #include "textures.h"
+#include "../core/phases.h"
 #include "../../gfx/character_shadow.h"
 #include "names.h"
 #include "../core/origin.h"
@@ -309,7 +310,11 @@ static int replacement_for(const char *name, u32 param)
             return -1;
         }
     }
-    pixels = khdays_png_read(path, &width, &height, &error);
+    {
+        const unsigned long long decode_at = khdays_phase_start(); /* KHDAYS_PROFILE (phases.h) */
+        pixels = khdays_png_read(path, &width, &height, &error);
+        khdays_phase_end(KHDAYS_PHASE_HD_DECODE, decode_at);
+    }
     if (pixels == NULL) {
         fprintf(stderr, "textures: %s cannot be read (%s): the game's own is drawn\n", path, error);
         return -1;
@@ -327,7 +332,7 @@ static int replacement_for(const char *name, u32 param)
     }
     e->texture.width = width;
     e->texture.height = height;
-    e->texture.rgba = (const uint32_t *)pixels; /* 8-bit RGBA, red first: little-endian words */
+    e->texture.rgba = (const uint32_t *)pixels;     /* 8-bit RGBA, red first: little-endian words */
     e->texture.info = KHDAYS_REPLACEMENT_ON_DEMAND; /* drawn by the 3D's polygons only */
     InterlockedExchange(&nreplacements, n + 1);
     if (trace) {
