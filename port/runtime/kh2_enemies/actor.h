@@ -421,6 +421,11 @@ public:
     virtual void attack_on_hit(std::uint32_t /*at*/, Actor & /*by*/, std::uint32_t /*routine*/, std::uint32_t /*value*/)
     {
     }
+    // An attack's routine run when it is reflected (2:74: + 0xa4 the machine, + 0xa8 the routine, + 0xac its value)
+    virtual void attack_on_reflect(std::uint32_t /*at*/, Actor & /*by*/, std::uint32_t /*routine*/,
+                                   std::uint32_t /*value*/)
+    {
+    }
     // An object's aim point in the world (1:88: its record's point, FUN_1403b5cb0 -> FUN_1403bdde0): a KH2 enemy's
     // aim shape, a player's middle
     virtual bool aim_point(Object & /*o*/, Vec3 & /*out*/)
@@ -455,6 +460,7 @@ public:
     struct ShapeAt final {
         int group = 0;
         Vec3 at{};
+        float radius = 0.0F;
     };
     virtual std::vector<ShapeAt> shapes(Actor &, int /*kind*/)
     {

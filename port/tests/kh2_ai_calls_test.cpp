@@ -948,6 +948,7 @@ void test_player_calls()
 struct AimWorld final : kh::World {
     std::vector<kh::Actor *> all;
     std::vector<std::pair<kh::Actor *, kh::Vec3>> aims; // each actor's one aim (group 0)
+    std::vector<std::tuple<kh::Actor *, int, kh::Vec3, float>> more; // more aims: actor, group, point, radius
     int offered = -1;
     kh::Object *source = nullptr;
     kh::Object *player(kh::Actor &) override
@@ -964,6 +965,9 @@ struct AimWorld final : kh::World {
         for (const auto &[x, at] : aims)
             if (x == &a && kind == 3)
                 out.push_back({0, at});
+        for (const auto &[x, group, at, radius] : more)
+            if (x == &a && kind == 3)
+                out.push_back({group, at, radius});
         return out;
     }
     void offer(kh::Actor &, int command, kh::Object *from) override
@@ -977,7 +981,7 @@ void test_aims()
 {
     Rig rig;
     kh::read_shapes(rig.calls, "0:42 1 1\n0:68 2 1\n6:3 2 0\n6:8 2 0\n6:5 7 0\n1:140 1 1\n1:191 1 1\n1:165 4 0\n"
-                               "1:221 3 1\n");
+                               "1:221 3 1\n6:11 3 0\n");
     const Words loop = misc(0) + Words{0x0007, 0xfffd};
     kh::Actor knight(script({{1, 0}}, loop), rig.memory, rig.calls, "knight");
     kh::Actor near(script({{1, 0}}, loop), rig.memory, rig.calls, "near");
@@ -1029,6 +1033,17 @@ void test_aims()
     CHECK(call(rig, knight, 1, 221, {self, i(427), self}).i() == 1);
     call(rig, knight, 1, 165, {i(1), i(427), self, i(1)});
     CHECK(world.offered == 427 && world.source == &knight);
+    // 6:11: the far one's aim nearest the start to its surface -- group 2 (1005 away, 300 wide) before group 3 (905
+    // away, a point) and group 0 (2002 away); a handle naming no object leaves the record empty
+    world.more = {{&far, 2, {0.0F, -100.0F, 1000.0F}, 300.0F}, {&far, 3, {0.0F, -100.0F, 900.0F}, 0.0F}};
+    const std::uint32_t named = rig.memory.add(16, "an AI handle");
+    rig.memory.set_u32(named + 4, far.address());
+    call(rig, knight, 6, 11, {adr(found), adr(named), adr(vec(rig.memory, 0.0F, 0.0F, 0.0F))});
+    CHECK(rig.memory.u32(found) == far.address() && rig.memory.u32(found + 4) == 2 &&
+          rig.memory.u32(found + 12) == 0xffffffffu);
+    rig.memory.set_u32(named + 4, 0);
+    call(rig, knight, 6, 11, {adr(found), adr(named), adr(vec(rig.memory, 0.0F, 0.0F, 0.0F))});
+    CHECK(rig.memory.u32(found) == 0);
 }
 
 // The world's side of KH2's attacks of their own (2:10 and the calls on one): what each call told it

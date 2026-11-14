@@ -993,6 +993,9 @@ struct AttackObject final {
     bool on_floor = false; // it met the room's floor (2:41: + 8 bit 4)
     std::uint32_t hit = 0; // the object it hit last (2:44)
     std::uint32_t on_hit = 0, on_hit_value = 0; // its script's routine run when it hits (2:38), 0 none
+    // its script's routine run when it is reflected (2:74), 0 none: kept, not run -- the port does not see Days's
+    // guard send a KH2 attack back
+    std::uint32_t on_reflect = 0, on_reflect_value = 0;
 };
 std::map<std::uint32_t, AttackObject> attacks;
 
@@ -1686,6 +1689,11 @@ public:
         if (const auto o = attacks.find(at); o != attacks.end())
             o->second.on_hit = routine, o->second.on_hit_value = value;
     }
+    void attack_on_reflect(std::uint32_t at, Actor &, std::uint32_t routine, std::uint32_t value) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end())
+            o->second.on_reflect = routine, o->second.on_reflect_value = value;
+    }
     bool aim_point(Object &o, Vec3 &out) override
     {
         const Vec3 p = o.place();
@@ -1948,7 +1956,7 @@ public:
             if ((sh.kind & 0xff) == kind && on.count(sh.group) != 0) {
                 float d[3];
                 days_point(e, now, sh.bone, sh.at, d);
-                out.push_back({sh.group, to_kh2(d)});
+                out.push_back({sh.group, to_kh2(d), sh.radius});
             }
         return out;
     }

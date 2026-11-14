@@ -1864,6 +1864,39 @@ void add_search(ai::Calls &calls)
         for (const auto &sh : x->world->shapes(*x, 3))
             list_aim(m.memory(), a[0].bits, x->address(), sh.group);
     });
+    // 6:11 a target record made the aim of one object nearest a point, to its surface (Ts::trap_target_searcher_search_
+    // obj, FUN_14053e460 -> FUN_14053ff10: the object an AI handle's + 4 names, its shapes of kind 3 in its groups on,
+    // the point's distance less the shape's radius; the record emptied first, FUN_1403bda50, and a NaN of the point
+    // taken as 0): the Lingering Will's B_EX430
+    calls.set(6, 11, [](ai::Machine &m, std::span<ai::Value> a) {
+        ai::Memory &mem = m.memory();
+        const std::uint32_t out = a[0].bits;
+        Vec from = read_vec(m, a[2].bits);
+        for (float &f : from.v)
+            if (std::isnan(f))
+                f = 0.0F;
+        mem.set_u32(out, 0);
+        mem.set_u32(out + 4, 0);
+        mem.set_u32(out + 8, 0);
+        mem.set_u32(out + 12, 0xffffffffu);
+        const std::uint32_t named = a[1].bits != 0 ? mem.u32(a[1].bits + 4) : 0;
+        Object *o = named != 0 ? Object::at(mem, named) : nullptr;
+        Actor *x = o != nullptr ? o->actor() : nullptr;
+        if (x == nullptr || x->world == nullptr)
+            return;
+        bool found = false;
+        float best = 0.0F;
+        for (const auto &sh : x->world->shapes(*x, 3)) {
+            const float d[3] = {sh.at[0] - from.v[0], sh.at[1] - from.v[1], sh.at[2] - from.v[2]};
+            const float gap = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) - sh.radius;
+            if (!found || gap < best) {
+                found = true;
+                best = gap;
+                mem.set_u32(out, x->address());
+                mem.set_u32(out + 4, std::uint32_t(sh.group));
+            }
+        }
+    });
     // 6:5 the nearest aim (or the farthest) of KH2's actors from a point within the search's reach and cone, into a
     // record (FUN_14053dd20 -> FUN_14053fb80): along the ground only when asked; with the last flag those listed are
     // passed over and the one found is listed
@@ -2377,6 +2410,15 @@ void add_shots(ai::Calls &calls)
             entry = (entry - m.code()) / 2;
         if (World *w = world(m))
             w->attack_on_hit(a[0].bits, *running(m), entry, a[2].bits);
+    });
+    // 2:74 a routine of the script run when the attack is reflected, with a value (trap_attack_set_reflect_callback,
+    // FUN_140432c40: + 0xa4 the machine, + 0xa8 the routine, + 0xac the value): the Lingering Will's B_EX430
+    calls.set(2, 74, [world](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint32_t entry = a[1].bits;
+        if (a[1].tag == ai::Tag::Address && entry >= m.code())
+            entry = (entry - m.code()) / 2;
+        if (World *w = world(m))
+            w->attack_on_reflect(a[0].bits, *running(m), entry, a[2].bits);
     });
     // 6:54 a vector copied into one of its own (FUN_14053ed00: DAT_1407883d8)
     calls.set(6, 54,

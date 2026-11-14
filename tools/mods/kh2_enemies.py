@@ -138,6 +138,8 @@ KINDS = {
     "W_EX010_ROXAS_DARK": "Roxas's keyblade (dark)",
     # her Absent Silhouette and her data battle (hb33's b_83 and b_81, battle level 32 and 99)
     "B_EX400": "Larxene",
+    # FINAL MIX's Lingering Will
+    "B_EX420": "Lingering Will",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the

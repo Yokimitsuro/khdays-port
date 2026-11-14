@@ -807,10 +807,20 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   level 32 and 99). 2:95 a sheet of her own (battle entry 216), 6:69 the others of her part number hidden as she ends,
   10:22 whether an object is blown away (KH2's blow class: 1:129, 2:1). **Seen**: her clones (`bunshin`), her claws and
   steps. Her journal names no object of hers: her stand-in's name shows.
+- **The Lingering Will** `B_EX420` (no voice bank of his own): every call of his script answered (171). 1:367 where a
+  step along his facing would end (his 12 m dash's end, 1:220's wall-stopped step), 2:82 to 2:84 and 7:32 his vacuum's
+  turning, near range, rate and reach (the turning applied across the pull), 2:96 whether an attack of his still
+  stands, 0:81 a pad button pressed this frame (KH2's PS2 bits as Days's buttons: he waits on L1, Days's L), 1:365
+  a group of the player's commands turned off (Days's deck keeps its own: none). The object he makes, `B_EX430`
+  (80 calls): 2:74 its attack's routine for when it is reflected (`trap_attack_set_reflect_callback`: kept, not run --
+  the port does not see Days's guard send a KH2 attack back), 6:11 a target record made the aim of one object nearest
+  a point, measured to the shape's surface (`trap_target_searcher_search_obj`). `--only B_EX420 B_EX430` makes a mod
+  of him. **Seen** (2026-11-14, the coliseum, a walk pressing X and A by turns for three minutes): his first mode
+  ("SWORD & KNUCKLE") -- `atk_sword`, `atk_knuckle`, `atk_whip`, his high-speed dashes and their combos, his revenge --
+  his effects and his 96 sounds, the player struck from 359 to 169; `B_EX430` not yet made by then.
 - **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
   `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
-  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Zexion (`B_EX370`: 22), the
-  Lingering Will (`B_EX420`: 10).
+  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Zexion (`B_EX370`: 22).
 
 ### Bosses bound to their rooms
 
