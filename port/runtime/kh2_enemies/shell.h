@@ -55,6 +55,23 @@ int khdays_kh2_enemies_control_off(void);
  * field however far, this frame. */
 int khdays_kh2_enemies_prize_drain(void);
 
+/* ui/reaction_command.cpp: whether an enemy's own pictures draw the player's command menu (1:359: Zexion's book in his
+ * Lexicon) -- its .a.us's path (UTF-8) into `archive`, holding the IMGD and SEQD named "comd", and its HD picture's
+ * mod path without the extension (kh2/fx/<name>/-<n>: numbered after its effects' pages) into `picture`; 0 none. */
+int khdays_kh2_enemies_command_image(char *archive, int archive_room, char *picture, int picture_room);
+
+/* Ov022_UpdateCommandInput (prepare.py's joins): whether this A press on the deck chooses a command of the menu a KH2
+ * enemy's script gives a free player (1:237: Zexion's Lexicon's pages; the runtime sends it), Days's own deck slot then
+ * not used; and at the command's commit, that press's command made none (kind 7, argument 0: 1 returned). */
+int khdays_kh2_enemies_menu_takes_a(int pressed);
+int khdays_kh2_enemies_menu_commit(signed char *kind, unsigned short *arg);
+
+/* ui/reaction_command.cpp, drawing that menu as KH2's own (four slots, an enemy's own pictures over the deck): how many
+ * slots it has (0 none shown) and its own cursor -- a slot on or back as Days's deck steps a row, A then choosing the
+ * slot it is on --, asked each VBlank it is drawn; a slot's command's name (UTF-16, how many letters, 0 none). */
+int khdays_kh2_enemies_menu_slots(int *cursor);
+int khdays_kh2_enemies_menu_slot(int slot, unsigned short *out, int room);
+
 /* Days's lock-on mark's point for the enemy `actor` locked on (Ov022_UpdateSelectionMarker's): a KH2 enemy's aim point
  * (its 0x307 shape: the Soldier's chest, Cerberus's heads) in the game's memory, else `point` as it was. DS addresses. */
 unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point);

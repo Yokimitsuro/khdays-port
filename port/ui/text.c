@@ -11,6 +11,7 @@
 #include "hud_options.h"
 #include "kh2_obtained.h"
 #include "kh2_mission_panel.h"
+#include "reaction_command.h"
 #include "../gpu/gpu2d.h"
 #include "../runtime/mods/font_runtime.h"
 #include "../runtime/mods/models.h"
@@ -3535,6 +3536,9 @@ static void emit(void)
             continue;
         }
         const int information = emit_information(c, ox, oy, &l, palettes[c->engine], scale);
+        /* the command deck's names (Ov002_DrawPanelRowText's canvas) under a KH2 enemy's own command menu, which writes
+           them itself (ui/reaction_command.h: Zexion's book): left out, its cells with them */
+        const int deck_hidden = c->command_cache && c->engine == 0 && khdays_ui_command_image_standing();
         /* Follow layer scroll and repeat where the tilemap wraps onto the screen. */
         lw = l.wt * 8;
         lh = l.ht * 8;
@@ -3548,7 +3552,7 @@ static void emit(void)
         e.image = c->image;
         KhdaysUiElement anchor = e;
         int anchor_cells = -1;
-        for (int ex = x - lw; !information && ex < KHDAYS_SCREEN_W; ex += lw) {
+        for (int ex = x - lw; !information && !deck_hidden && ex < KHDAYS_SCREEN_W; ex += lw) {
             for (int ey = y - lh; ey < KHDAYS_SCREEN_H; ey += lh) {
                 if (ex + c->area_w * 8 > 0 && ey + c->area_h * 8 > 0) {
                     e.x = (float)ex;
@@ -3580,12 +3584,13 @@ static void emit(void)
         for (int row = 0; row < c->area_h; ++row) {
             for (int col = 0; col < c->area_w; ++col) {
                 const int tile = row * c->area_w + col;
-                if (c->cells[tile] != 0xffffu && (!c->graphics[tile] || c->hd_image >= 0)) {
+                if (c->cells[tile] != 0xffffu && (deck_hidden || !c->graphics[tile] || c->hd_image >= 0)) {
                     khdays_ui_left_out_cell(KHDAYS_UI_TEXT, c->engine, c->bg, (ox + col) % l.wt, (oy + row) % l.ht);
                 }
             }
         }
         if (!information && c->extra && c->extra->image >= 0) {
+            const int shown = !deck_hidden;
             MappedImage *m = c->extra;
             e.x = (float)-(l.hofs & 7);
             e.y = (float)-(l.vofs & 7);
@@ -3593,8 +3598,9 @@ static void emit(void)
             e.h = EXTRA_ROWS * 8.0f;
             e.image = m->image;
             e.slot = (uint32_t)c->bg;
-            khdays_ui_emit_following(KHDAYS_UI_TEXT, &e, &anchor);
-            if (m->hd_image >= 0) {
+            if (shown)
+                khdays_ui_emit_following(KHDAYS_UI_TEXT, &e, &anchor);
+            if (shown && m->hd_image >= 0) {
                 e.image = m->hd_image;
                 e.slot |= KES_DIRECT | KES_FINE;
                 khdays_ui_emit_following(KHDAYS_UI_TEXT, &e, &anchor);
@@ -3602,7 +3608,8 @@ static void emit(void)
             for (int my = 0; my < EXTRA_ROWS; ++my) {
                 for (int mx = 0; mx < EXTRA_COLS; ++mx) {
                     const int k = m->source[my * EXTRA_COLS + mx];
-                    if (k >= 0 && (!c->graphics[(k / c->param) * c->area_w + k % c->param] || m->hd_image >= 0))
+                    if (k >= 0 &&
+                        (!shown || !c->graphics[(k / c->param) * c->area_w + k % c->param] || m->hd_image >= 0))
                         khdays_ui_left_out_cell(KHDAYS_UI_TEXT, c->engine, c->bg, ((l.hofs >> 3) + mx) % l.wt,
                                                 ((l.vofs >> 3) + my) % l.ht);
                 }

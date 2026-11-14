@@ -203,6 +203,14 @@ int khdays_reaction_talk_commit(signed char *, unsigned short *)
 {
     return 0;
 }
+int khdays_kh2_enemies_menu_takes_a(int)
+{
+    return 0; // no KH2 enemy's command menu on the deck
+}
+int khdays_kh2_enemies_menu_commit(signed char *, unsigned short *)
+{
+    return 0;
+}
 }
 
 void information_input_test(bool keep, unsigned panel)

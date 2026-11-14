@@ -832,7 +832,10 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   each prize taken where it lies; a join in `Ov002_CollectNearbySpots` takes every one for the frame, homing to the
   player), 1:272 the dead mark (+ 0x9b8 bit 2, which an enemy's end now sets too), 1:305 and 1:306 the camera's eye
   and the point it looks at (Days's camera's last commit), 1:359 and 1:360 the command menu in his own pictures
-  (Days's deck is its own: not shown), 10:56 a friend's warp point (none in Days). **Seen** (2026-11-14, the
+  (his book in place of Days's deck: "A command menu in an enemy's own pictures" below), 10:56 a friend's warp point
+  (none in Days). His .a.us's HD pictures are PNGs (-0 to -34), not DDS as other objects': the mod tool copies both,
+  and the effects' pages are read from either (they had been left out: his effects drawn in their PS2 pictures).
+  **Seen** (2026-11-14, the
   coliseum, level 99, a walk pressing X and A): his capture (`atk_capture`: the illusion takes the player,
   `success_capture` shouted), his illusion (`start_illusion` at the illusion's trigger 10: the room's light out, his
   voice, his loop, nine books made, the illusion ended and the player given back), his flight (`move_to_fly_height`,
@@ -840,6 +843,11 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   the player's top commands his pages, 714 offered and taken eight times, a page each), the books' meteors. Fixed on
   the way: 1:210 finds Days's players by KH2's player's part (1), 1:13 queues (below), 1:11 on a player gives him
   back, class 5 has no pull, a motion's attack stands for 2:96, a script's own "dead" is counted (dead_mark).
+  **His pages** (1:237 each tick while his book is open, four commands that change every 8 ticks: 724 "Horror", 726
+  "Deceit", 712 "Soothe", 727 "Doubt", 713 "Banish", 765 "Jackpot", 711 "Unlock", 766 "Heal", 729 "Hide", 767
+  "Spirit", 732 "Ruse", 768 "Bounty" ...; 714 "Turn" the reaction command) stay on the menu after his illusion lets
+  the player go: the deck showed them only while an enemy held the player (Roxas's duel), so free the player saw
+  Attack, Magic and Items and A attacked (2026-11-14); now held or free ("A command menu given by a script").
 - **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
   `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
   `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
@@ -1221,9 +1229,56 @@ trigger 11, as a reaction command taken). A script renews it each tick it wants 
   whenever what the rows say changes, and once more as it goes. While an enemy holds the player Days's own input does
   not run, so the runtime moves the deck's cursor: X and Down the next row, Up the one before (Days's own steps,
   `Ov002_PanelCursorNext` and `Prev`, and their sound), and A sends the command of the row it is on as a reaction
-  command taken is, when the player can choose it; on another, nothing. Joins in `prepare.py` (in
-  `Ov002_DrawPanelRowText` and `Ov002_PanelAdvanceCursor`'s file). Days's deck has three main rows where KH2's menu
-  has four, and greys none of them; KH2's cursor sounds are Days's.
+  command taken is, when the player can choose it; on another, nothing. Free (Zexion's Lexicon after his illusion
+  lets the player go: KH2 gives the menu whatever the player does), the deck shows it too and Days's own input moves
+  its cursor (X, or the D-pad with "Command menu on the D-pad"; X is a reaction command's while one is offered, as
+  Zexion's "Turn" is); A sends the row's command, and Days's own A is then no command: `Ov002_Hud_ActivatePanelSlot`
+  not called (no attack, no list), the command made none at its commit (kind 7, as the reaction button's own press of
+  a KH2 command; `khdays_kh2_enemies_menu_takes_a` and `_menu_commit`, joins in `Ov022_UpdateCommandInput`). Drawn
+  in an enemy's own pictures (below), the menu has KH2's four slots and its own cursor over them instead. Joins
+  in `prepare.py` (in `Ov002_DrawPanelRowText` and `Ov002_PanelAdvanceCursor`'s file). Days's deck has three main
+  rows where KH2's menu has four, and greys none of them; KH2's cursor sounds are Days's.
+
+## A command menu in an enemy's own pictures
+
+**1:359** (`trap_obj_hook_command_image` -> `YS::STDOBJ::hook_command_image`, our reading of KH2's PS3 build) gives
+the player's command menu the pictures of the object's own archive -- its .a.us's IMGD (0x18) and SEQD (0x19) named
+`comd` -- through `dk::COMMAND_DRAW::setCommandImage`; **1:360** (`trap_obj_reset_command_image`) gives KH2's own
+back. Zexion alone has one among the objects the tool makes: his book, opened with his Lexicon (`B_EX370`'s routine
+0x08f2, and 1:360 when its thread's loop ends). The `comd` sequences are numbered as the general menu's `comw`
+(zz0command.2dd: 99 clips there, 100 here; the 100th a page turning, not seen played).
+
+- **How KH2 lays its main menu out** (`COMMAND_DRAW::createBG`, `drawCommandPage`, `drawCurrent`, `drawCurrentIcon`,
+  `getTitleSeq` and their tables at 0x7e96c0, 0x7e9a50 and 0x7e9bb8 of the PS3 build): the background, clip 7 (the
+  book opening, then holding with its title and four slots drawn; clip 6 when the menu is skipped), at 28, 322 of
+  KH2's 512 x 448 screen; n slots 22 dots apart, the last at 388, the title 22 above the first -- clip 17 (18 once
+  shown, 19 in a special state); clip 16 each slot, 11 the last; the cursor's slot clip 9 moved 8 to the right, the
+  cursor's icon on it (clip 45 with a command kind's 37 to 44: in `comd` all Nobody's symbol). Each piece comes in
+  three variants the tables choose by a second index (clips 9-19, 78-88 and 22-32); the first is used here.
+- **The port** (`ui/reaction_command.cpp`'s `Book`; `khdays_kh2_enemies_command_image` in `shell.cpp`): while it
+  stands, the HD picture there (kh2/fx/<name>/-<n>, n its effects' pages' count: -34.png for Zexion), the menu is
+  drawn in place of Days's deck -- n KH2's four or more if Days's rows or a script's menu have more. A script's menu
+  (1:237: his pages) fills all four slots, as KH2's, with a cursor of its own: on the deck's row as the menu comes,
+  then a slot on or back each time Days's deck steps a row (round the four), A choosing the slot it is on
+  (`top_offer.cursor` in `shell.cpp`; Days's deck has three rows, which had shown three of the four, the fourth only
+  in a row where it could be chosen). Without one, Days's three rows in the first slots (the fourth empty, as KH2's
+  Drive with none) and the cursor's slot on the deck's main row. The names in KH2's font as large as the reaction
+  command's bar's; scaled so the title's top and the
+  open book's foot meet the deck's box (the HUD's layout places it as the deck). `hud.c` then leaves out the deck's
+  cells and sprites, `text.c` its names' canvas (`Ov002_DrawPanelRowText`'s), and the reaction command's bar takes
+  the same pictures (`comd`'s clips 0-5: KH2's `getSqd` gives every part of the menu the image set). Without the
+  setting "KH2 reaction commands", HD textures or the HD picture, Days's deck. The sequence viewer draws clips
+  together where they stand (`khdays-kh2-sequence-viewer --with 18@0:-22,16@0:0,...`).
+- **Seen** (2026-11-14, the coliseum, Zexion at level 99, a walk pressing X and A): Days's deck, then at the Lexicon
+  the book opening (its cover, a page turning) and standing -- "- COMMANDS -", Attack, Magic and Items in its first
+  three slots, the cursor's slot on Attack with Nobody's symbol, the fourth empty -- with "Pasar página" on Zexion's
+  green bar over it; Days's names and cursor gone. With the pages free (the same walk): his pages in its slots in the
+  game's language, changing as his script renews them ("Engaño", "Maquinación", "Tesoro", "Rapto", "Trampa",
+  "¡Bingo!" ...), 123 of them chosen with A in 25 s (each sent to him as its message: 726, 765, 767 ...), no attack
+  of Days's from those presses. What each page does is his script's; which it should do was not compared with KH2's
+  play. With the four slots (the deck stepped every 40 frames by a temporary switch, since X was "Turn"'s): all four
+  pages shown ("Suprimir", "¡Bingo!", "Cancelar", "Sanar" ...), the cursor round them (1, 2, 3, 0, and back once),
+  A sending the page under it; Zexion opened and closed his book three times in 15 s, Days's deck between.
 
 ## The reaction command's mark
 

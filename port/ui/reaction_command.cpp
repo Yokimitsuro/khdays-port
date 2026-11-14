@@ -57,6 +57,13 @@ extern "C" int khdays_kh2_enemies_offered(int *text);
 extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room);
 extern "C" unsigned khdays_kh2_enemies_taken(int *held_now);
 extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int *id);
+extern "C" int khdays_kh2_enemies_command_image(char *archive, int archive_room, char *picture, int picture_room);
+extern "C" int khdays_kh2_enemies_menu_slots(int *cursor);
+extern "C" int khdays_kh2_enemies_menu_slot(int slot, unsigned short *out, int room);
+// the command deck's main rows (prepare.py's joins in Ov002_PanelAdvanceCursor's file): the row its cursor is on (-1 a
+// list open, -2 no deck), how many
+extern "C" int khdays_deck_main_row(void);
+extern "C" int khdays_deck_main_rows(void);
 
 namespace {
 
@@ -627,6 +634,18 @@ float alpha_of(const seq::SequenceFrame &f)
     return a;
 }
 
+// A sequence's picture registered as `texture_id` (`pixels` keeps its texels)
+void register_atlas(const render::SequenceAsset &asset, const char *texture_id, std::vector<std::uint32_t> &pixels,
+                    int &atlas)
+{
+    pixels.resize(asset.texture.rgba.size() / 4);
+    std::memcpy(pixels.data(), asset.texture.rgba.data(), asset.texture.rgba.size());
+    atlas = khdays_textures_add_info(texture_id, asset.texture.width, asset.texture.height, pixels.data(),
+                                     KHDAYS_REPLACEMENT_NO_MIPS);
+    if (atlas < 0)
+        throw std::runtime_error("its picture could not be registered");
+}
+
 // A KH2 2D piece of the mod's: kh2/field2d/<region>/<name> and its HD picture <REGION>_<name with _ for .><page>.png,
 // the game's language's region first, then the English one; its sequence entry `entry` loaded and its picture
 // registered as `texture_id`. Throws when it is there but cannot be read; false when it is not there.
@@ -658,17 +677,58 @@ bool load_piece(const char *name, int page, const char *entry, const char *textu
     if (found[0] == '\0')
         return false;
     asset = render::load_sequence_asset(path_of(found), entry, path_of(found_picture));
-    pixels.resize(asset->texture.rgba.size() / 4);
-    std::memcpy(pixels.data(), asset->texture.rgba.data(), asset->texture.rgba.size());
-    atlas = khdays_textures_add_info(texture_id, asset->texture.width, asset->texture.height, pixels.data(),
-                                     KHDAYS_REPLACEMENT_NO_MIPS);
-    if (atlas < 0)
-        throw std::runtime_error("its picture could not be registered");
+    register_atlas(*asset, texture_id, pixels, atlas);
     from = found;
     return true;
 }
 
+// The command menu an enemy's own pictures draw (khdays_kh2_enemies_command_image: Zexion's book): its .a.us and its
+// HD picture (-<n>.png, or .dds), "" none
+struct OwnImage {
+    std::string archive, picture;
+    std::string key() const
+    {
+        return archive.empty() ? std::string() : archive + "|" + picture;
+    }
+};
+
+OwnImage own_image()
+{
+    static std::string last_stem;
+    static OwnImage last;
+    char archive[2048], stem[512], picture[2048];
+    if (!khdays_kh2_enemies_command_image(archive, int(sizeof(archive)), stem, int(sizeof(stem))))
+        return {};
+    if (last_stem == stem && last.archive == archive)
+        return last; // looked for once
+    last_stem = stem;
+    last = {archive, ""};
+    for (const char *extension : {".png", ".dds"})
+        if (khdays_mods_find((std::string(stem) + extension).c_str(), picture, int(sizeof(picture)))) {
+            last.picture = picture;
+            break;
+        }
+    return last;
+}
+
+// Its "comd" IMGD and SEQD loaded and its picture registered as `texture_id`; false without its HD picture (the
+// port draws KH2's 2D from the HD pictures alone)
+bool load_own(const OwnImage &own, const char *texture_id, std::optional<render::SequenceAsset> &asset,
+              std::vector<std::uint32_t> &pixels, int &atlas, std::string &from)
+{
+    if (own.archive.empty() || own.picture.empty())
+        return false;
+    asset = render::load_sequence_asset(path_of(own.archive.c_str()), "comd", path_of(own.picture.c_str()));
+    register_atlas(*asset, texture_id, pixels, atlas);
+    from = own.archive;
+    return true;
+}
+
 struct Bar {
+    // the bar in an enemy's own command menu's pictures (its "comd" sequences, whose clips are numbered as comw's: 1:359,
+    // Zexion's book): KH2's COMMAND_DRAW::getSqd gives every part of the menu the image set in place of its own
+    bool own = false;
+    std::string own_key;
     bool tried = false;
     int language = -1;
     std::optional<render::SequenceAsset> asset;
@@ -695,15 +755,18 @@ struct Bar {
     void load()
     {
         const int lang = khdays_settings_game_language();
-        if (tried && lang == language)
+        const OwnImage want = own ? own_image() : OwnImage{};
+        if (tried && lang == language && want.key() == own_key)
             return;
         tried = true;
         language = lang;
+        own_key = want.key();
         asset.reset();
         try {
             std::string found;
-            if (!load_piece("zz0command.2dd", 0, "comw", "kh2:reaction_command:atlas", asset, atlas_pixels, atlas,
-                            found))
+            if (own ? !load_own(want, "kh2:reaction_command:own_atlas", asset, atlas_pixels, atlas, found)
+                    : !load_piece("zz0command.2dd", 0, "comw", "kh2:reaction_command:atlas", asset, atlas_pixels,
+                                  atlas, found))
                 return;
             const auto &d = asset->sequence;
             idle = {};
@@ -949,6 +1012,321 @@ struct Bar {
 };
 Bar bar;
 
+Bar make_own_bar()
+{
+    Bar b;
+    b.own = true;
+    return b;
+}
+Bar own_bar = make_own_bar();
+
+// ---- An enemy's own command menu ------------------------------------------------------------------------------------
+
+// KH2's command menu in an enemy's own pictures (1:359, runtime/kh2_enemies: Zexion's book while his Lexicon stands):
+// its .a.us's "comd" sequences in place of Days's deck, which the HUD then leaves out (hud.c), laid out as
+// dk::COMMAND_DRAW lays KH2's main menu (our reading of KH2's PS3 build: createBG, drawCommandPage, drawCurrent,
+// drawCurrentIcon, getTitleSeq and their tables): the background (clip 7: the book opening, then holding) at 28, 322
+// of KH2's screen; n slots 22 dots apart, the last at 388 -- clip 16 each, clip 11 the last, the cursor's clip 9 moved
+// 8 to the right with the cursor's icon on it (clip 37, a command's kind's) -- and the title (clip 17) 22 above the
+// first. n is KH2's four (Attack, Magic, Items, Drive), or Days's rows if more: Days's rows in the first slots, their
+// names in KH2's font (Days's own, or those a script's command menu gives them: the Lexicon's pages), the rest empty.
+// Scaled so that the title's top and the background's foot meet the deck's box.
+struct Book {
+    static constexpr std::size_t kBackground = 7, kTitle = 17, kSlot = 16, kLastSlot = 11, kCurrent = 9, kCursor = 37;
+    static constexpr int kKh2Slots = 4;
+    static constexpr float kStep = 22, kCurrentShift = 8, kTextLeft = 6; // KH2 dots
+    static constexpr std::size_t kBar = 1; // the reaction command's bar standing (comw's numbers)
+
+    std::string key; // the archive and picture loaded
+    std::optional<render::SequenceAsset> asset;
+    std::vector<std::uint32_t> atlas_pixels;
+    int atlas = -1;
+    int slot_count = 0; // n
+    float text_cell = 0; // the names' glyphs' cells, KH2 dots: as the reaction command's bar's (0.62 of its height)
+    // KH2 dots from the background's place: its last frame (the book open), the title at its place, everything
+    Bounds held, title_box, all;
+    seq::SequencePlayer background, title, current, cursor;
+    std::vector<seq::SequencePlayer> slots;
+    int row = -2;
+    unsigned last_vblank = 0;
+    bool shown = false;
+    int image = -1, image_w = 0, image_h = 0, face = -1, face_w = 0, face_h = 0;
+    std::vector<std::u16string> face_names;
+    int face_row = -2;
+    KhdaysSequenceImage program{};
+    unsigned program_vblank = ~0u; // the VBlank whose HUD made it
+
+    // Whether it stands over the deck this VBlank
+    bool live() const
+    {
+        return shown && program_vblank == khdays_link_frame();
+    }
+
+    // Whether it will stand over the deck this VBlank, asked before the HUD draws it (the text part, first): the
+    // setting and HD textures on, an enemy's own pictures with their HD picture, the deck on its main rows, and its
+    // pictures read (or to be read now)
+    bool will_stand()
+    {
+        if (!khdays_hud_setting(KHDAYS_OPT_REACTION_COMMANDS) || !khdays_textures_hd())
+            return false;
+        const OwnImage own = own_image();
+        return !own.archive.empty() && !own.picture.empty() && khdays_deck_main_row() >= 0 &&
+               khdays_deck_main_rows() > 0 && (own.key() != key || asset.has_value());
+    }
+
+    static float slot_y(int k, int n)
+    {
+        return 88.0F - kStep * float(n) + kStep * float(k); // 410 - 22n + 22k of KH2's screen, from 322
+    }
+    static float title_y(int n)
+    {
+        return 66.0F - kStep * float(n); // 388 - 22n
+    }
+
+    static void add_clip(Bounds &b, const seq::SequenceData &d, std::size_t clip, float x, float y)
+    {
+        const int frames = seq::sequence_frame_count(d, clip);
+        if (frames <= 0)
+            throw std::runtime_error("a clip of the command menu has no frames");
+        for (int t = 0; t < frames; ++t) {
+            auto f = seq::evaluate_sequence(d, clip, float(t));
+            for (auto &q : f.quads)
+                for (auto &v : q.vertices)
+                    v.x += x, v.y += y;
+            b.add(f);
+        }
+    }
+
+    // Its bounds for n slots
+    void lay_out(int n)
+    {
+        const auto &d = asset->sequence;
+        slot_count = n;
+        held = title_box = all = {};
+        held.add(seq::evaluate_sequence(d, kBackground, float(seq::sequence_frame_count(d, kBackground) - 1)));
+        auto t = seq::evaluate_sequence(d, kTitle, float(seq::sequence_frame_count(d, kTitle) - 1));
+        for (auto &q : t.quads)
+            for (auto &v : q.vertices)
+                v.y += title_y(n);
+        title_box.add(t);
+        add_clip(all, d, kBackground, 0, 0);
+        add_clip(all, d, kTitle, 0, title_y(n));
+        for (int k = 0; k < n; ++k) {
+            add_clip(all, d, k + 1 == n ? kLastSlot : kSlot, 0, slot_y(k, n));
+            add_clip(all, d, kCurrent, kCurrentShift, slot_y(k, n));
+            add_clip(all, d, kCursor, kCurrentShift, slot_y(k, n));
+        }
+        if (!held.any || !title_box.any || held.y1 - title_box.y0 < 1)
+            throw std::runtime_error("its background or title draws nothing");
+        Bounds standing;
+        standing.add(seq::evaluate_sequence(d, kBar, 0));
+        text_cell = 0.62F * (standing.any ? standing.y1 - standing.y0 : kStep);
+        slots.assign(std::size_t(n), {});
+    }
+
+    // This VBlank's menu in an enemy's own pictures, over the deck's element `deck`; false when there is none (Days's
+    // deck then)
+    bool update(const KhdaysUiElement &deck)
+    {
+        program = {};
+        program_vblank = khdays_link_frame();
+        const int deck_row = khdays_deck_main_row(), rows = khdays_deck_main_rows();
+        const OwnImage own = own_image();
+        if (!khdays_hud_setting(KHDAYS_OPT_REACTION_COMMANDS) || !khdays_textures_hd() || own.archive.empty() ||
+            deck_row < 0 || rows <= 0) {
+            shown = false;
+            return false;
+        }
+        if (own.key() != key) {
+            key = own.key();
+            asset.reset();
+            try {
+                std::string found;
+                if (load_own(own, "kh2:command_image:atlas", asset, atlas_pixels, atlas, found)) {
+                    lay_out(std::max(kKh2Slots, rows));
+                    khdays_log("ui: the command menu in the pictures of %s", found.c_str());
+                } else
+                    khdays_log("ui: %s's own command menu left out (no HD picture of it): Days's deck", own.archive.c_str());
+            } catch (const std::exception &e) {
+                asset.reset();
+                khdays_log("ui: %s's own command menu left out (%s): Days's deck", own.archive.c_str(), e.what());
+            }
+            shown = false;
+        }
+        if (!asset)
+            return false;
+        try {
+            const auto &d = asset->sequence;
+            // a script's menu (Zexion's pages): its slots, all four, and its own cursor; else Days's rows and the deck's
+            int menu_cursor = 0;
+            const int menu_slots = khdays_kh2_enemies_menu_slots(&menu_cursor);
+            const int named = menu_slots > 0 ? menu_slots : rows;
+            const int on = menu_slots > 0 ? menu_cursor : deck_row;
+            if (std::max(kKh2Slots, named) != slot_count)
+                lay_out(std::max(kKh2Slots, named));
+            const unsigned vblank = khdays_link_frame();
+            if (!shown) { // KH2's menu starts again with the image set: the book opens
+                shown = true;
+                background.select(d, kBackground, true);
+                title.select(d, kTitle, true);
+                for (std::size_t k = 0; k < slots.size(); ++k)
+                    slots[k].select(d, k + 1 == slots.size() ? kLastSlot : kSlot, true);
+                cursor.select(d, kCursor, true);
+                row = -2;
+                last_vblank = vblank;
+            }
+            if (on != row) { // the cursor's slot opened again on its row
+                row = on;
+                current.select(d, kCurrent, true);
+            }
+            const float frames = khdays_link_paused() ? 0.0F : float(std::min(vblank - last_vblank, 4u));
+            last_vblank = vblank;
+            for (seq::SequencePlayer *p : {&background, &title, &current, &cursor})
+                p->advance(d, frames);
+            for (auto &p : slots)
+                p.advance(d, frames);
+            emit(deck, names(menu_slots, rows));
+        } catch (const std::exception &e) {
+            khdays_log("ui: the enemy's own command menu left out (%s): Days's deck", e.what());
+            asset.reset();
+            program = {};
+            return false;
+        }
+        return true;
+    }
+
+    // The slots' names: a script's command menu's (`menu_slots` of them), else Days's rows' (UI/btl/<language>/cmd.s's
+    // records 0, 1, 2 ...: Attack, Magic, Items)
+    static std::vector<std::u16string> names(int menu_slots, int rows)
+    {
+        std::vector<std::u16string> out;
+        for (int k = 0; k < (menu_slots > 0 ? menu_slots : rows); ++k) {
+            unsigned short text[64];
+            const int n = menu_slots > 0 ? khdays_kh2_enemies_menu_slot(k, text, 64) : 0;
+            out.push_back(menu_slots > 0 ? std::u16string(text, text + n) : label(k));
+        }
+        return out;
+    }
+
+    // The slots' names (`now`) painted, `r` texels a DS dot, `s` DS dots a KH2 dot; its left, top in KH2 dots in `fx`,
+    // `fy`
+    bool make_face(std::vector<std::u16string> now, int r, float s, float &fx, float &fy)
+    {
+        const int n = slot_count, rows = std::max(1, int(now.size()));
+        const float x0 = -kTextLeft, x1 = held.x1 + kCurrentShift;
+        const float y0 = slot_y(0, n) - kStep / 2, y1 = slot_y(rows - 1, n) + kStep / 2;
+        fx = x0;
+        fy = y0;
+        const int w = std::max(1, int(std::ceil((x1 - x0) * s * float(r))));
+        const int h = std::max(1, int(std::ceil((y1 - y0) * s * float(r))));
+        if (face >= 0 && face_w == w && face_h == h && face_names == now && face_row == row)
+            return true;
+        std::vector<std::uint32_t> out(std::size_t(w) * std::size_t(h), 0u);
+        const bool kh2 = kh2_font.get();
+        const float cell = text_cell; // KH2 dots
+        for (int i = 0; i < int(now.size()); ++i) {
+            const float left = kTextLeft + (i == row ? kCurrentShift : 0.0F) - x0;
+            const float middle = slot_y(i, n) - y0;
+            if (kh2)
+                paint_kh2(now[std::size_t(i)], out, w, h, left * s * float(r), (middle - cell / 2) * s * float(r),
+                          cell * s * float(r) / float(Kh2Font::kCellH));
+            else if (const auto *f = label_font.get())
+                paint_text(label_font, now[std::size_t(i)], out, w, h, r, left * s,
+                           middle * s - double(f->cell_height) / 2);
+        }
+        if (face < 0 || face_w != w || face_h != h) {
+            khdays_ui_image_put(face);
+            face = khdays_ui_image_get(w, h);
+        }
+        std::uint32_t *texels = face >= 0 ? khdays_ui_image_begin(face) : nullptr;
+        if (texels == nullptr)
+            return false;
+        std::copy(out.begin(), out.end(), texels);
+        khdays_ui_image_end(face);
+        face_w = w;
+        face_h = h;
+        face_names = std::move(now);
+        face_row = row;
+        return true;
+    }
+
+    void emit(const KhdaysUiElement &deck, std::vector<std::u16string> names_now)
+    {
+        const auto &d = asset->sequence;
+        const int n = slot_count, r = khdays_ui_scale();
+        // the title's top and the open book's foot on the deck's box; the book's left on its left
+        const float s = deck.h / (held.y1 - title_box.y0);
+        const float ox = deck.x - held.x0 * s, oy = deck.y - title_box.y0 * s;
+        const float left = std::floor(all.x0 * s) - 2, top = std::floor(all.y0 * s) - 2;
+        const float width = std::ceil(all.x1 * s) - left + 2, height = std::ceil(all.y1 * s) - top + 2;
+        const int w = int(width) * r, h = int(height) * r;
+        if (image < 0 || image_w != w || image_h != h) {
+            khdays_ui_image_put(image);
+            image = khdays_ui_image_get(w, h);
+            image_w = w;
+            image_h = h;
+        }
+        float fx = 0, fy = 0;
+        if (image < 0 || !make_face(std::move(names_now), r, s, fx, fy))
+            return;
+        std::vector<seq::SequenceQuad> quads;
+        const auto put = [&](const seq::SequencePlayer &p, float x, float y) {
+            auto f = seq::evaluate_sequence(d, p.clip(), p.frame());
+            for (auto &q : f.quads) {
+                for (auto &v : q.vertices)
+                    v.x += x, v.y += y;
+                quads.push_back(q);
+            }
+        };
+        put(background, 0, 0);
+        put(title, 0, title_y(n));
+        for (int k = 0; k < n; ++k)
+            if (k != row)
+                put(slots[std::size_t(k)], 0, slot_y(k, n));
+        put(current, kCurrentShift, slot_y(row, n));
+        const std::size_t under_cursor = quads.size();
+        put(cursor, kCurrentShift, slot_y(row, n));
+        if (quads.size() > KSI_MAX_QUADS)
+            quads.resize(KSI_MAX_QUADS);
+        auto *words = program.words;
+        const auto number = [words](unsigned i, float v) { std::memcpy(words + i, &v, 4); };
+        words[KSI_OUTPUT] = unsigned(khdays_ui_image_replacement(image));
+        words[KSI_ATLAS] = unsigned(atlas);
+        words[KSI_LOGICAL_W] = unsigned(asset->logical_size[0]);
+        words[KSI_LOGICAL_H] = unsigned(asset->logical_size[1]);
+        words[KSI_WIDTH] = unsigned(w);
+        words[KSI_HEIGHT] = unsigned(h);
+        number(KSI_VIEW_X, -left * float(r));
+        number(KSI_VIEW_Y, -top * float(r));
+        number(KSI_SCALE, s * float(r));
+        words[KSI_CLEAR] = 1;
+        render::encode_sequence_quads(program, quads);
+        // the names over the slots, under the cursor's icon
+        words[KSI_TEXT_INSERT] = unsigned(std::min(under_cursor, quads.size())) + 1;
+        words[KSI_FACE] = unsigned(khdays_ui_image_replacement(face));
+        words[KSI_HD_FACE] = ~0u;
+        number(KSI_TEXT_SCALE, 1);
+        number(KSI_FACE_X, (fx * s - left) * float(r));
+        number(KSI_FACE_Y, (fy * s - top) * float(r));
+        number(KSI_FACE_W, float(face_w));
+        number(KSI_FACE_H, float(face_h));
+        number(KSI_TEXT_CLIP_X, 0);
+        number(KSI_TEXT_CLIP_Y, 0);
+        number(KSI_TEXT_CLIP_W, float(w));
+        number(KSI_TEXT_CLIP_H, float(h));
+        number(KSI_TEXT_ALPHA, 1);
+        KhdaysUiElement e = deck;
+        e.slot = KES_DIRECT | KES_FINE | 3u; // in the deck's layer (BG3)
+        e.x = ox + left;
+        e.y = oy + top;
+        e.w = width;
+        e.h = height;
+        e.image = image;
+        khdays_ui_emit_extended(KHDAYS_UI_HUD, &e, &deck);
+    }
+};
+Book book;
+
 // ---- The mark over the enemy ----------------------------------------------------------------------------------------
 
 // KH2's mark where an enemy offering a reaction command aims it: zz0field.2dd's "fiel" sequence 50 (the triangle coming, its
@@ -1134,10 +1512,14 @@ extern "C" void khdays_ui_reaction_command_emit(void)
         name = label(days.kind + 5);
         what = 0x20000 | days.kind;
     }
-    if (on && bar.available()) {
-        bar.update(what, name, held != 0);
+    // in an enemy's own command menu's pictures while they draw the menu (Zexion's book), else KH2's general menu's
+    Bar &shown = book.live() && own_bar.available() ? own_bar : bar;
+    Bar &other = &shown == &bar ? own_bar : bar;
+    other.program = {};
+    if (on && shown.available()) {
+        shown.update(what, name, held != 0);
     } else {
-        bar.program = {};
+        shown.program = {};
         if (on && (what & 0x10000) != 0)
             emit_plain(name);
     }
@@ -1171,7 +1553,30 @@ extern "C" void khdays_ui_reaction_mark_commands(const KhdaysG3dList *list, Khda
 
 extern "C" void khdays_ui_reaction_command_commands(KhdaysSequenceImage *out)
 {
-    *out = bar.program;
+    *out = own_bar.program.words[KSI_COUNT] != 0 ? own_bar.program : bar.program;
+}
+
+extern "C" int khdays_ui_command_image_compose(const KhdaysUiElement *deck)
+{
+    return deck != nullptr && book.update(*deck) ? 1 : 0;
+}
+
+extern "C" int khdays_ui_command_image_owns(void)
+{
+    return book.live() ? 1 : 0;
+}
+
+extern "C" int khdays_ui_command_image_standing(void)
+{
+    return book.will_stand() ? 1 : 0;
+}
+
+extern "C" void khdays_ui_command_image_commands(KhdaysSequenceImage *out)
+{
+    if (book.live())
+        *out = book.program;
+    else
+        std::memset(out, 0, sizeof(*out));
 }
 
 extern "C" int khdays_reaction_talk_active(void)

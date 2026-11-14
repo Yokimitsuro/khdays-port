@@ -3,8 +3,11 @@
 
 #include <cstdio>
 #include <exception>
+#include <filesystem>
+#include <string>
 
 #include "khdays/assets/dds.h"
+#include "khdays/assets/image.h"
 
 extern "C" {
 #include "../../gfx/g3d.h"
@@ -26,7 +29,7 @@ int Pages::add(const std::vector<const kh2::EffectBlock *> &blocks, const std::s
     if (!hd_stem.empty()) {
         int n = first;
         for (const auto &[tbp, cbp] : palette_of)
-            hd_.push_back({tbp, cbp, hd_stem + "/-" + std::to_string(n++) + ".dds"});
+            hd_.push_back({tbp, cbp, hd_stem + "/-" + std::to_string(n++)});
     }
     return static_cast<int>(palette_of.size());
 }
@@ -45,11 +48,13 @@ int Pages::page(std::uint64_t tex0, bool hd)
     for (const HdPage &h : hd_) {
         if (!hd || h.tbp != tbp || h.cbp != cbp)
             continue;
-        char path[512];
-        if (!khdays_mods_find(h.relative.c_str(), path, static_cast<int>(sizeof(path))))
+        char path[2048];
+        const bool dds = khdays_mods_find((h.relative + ".dds").c_str(), path, static_cast<int>(sizeof(path))) != 0;
+        if (!dds && !khdays_mods_find((h.relative + ".png").c_str(), path, static_cast<int>(sizeof(path))))
             break;
         try {
-            auto t = khdays::assets::read_dds(path);
+            const std::filesystem::path file(std::u8string(reinterpret_cast<const char8_t *>(path)));
+            auto t = dds ? khdays::assets::read_dds(file) : khdays::assets::read_image(file);
             // the same view, larger: its fractions name the same places
             if (static_cast<long long>(t.width) * height == static_cast<long long>(t.height) * width) {
                 texels_.push_back(std::make_unique<std::vector<std::uint8_t>>(std::move(t.rgba)));

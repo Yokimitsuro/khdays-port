@@ -2894,11 +2894,20 @@ void add_world(ai::Calls &calls)
         v.v[0] = at[0], v.v[1] = at[1], v.v[2] = at[2], v.v[3] = 1.0F;
         a[0] = give_vec(m, "1:306", v);
     });
-    // 1:359, 1:360 the command menu drawn in the object's own pictures and back (trap_obj_hook_command_image ->
-    // YS::STDOBJ::hook_command_image: its .mdlx's entries of type 0x18 and 0x19, dk::COMMAND_DRAW's special image;
-    // reset_command_image): Days's deck is its own, so nothing -- Zexion's book shows the menu his way in KH2
-    calls.set(1, 359, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(1, 360, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:359, 1:360 the player's command menu drawn in the object's own pictures and back (trap_obj_hook_command_image
+    // -> YS::STDOBJ::hook_command_image: its archive's -- its .a.us's -- entries of types 0x18 and 0x19 named "comd",
+    // dk::COMMAND_DRAW::setCommandImage; trap_obj_reset_command_image): Zexion's book while his Lexicon stands, drawn
+    // over Days's deck (ui/reaction_command.cpp)
+    calls.set(1, 359, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (World *w = running(m)->world; w != nullptr && o != nullptr)
+            w->command_image(*o, true);
+    });
+    calls.set(1, 360, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (World *w = running(m)->world; w != nullptr && o != nullptr)
+            w->command_image(*o, false);
+    });
     // 10:56 a friend's warp point given up (kn::trap_friend_invalidate_warp_point, FUN_1405371f0 -> FUN_1401b4f00: a
     // point and a radius): Days's field has none of KH2's party, so nothing
     calls.set(10, 56, [](ai::Machine &, std::span<ai::Value>) {});

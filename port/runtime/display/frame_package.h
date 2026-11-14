@@ -152,6 +152,8 @@ typedef struct KhdaysFramePackage {
     float trail[4];
     /* The bar over the command deck of a reaction command offered (ui/reaction_command.h) */
     KhdaysSequenceImage reaction_command_image;
+    /* KH2's command menu in a KH2 enemy's own pictures in the deck's place (ui/reaction_command.h: Zexion's book) */
+    KhdaysSequenceImage command_image_image;
 } KhdaysFramePackage;
 
 /* What KHDAYS_RECORD_FRAMES writes of a package (version 14): all of it but

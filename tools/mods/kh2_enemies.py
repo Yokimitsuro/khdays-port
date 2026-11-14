@@ -593,12 +593,14 @@ def journal_title(titles: dict[str, int], name: str) -> int | None:
     return next((title for model, title in titles.items() if model.startswith(f"{name.upper()}_")), None)
 
 
-def copy_pages(source: Path, to: Path, pattern: str = "-*.dds") -> int:
-    """An entry's HD pages (-N.dds; a mission's <LANGUAGE>_<name>_barN.png) into `to`: how many."""
+def copy_pages(source: Path, to: Path, patterns: str | tuple[str, ...] = ("-*.dds", "-*.png")) -> int:
+    """An entry's HD pages (-N.dds, or -N.png where the collection has PNGs: Zexion's B_EX370.a.us, his effects' and
+    his command menu's; a mission's <LANGUAGE>_<name>_barN.png) into `to`: how many."""
     if not source.is_dir():
         return 0
     to.mkdir(parents=True, exist_ok=True)
-    pages = sorted(source.glob(pattern))
+    pages = sorted({page for pattern in ((patterns,) if isinstance(patterns, str) else patterns)
+                    for page in source.glob(pattern)})
     for page in pages:
         shutil.copy2(page, to / page.name)
     return len(pages)

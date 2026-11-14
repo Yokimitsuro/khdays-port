@@ -17,7 +17,8 @@ namespace khdays::kh2_fx {
 
 namespace kh2 = khdays::assets::kh2;
 
-// The HD picture of a page (a distinct tbp, its first picture's palette): <stem>/-<n>.dds, mods' files
+// The HD picture of a page (a distinct tbp, its first picture's palette): <stem>/-<n>.dds, mods' files (-<n>.png
+// where the collection has a PNG: Zexion's B_EX370.a.us); `relative` without the extension
 struct HdPage final {
     std::uint16_t tbp = 0, cbp = 0;
     std::string relative;

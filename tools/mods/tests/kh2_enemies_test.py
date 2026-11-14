@@ -329,6 +329,17 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in to.iterdir()), ["US_HE17_MS105_bar0.png", "US_HE17_MS105_bar1.png"])
             self.assertEqual(kh2_enemies.copy_pages(source / "none", to, "*_bar*.png"), 0)
 
+    def test_effect_pages_dds_and_png(self):
+        # an .a.us's HD pages are DDS, or PNG for some (Zexion's B_EX370.a.us: his effects' and his command menu's)
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "remastered" / "obj" / "B_EX370.a.us"
+            (source / "se").mkdir(parents=True)
+            for name in ("-0.png", "-1.png", "-2.dds", "notes.txt"):
+                (source / name).write_bytes(name.encode())
+            to = Path(folder) / "mod" / "kh2" / "fx" / "B_EX370"
+            self.assertEqual(kh2_enemies.copy_pages(source, to), 3)
+            self.assertEqual(sorted(p.name for p in to.iterdir()), ["-0.png", "-1.png", "-2.dds"])
+
     def test_made_numbers(self):
         # trigger 0 gives 956 to a routine that makes an object by its parameter (1:0: Oogie Boogie's gift boxes so),
         # then makes 7 itself; the routine's parameter traced to its caller's push

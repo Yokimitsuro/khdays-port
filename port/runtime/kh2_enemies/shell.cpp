@@ -239,6 +239,9 @@ struct KindFiles final {
     bool voice_volumes_read = false;
     kh2::EffectBlock common;
     std::vector<std::unique_ptr<khdays::kh2_fx::Pages>> fx_pages; // by effect block: each its own pictures
+    // how many HD pictures its effects have in kh2/fx/<name>/ (-0 on): its .a.us's other pictures (its command menu's,
+    // "comd") are numbered on from there
+    int fx_hd_pages = 0;
     // its event sequences (its .a.us's entries of type 0x16: a reaction command's cameras), by their names' up to four
     // letters as FUN_1403db2f0 packs them (the first in the low byte)
     std::map<std::uint32_t, std::shared_ptr<const kh2::Event>> events;
@@ -395,6 +398,7 @@ void read_effects(KindFiles &k, const std::string &folder)
             pages->tracing = tracing();
             k.fx_pages.push_back(std::move(pages));
         }
+        k.fx_hd_pages = first;
         khdays_log("kh2 enemies: %s's effects read (%zu effects, %zu elements%s)", k.name.c_str(), k.fx.size(),
                    k.fx_elements.size(), common.empty() ? "; no texcommon.dpd" : "");
     } catch (const std::exception &e) {
@@ -984,6 +988,8 @@ std::set<int> controls_off;
 // a prize drain asked (1:187) for the pickups of this frame and the next: KH2 sets it for one of its ticks, two of
 // which a Days frame runs, and Days takes its prizes once a frame (khdays_kh2_enemies_prize_drain)
 int drain_frames = 0;
+// the enemy whose own pictures draw the player's command menu (1:359; 0 KH2's own: khdays_kh2_enemies_command_image)
+unsigned command_image_of = 0;
 // KH2's attacks of their own (2:10, YS::ATTACK_MAGIC), by their address in the scripts' memory: the enemy whose
 // script made one (its hits go through its shell), whether KH2's player owns it (its hits his blows), its atkp entry,
 // its size and growth, its place and the one before (swept between), the effect it follows, the players it hit
@@ -1021,7 +1027,9 @@ ScriptOffer script_offer;
 // KH2's player's command menu as an enemy's script gives it (1:237: its four top commands, renewed each tick it
 // stands) and the VBlank it last did; the enemy each command chosen goes to. Days's command deck shows it: its main
 // rows (Attack, Magic, Items) the menu's first three slots, the fourth slot in one of them chosen as the menu comes
-// (`extra_row`); the commands its rows were last drawn with (`labels`, 0 none; `shown`)
+// (`extra_row`); the commands its rows were last drawn with (`labels`, 0 none; `shown`). Drawn as KH2's own menu (an
+// enemy's own pictures over the deck: ui/reaction_command.cpp, `drawn` the VBlank it last asked), its four slots and a
+// cursor of its own over them (`cursor`), a slot on as Days's deck steps a row (`deck_row` the row seen last)
 struct TopOffer final {
     unsigned enemy = 0;
     std::array<int, 4> commands{-1, -1, -1, -1};
@@ -1029,8 +1037,15 @@ struct TopOffer final {
     int extra_row = 0;
     bool shown = false;
     std::array<int, 4> labels{};
+    int cursor = 0, deck_row = -1;
+    unsigned drawn = ~0u;
 };
 TopOffer top_offer;
+// Whether the menu a script gives is drawn as KH2's own, four slots (this VBlank or the one before)
+bool top_menu_drawn()
+{
+    return top_offer.shown && khdays_link_frame() - top_offer.drawn <= 1u;
+}
 // KHDAYS_SHOT_STATES=name,name... (with KHDAYS_TRACE_KH2_ENEMIES and KHDAYS_SHOTS_HD): a KH2 enemy entering one of
 // those states has the window save pictures of the field at once and 15, 30, 60, 120 and 240 frames on (a reported
 // moment caught though a walk's timing changes from run to run)
@@ -1669,6 +1684,21 @@ public:
             drain_frames = 2;
         if (on && tracing())
             khdays_log("kh2 enemies: the field's prizes drained to the player");
+    }
+    void command_image(Object &of, bool on) override
+    {
+        Actor *a = of.actor();
+        const auto it = a != nullptr ? by_actor.find(a) : by_actor.end();
+        if (it == by_actor.end())
+            return;
+        const unsigned days = it->second->days;
+        if (on)
+            command_image_of = days;
+        else if (command_image_of == days)
+            command_image_of = 0;
+        if (tracing())
+            khdays_log("kh2 enemies: %08x %s", days,
+                       on ? "draws the player's command menu in its own pictures" : "gives the command menu back");
     }
     bool camera_view(Vec3 &eye, Vec3 &at) override
     {
@@ -3968,18 +3998,26 @@ void take_command(Enemy &e)
         e.zone_taken_motion = e.actor->motion.id;
         send(id, "from the zone of");
     }
-    // the command menu a script gives (1:237) on Days's deck: its cursor moved as the deck's is (X the next row, Days's
-    // own steps and sound) and KH2's (Up, Down), A the command its row shows -- sent to the enemy as a reaction command
-    // is when the player can choose it now (command_usable), else nothing. Held, Days's own input does not run.
-    if (top_menu_standing() && top_offer.enemy == e.days && held.count(local_player) != 0) {
-        if ((pressed & (KHDAYS_KEY_DOWN | KHDAYS_KEY_X)) != 0)
+    // the command menu a script gives (1:237) on Days's deck: A the command its row shows -- sent to the enemy as a
+    // reaction command is when the player can choose it now (command_usable), else nothing. Held, Days's own input does
+    // not run: its cursor moved here as the deck's is (X the next row, Days's own steps and sound) and KH2's (Up,
+    // Down). Free (Zexion's Lexicon, its illusion gone), Days's own input moves it, and Days's own use of that A is
+    // none (khdays_kh2_enemies_menu_takes_a)
+    const bool held_here = held.count(local_player) != 0;
+    if (top_menu_standing() && top_offer.enemy == e.days && (held_here || top_offer.shown)) {
+        if (held_here && (pressed & (KHDAYS_KEY_DOWN | KHDAYS_KEY_X)) != 0)
             khdays_deck_step(0);
-        if ((pressed & KHDAYS_KEY_UP) != 0)
+        if (held_here && (pressed & KHDAYS_KEY_UP) != 0)
             khdays_deck_step(1);
-        pressed = std::uint16_t(pressed & ~(KHDAYS_KEY_DOWN | KHDAYS_KEY_X | KHDAYS_KEY_UP));
+        if (held_here)
+            pressed = std::uint16_t(pressed & ~(KHDAYS_KEY_DOWN | KHDAYS_KEY_X | KHDAYS_KEY_UP));
         if ((pressed & KHDAYS_KEY_A) != 0) {
-            const int row = khdays_deck_main_row();
-            const int id = row >= 0 ? deck_command(row, khdays_deck_main_rows()) : 0;
+            // drawn as KH2's menu, the slot its own cursor is on; else the deck's row's
+            const bool kh2_menu = top_menu_drawn();
+            const int row = kh2_menu ? top_offer.cursor : khdays_deck_main_row();
+            const int id = kh2_menu ? top_offer.commands[std::size_t(top_offer.cursor)]
+                           : row >= 0 ? deck_command(row, khdays_deck_main_rows())
+                                      : 0;
             if (id > 0 && command_usable(id))
                 send(id, "chosen on the deck as the command menu given by", true);
             else if (tracing())
@@ -3990,12 +4028,13 @@ void take_command(Enemy &e)
     }
 }
 
-// The deck's rows as the command menu a script gives shows them (each frame, from khdays_kh2_enemies_holding): as the
-// menu comes, the deck back to its main rows (KH2 closes its submenus) and the row for its fourth slot chosen; their
-// text drawn again whenever what they show changes, and once more as the menu goes (Days's own again)
+// The deck's rows as the command menu a script gives shows them (each frame, from khdays_kh2_enemies_holding), held or
+// free -- KH2's 1:237 gives the player's menu whatever he does (Zexion's Lexicon's pages after his illusion let him
+// go): as the menu comes, the deck back to its main rows (KH2 closes its submenus) and the row for its fourth slot
+// chosen; their text drawn again whenever what they show changes, and once more as the menu goes (Days's own again)
 void deck_sync()
 {
-    const bool wanted = top_menu_standing() && held.count(local_player) != 0 && khdays_deck_main_row() != -2;
+    const bool wanted = top_menu_standing() && khdays_deck_main_row() != -2;
     if (wanted && !top_offer.shown && khdays_deck_main_row() == -1)
         khdays_deck_to_main();
     const int rows = wanted ? khdays_deck_main_rows() : 0;
@@ -4007,6 +4046,21 @@ void deck_sync()
         for (int r = 0; r < rows && r < int(want.size()); ++r)
             want[std::size_t(r)] = deck_command(r, rows);
     }
+    // KH2's own cursor over the four slots (the menu drawn as KH2's): on the deck's row as the menu comes, then a slot
+    // on or back as Days's deck steps a row (its X, its D-pad step, the runtime's own while held), round the four as
+    // KH2's goes round
+    const int deck_row = show ? khdays_deck_main_row() : -1;
+    if (show && !top_offer.shown)
+        top_offer.cursor = std::max(0, deck_row);
+    else if (show && deck_row >= 0 && top_offer.deck_row >= 0 && deck_row != top_offer.deck_row) {
+        const int slots = int(top_offer.commands.size());
+        const bool back = rows > 2 && (top_offer.deck_row - deck_row + rows) % rows == 1;
+        top_offer.cursor = (top_offer.cursor + (back ? slots - 1 : 1)) % slots;
+        if (tracing())
+            khdays_log("kh2 enemies: the command menu's cursor on its slot %d (%d)", top_offer.cursor,
+                       top_offer.commands[std::size_t(top_offer.cursor)]);
+    }
+    top_offer.deck_row = deck_row;
     if (show == top_offer.shown && want == top_offer.labels)
         return;
     top_offer.shown = show;
@@ -5498,6 +5552,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     local_player = 0;
     controls_off.clear();
     drain_frames = 0;
+    command_image_of = 0;
     last_days_damage = 0;
     local_taken = -1;
     shouts.clear();
@@ -6109,6 +6164,55 @@ extern "C" int khdays_kh2_enemies_prize_drain(void)
     return drain_frames > 0 ? 1 : 0;
 }
 
+namespace {
+std::uint32_t menu_a_frame = ~0u; // the game frame whose A a script's command menu took from Days's deck
+}
+
+// Ov022_UpdateCommandInput (prepare.py): A on the deck while it shows the command menu a script gives a free player
+// (take_command sends its row's command): Days's own deck slot not used
+extern "C" int khdays_kh2_enemies_menu_takes_a(int pressed)
+{
+    if ((pressed & KHDAYS_KEY_A) == 0 || !top_menu_standing() || !top_offer.shown || held.count(local_player) != 0)
+        return 0;
+    menu_a_frame = khdays_input_game_frames();
+    return 1;
+}
+
+// ... and the command made of that press: none (kind 7, as the reaction button's own press of a KH2 command)
+extern "C" int khdays_kh2_enemies_menu_commit(signed char *kind, unsigned short *arg)
+{
+    if (menu_a_frame != khdays_input_game_frames() || kind == nullptr || arg == nullptr)
+        return 0;
+    *kind = 7;
+    *arg = 0;
+    return 1;
+}
+
+extern "C" int khdays_kh2_enemies_command_image(char *archive, int archive_room, char *picture, int picture_room)
+{
+    const auto it = command_image_of != 0 ? enemies.find(command_image_of) : enemies.end();
+    if (it == enemies.end() || it->second->dying || it->second->kind == nullptr || archive == nullptr ||
+        picture == nullptr || archive_room <= 0 || picture_room <= 0)
+        return 0;
+    const KindFiles &k = *it->second->kind;
+    static std::map<std::pair<std::string, std::string>, std::u8string> found; // looked for once (asked every frame)
+    auto at = found.find({k.name, k.folder});
+    if (at == found.end())
+        at = found.emplace(std::make_pair(k.name, k.folder), kh2_file("obj/" + k.name + ".a.us", k.folder).u8string())
+                 .first;
+    const std::u8string &path = at->second;
+    if (path.empty() || path.size() >= std::size_t(archive_room))
+        return 0;
+    std::memcpy(archive, path.data(), path.size());
+    archive[path.size()] = '\0';
+    const std::string stem = "kh2/fx/" + k.name + "/-" + std::to_string(k.fx_hd_pages);
+    if (stem.size() >= std::size_t(picture_room))
+        return 0;
+    std::memcpy(picture, stem.data(), stem.size());
+    picture[stem.size()] = '\0';
+    return 1;
+}
+
 // KH2's text as its menus' international encoding has it (msg/<language>/sys.bar; our reading of the files): 01 a
 // space, 2e-47 A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb and d0-e4 the accented small and capital letters (a grave,
 // acute, circumflex, diaeresis ... u diaeresis, each set in that order), b5 oe, b6 sharp s, e5 and e6 the opening
@@ -6250,6 +6354,32 @@ extern "C" int khdays_kh2_enemies_deck_label(int line, unsigned short *out, int 
     for (int i = 0; i < n; ++i)
         out[i] = static_cast<unsigned short>(name[std::size_t(i)]);
     out[n] = 0;
+    return n;
+}
+
+// ui/reaction_command.cpp, drawing the menu as KH2's own: how many slots the menu a script gives has (0 none shown)
+// and its own cursor; asked each VBlank it draws it, which A then follows (take_command)
+extern "C" int khdays_kh2_enemies_menu_slots(int *cursor)
+{
+    if (!top_offer.shown || !top_menu_standing())
+        return 0;
+    top_offer.drawn = khdays_link_frame();
+    if (cursor != nullptr)
+        *cursor = top_offer.cursor;
+    return int(top_offer.commands.size());
+}
+
+// ... and slot `slot`'s command's name, UTF-16 into `out` (at most `room`), how many letters; 0 none
+extern "C" int khdays_kh2_enemies_menu_slot(int slot, unsigned short *out, int room)
+{
+    if (!top_offer.shown || out == nullptr || room <= 0 || slot < 0 || slot >= int(top_offer.commands.size()))
+        return 0;
+    const int id = top_offer.commands[std::size_t(slot)];
+    const Command *c = id > 0 ? command(id) : nullptr;
+    const std::u16string name = c != nullptr ? command_name(c->text) : std::u16string{};
+    const int n = std::min(int(name.size()), room);
+    for (int i = 0; i < n; ++i)
+        out[i] = static_cast<unsigned short>(name[std::size_t(i)]);
     return n;
 }
 

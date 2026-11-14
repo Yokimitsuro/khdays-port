@@ -2329,6 +2329,11 @@ struct ZexionWorld final : kh::World {
     {
         drains.push_back(on);
     }
+    std::vector<std::pair<kh::Actor *, bool>> command_images;
+    void command_image(kh::Object &of, bool on) override
+    {
+        command_images.emplace_back(of.actor(), on);
+    }
     bool camera_view(kh::Vec3 &eye, kh::Vec3 &at) override
     {
         eye = {1.0F, -200.0F, 3.0F};
@@ -2370,6 +2375,11 @@ void test_zexion()
     CHECK(v[0] == 1.0F && v[1] == -200.0F && v[2] == 3.0F && v[3] == 1.0F);
     rig.memory.read(call(rig, zexion, 1, 306, {}).bits, v, sizeof v);
     CHECK(v[0] == 4.0F && v[1] == -100.0F && v[2] == 6.0F);
+    // 1:359, 1:360 the player's command menu in the object's own pictures and back: the object it names
+    call(rig, zexion, 1, 359, {self});
+    call(rig, zexion, 1, 360, {self});
+    CHECK(world.command_images.size() == 2 && world.command_images[0] == std::make_pair(&zexion, true) &&
+          world.command_images[1] == std::make_pair(&zexion, false));
 }
 
 int main()

@@ -2603,6 +2603,35 @@ HOOKS["ov022@020a2978"] += [
         "              pActor->bMenuFlag = 1; }\n",
     ),
 ]
+# The command menu a KH2 enemy's script gives a free player on the deck (runtime/kh2_enemies, 1:237: Zexion's Lexicon's
+# pages once his illusion let the player go): A chooses its row's command, which the runtime sends to the enemy, and
+# is no Days command -- no deck slot used (no attack, no list), the command made none (kind 7) as the reaction button's
+# own press of a KH2 command is.
+HOOKS["ov022@020a2978"] += [
+    (  # Ov022_UpdateCommandInput: A on the deck
+        "            if ((gPadPressed & 1) != 0) {\n"
+        "                bCommandChosen = 1;\n"
+        '                (khdays_trace_call("Hud_ActivatePanelSlot"), Ov002_Hud_ActivatePanelSlot());\n',
+        "            if ((gPadPressed & 1) != 0 && khdays_kh2_enemies_menu_takes_a(gPadPressed)) {\n"
+        "                bCommandChosen = 1;\n"
+        "            } else if ((gPadPressed & 1) != 0) {\n"
+        "                bCommandChosen = 1;\n"
+        '                (khdays_trace_call("Hud_ActivatePanelSlot"), Ov002_Hud_ActivatePanelSlot());\n',
+    ),
+    (
+        "          if (khdays_reaction_talk_commit(&pActor->nCommandKind, &pActor->nCmdArg))\n"
+        "              pActor->bMenuFlag = 1; }\n",
+        "          if (khdays_reaction_talk_commit(&pActor->nCommandKind, &pActor->nCmdArg))\n"
+        "              pActor->bMenuFlag = 1; }\n"
+        "        khdays_kh2_enemies_menu_commit(&pActor->nCommandKind, &pActor->nCmdArg);\n",
+    ),
+    (
+        "void Ov022_UpdateCommandInput(",
+        "extern int khdays_kh2_enemies_menu_takes_a(int pressed);\n"
+        "extern int khdays_kh2_enemies_menu_commit(signed char *kind, unsigned short *arg);\n"
+        "void Ov022_UpdateCommandInput(",
+    ),
+]
 HOOKS["ov022@020a31b4"] = [
     (  # Ov022_TranslateCommandToAction: a KH2 enemy's script took the players' control away (1:42, YS::OBJ::ControlOff
         # of type 0: Zexion as he dies): locked as Days's own lock locks them -- no buttons, no command, no way

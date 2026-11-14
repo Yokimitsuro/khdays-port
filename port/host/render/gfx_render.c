@@ -1251,6 +1251,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         valid = 0;
         return 0;
     }
+    if (!khdays_sequence_gpu_draw(device, cmd, &p->command_image_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
     if (!khdays_sequence_gpu_draw(device, cmd, &p->reaction_command_image)) {
         SDL_CancelGPUCommandBuffer(cmd);
         valid = 0;

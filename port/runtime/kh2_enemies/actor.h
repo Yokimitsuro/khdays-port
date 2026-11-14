@@ -423,6 +423,10 @@ public:
     // 1:187: the field's prizes all taken by the player where they lie (YS::STATUS::IsPrizeDrain, which each prize's
     // check_get reads: PRIZEEFFECT::get on the player); 1:188 ends it
     virtual void prize_drain(bool /*on*/) {}
+    // 1:359: the player's command menu drawn in the object's own pictures (YS::STDOBJ::hook_command_image: its
+    // archive's IMGD and SEQD named "comd", dk::COMMAND_DRAW::setCommandImage); 1:360 (reset_command_image) KH2's
+    // own again
+    virtual void command_image(Object & /*of*/, bool /*on*/) {}
     // 1:305, 1:306: the camera's eye and the point it looks at (KH2's units); whether there is a camera
     virtual bool camera_view(Vec3 & /*eye*/, Vec3 & /*at*/)
     {

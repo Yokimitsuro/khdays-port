@@ -349,6 +349,9 @@ static int emit_piece(int index, int bg, const KhdaysBgLayer *l)
         native_hp = 1;
     if (strcmp(piece->id, "hud.mission") == 0 && khdays_ui_mission_panel_owns())
         native_hp = 1;
+    /* a KH2 enemy's own command menu (Zexion's book) in the deck's place */
+    if (bg == 3 && strcmp(piece->id, "hud.deck") == 0 && khdays_ui_command_image_compose(&e))
+        native_hp = 1;
     if (!native_hp)
         khdays_ui_emit(KHDAYS_UI_HUD, &e);
     if (sh->hd_image1 != 0 && !native_hp) {
@@ -446,8 +449,11 @@ static void emit_sprites(int index, int there)
         Sprite *sp = &sprites[engine][i];
         int w, h, x, y, changed = 0;
         KhdaysUiElement e;
-        if (strcmp(piece->id, "hud.mission") == 0 && khdays_ui_mission_panel_owns() && shape < 3u && mode < 2u &&
-            ((a0 & 0x100u) || !(a0 & 0x200u))) {
+        /* the sprites of a piece drawn in the port's own pictures (the mission panel's, the deck's under a KH2 enemy's
+           command menu: its cursor) left out where they lie in it */
+        const int owned = (strcmp(piece->id, "hud.mission") == 0 && khdays_ui_mission_panel_owns()) ||
+                          (strcmp(piece->id, "hud.deck") == 0 && khdays_ui_command_image_owns());
+        if (owned && shape < 3u && mode < 2u && ((a0 & 0x100u) || !(a0 & 0x200u))) {
             int sx = (int)(a1 & 511u), sy = (int)(a0 & 255u);
             sx = sx >= 256 ? sx - 512 : sx;
             sy = sy >= 192 ? sy - 256 : sy;

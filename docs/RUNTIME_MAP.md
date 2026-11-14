@@ -5980,6 +5980,15 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   the Lingering Will's rushes; the ground under a point it met everywhere. A sphere cast (`Collision_RunSphereCast`,
   `map_only` 1) along the same way met the walls (1556 ways stopped in the next 200 s, none crossed). A stand-in set
   down its Days sphere's radius (0.45 m) off a wall stays there: Days's collision pushes it no further.
+- **The deck under an enemy's own command menu** (seen 2026-11-14, Zexion's Lexicon, f5675 of a Mission Mode walk):
+  the deck's names are a text canvas of their own (`Ov002_DrawPanelRowText`'s, flagged `command_cache` in `text.c`)
+  apart from the deck's BG3 cells of `UI/btl/*/main.p2` (`hud.deck`) and its cursor sprite: all three must be left
+  out for a picture drawn in its place to stand alone (the names had shown over it). The text part emits before the
+  HUD: asked from the menu's state of the VBlank before, Days's names showed for a frame each time the book opened
+  (Zexion opens and closes his Lexicon several times: 94.9 s, 98.8 s, 102.2 s in one walk); it now asks whether
+  the book will stand this VBlank. During the Lexicon the reaction command "Turn" (714) is offered every frame, so X
+  never reaches the deck's cursor; Down in that walk moved Roxas, not the cursor. Between his books the deck is
+  Days's own: A on its Items row opened the list, as Days's A does.
 
 ## 38. Days's commands on KH2's reaction command bar
 

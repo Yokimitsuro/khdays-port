@@ -18,6 +18,7 @@ extern "C" {
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 namespace kh2 = khdays::assets::kh2;
@@ -29,6 +30,8 @@ void help()
     std::cout << "khdays-kh2-sequence-viewer --root KH2_DATA_DIRECTORY [options]\n"
                  "  --archive FILE --texture FILE   override the local field2d/us/zz0field.2dd and gaug PNG\n"
                  "  --entry NAME --sequence N --frame F --scale S --fps F\n"
+                 "  --with N[@X:Y],...             draw these clips too, at the same frame, each moved by X, Y\n"
+                 "                                 (later ones over earlier ones); their bounds are printed\n"
                  "  --output FILE.png              render one frame and exit\n"
                  "  --list                         print the clip table and exit\n"
                  "  --hp DAYS_HP --max-hp DAYS_HP   display the separate HP gauge composition\n"
@@ -43,10 +46,38 @@ void help()
                  "--fps is source timeline units per second (default 60), independent of display refresh.\n";
 }
 
-render::SequenceView centered(const kh2::SequenceData &data, std::size_t clip, float scale)
+// A clip drawn with the first, moved by x, y
+struct Placed {
+    std::size_t clip = 0;
+    float x = 0, y = 0;
+};
+
+// The clips' frame drawn together: the first clip's, then each of `with`'s over it
+kh2::SequenceFrame together(const kh2::SequenceData &data, std::size_t clip, const std::vector<Placed> &with,
+                            float frame)
 {
-    const auto frame = kh2::evaluate_sequence(data, clip, 0);
-    float x0 = std::numeric_limits<float>::max(), y0 = x0, x1 = -x0, y1 = -x0;
+    auto out = kh2::evaluate_sequence(data, clip, frame);
+    for (const Placed &other : with) {
+        // each played from its start for `frame` frames, as a player shows it (held or looped at its end)
+        kh2::SequencePlayer player;
+        player.select(data, other.clip);
+        player.advance(data, frame);
+        auto f = kh2::evaluate_sequence(data, other.clip, player.frame());
+        for (auto &q : f.quads) {
+            for (auto &v : q.vertices) {
+                v.x += other.x;
+                v.y += other.y;
+            }
+        }
+        out.quads.insert(out.quads.end(), f.quads.begin(), f.quads.end());
+    }
+    return out;
+}
+
+bool bounds_of(const kh2::SequenceFrame &frame, float &x0, float &y0, float &x1, float &y1)
+{
+    x0 = y0 = std::numeric_limits<float>::max();
+    x1 = y1 = -x0;
     for (const auto &q : frame.quads) {
         for (const auto &v : q.vertices) {
             x0 = std::min(x0, v.x);
@@ -55,7 +86,14 @@ render::SequenceView centered(const kh2::SequenceData &data, std::size_t clip, f
             y1 = std::max(y1, v.y);
         }
     }
-    if (frame.quads.empty())
+    return !frame.quads.empty();
+}
+
+render::SequenceView centered(const kh2::SequenceData &data, std::size_t clip, const std::vector<Placed> &with,
+                              float scale)
+{
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    if (!bounds_of(together(data, clip, with, 0), x0, y0, x1, y1))
         x0 = y0 = x1 = y1 = 0;
     return {400 - (x0 + x1) * scale / 2, 250 - (y0 + y1) * scale / 2, scale};
 }
@@ -73,6 +111,7 @@ int main(int argc, char **argv)
             root = env;
         std::string entry = "gaug";
         std::size_t clip = 121;
+        std::vector<Placed> with;
         std::size_t config_slot = 0;
         float frame = 0, scale = 3, fps = 60;
         bool list = false, autoplay = false;
@@ -119,6 +158,25 @@ int main(int argc, char **argv)
                     throw std::runtime_error("party slot must be 1-3");
             } else if (option == "--sequence")
                 clip = std::stoull(value);
+            else if (option == "--with") {
+                for (std::size_t at = 0; at < value.size();) {
+                    std::size_t used = 0;
+                    Placed placed;
+                    placed.clip = std::stoull(value.substr(at), &used);
+                    at += used;
+                    if (at < value.size() && value[at] == '@') {
+                        placed.x = std::stof(value.substr(at + 1), &used);
+                        at += 1 + used;
+                        if (at >= value.size() || value[at] != ':')
+                            throw std::runtime_error("--with: a clip's place is @X:Y");
+                        placed.y = std::stof(value.substr(at + 1), &used);
+                        at += 1 + used;
+                    }
+                    with.push_back(placed);
+                    if (at < value.size() && value[at] == ',')
+                        ++at;
+                }
+            }
             else if (option == "--frame")
                 frame = std::stof(value);
             else if (option == "--scale")
@@ -208,10 +266,29 @@ int main(int argc, char **argv)
         }
         if (clip >= asset.sequence.clips.size())
             throw std::runtime_error("sequence index out of range");
+        for (const Placed &other : with) {
+            if (other.clip >= asset.sequence.clips.size())
+                throw std::runtime_error("sequence index out of range");
+        }
+        if (!with.empty()) {
+            std::vector<Placed> all{Placed{clip}};
+            all.insert(all.end(), with.begin(), with.end());
+            for (const Placed &c : all) {
+                float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+                kh2::SequencePlayer played;
+                played.select(asset.sequence, c.clip);
+                played.advance(asset.sequence, frame);
+                if (bounds_of(kh2::evaluate_sequence(asset.sequence, c.clip, played.frame()), x0, y0, x1, y1))
+                    std::cout << "clip " << c.clip << ": " << x0 + c.x << ", " << y0 + c.y << " to " << x1 + c.x
+                              << ", " << y1 + c.y << '\n';
+                else
+                    std::cout << "clip " << c.clip << ": nothing drawn\n";
+            }
+        }
         kh2::SequencePlayer player;
         player.select(asset.sequence, clip);
         player.seek(frame);
-        auto view = hp_mode ? render::SequenceView{400, 250, scale} : centered(asset.sequence, clip, scale);
+        auto view = hp_mode ? render::SequenceView{400, 250, scale} : centered(asset.sequence, clip, with, scale);
         float damage_offset = hp.damage_frame - frame;
         std::vector<std::uint32_t> pixels(800 * 500);
         auto draw = [&] {
@@ -226,7 +303,7 @@ int main(int argc, char **argv)
                                                                       bar_capacity, hp.frame, hp.damage_frame},
                                                                      enemy_style)
                                    : hp_mode ? gauge::evaluate_hp_gauge(asset.sequence, hp, style)
-                                             : kh2::evaluate_sequence(asset.sequence, player.clip(), player.frame());
+                                             : together(asset.sequence, player.clip(), with, player.frame());
             render::draw_sequence(evaluated.quads, asset.texture, asset.logical_size[0], asset.logical_size[1], pixels,
                                   800, 500, view);
         };
@@ -285,12 +362,12 @@ int main(int argc, char **argv)
                         player.select(asset.sequence, (player.clip() + (key == SDLK_UP ? 1 : count - 1)) % count, true);
                     }
                     view = hp_mode ? render::SequenceView{400, 250, scale}
-                                   : centered(asset.sequence, player.clip(), scale);
+                                   : centered(asset.sequence, player.clip(), with, scale);
                 }
                 if (key == SDLK_EQUALS || key == SDLK_MINUS) {
                     scale = std::clamp(scale * (key == SDLK_EQUALS ? 1.25f : 0.8f), 0.125f, 64.0f);
                     view = hp_mode ? render::SequenceView{400, 250, scale}
-                                   : centered(asset.sequence, player.clip(), scale);
+                                   : centered(asset.sequence, player.clip(), with, scale);
                 }
             }
             const auto now = SDL_GetTicksNS();

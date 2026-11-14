@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 #include "../gfx/g3d.h" /* a C header */
+#include "elements.h"  /* a C header */
 
 /* Called by the HUD's emit at every VBlank: "hud.reaction_command" above the deck -- KH2's general command menu's bar
  * with the pad's top button's icon and the command's name in the game's language, or without the bar's pieces the
@@ -19,6 +20,18 @@ void khdays_ui_reaction_command_emit(void);
 
 /* The bar's GPU sequence program for the frame package (empty when none shows). */
 void khdays_ui_reaction_command_commands(KhdaysSequenceImage *out);
+
+/* KH2's command menu in an enemy's own pictures (runtime/kh2_enemies, 1:359: Zexion's book in his Lexicon), drawn in
+ * place of the command deck: hud.c gives the deck's element (its DS place) at every VBlank it is there; 1 when the
+ * menu stands over it (the deck's cells and sprites then left out), 0 for Days's deck. Whether it stood this VBlank;
+ * its GPU sequence program for the frame package (empty when none). The reaction command's bar takes the same
+ * pictures while it stands, as KH2's menu does. */
+int khdays_ui_command_image_compose(const KhdaysUiElement *deck);
+int khdays_ui_command_image_owns(void);
+void khdays_ui_command_image_commands(KhdaysSequenceImage *out);
+/* Whether it will stand this VBlank: for the text part, which emits before the HUD (the deck's names then left out,
+ * as the menu writes its own). */
+int khdays_ui_command_image_standing(void);
 
 /* KH2's mark where an enemy offering this game's own player a reaction command aims it, a picture of the 3D layer:
  * drawn while the game builds its 3D list, round `spot` (clip space x, y, z, w: runtime/kh2_enemies projects it as it

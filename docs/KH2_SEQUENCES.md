@@ -287,7 +287,11 @@ frame so subsequent movement remains visible. `--frame` selects a starting frame
 a window. `--fps` sets source timeline units per second (default 60); it is an
 inspection control, not a verified claim about the original Vsync clock.
 `--play` starts playback immediately; `--run-frames N` exits after N presentations
-for automated viewer smoke tests.
+for automated viewer smoke tests. `--with N@X:Y,...` draws more clips with the selected
+one, each moved by X, Y in the sequence's dots and played from its start for the same
+frames (held or looped at its end as a player shows it), later ones over earlier ones,
+and prints each clip's bounds: a menu laid out where KH2's code places its pieces (an
+enemy's own command menu, docs/KH2_ENEMIES.md).
 
 The separate HP composition can be inspected with:
 
