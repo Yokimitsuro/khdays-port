@@ -1127,6 +1127,22 @@ TEST(kh2_enemies_in_a_wave_kept_through_its_places) {
           std::make_pair(std::string("wave 1"), std::string("kh2:M_EX010/4x3 0x1 at 0 0 1")));
 }
 
+TEST(a_kh2_enemy_alone_reads_when_a_mod_makes_it) {
+    const auto root = studio_test::scratch("mission_kh2_alone");
+    const auto mod = root / "mods" / "M";
+    studio_test::write(mod / "missions" / "missions.txt",
+                       "[mission alone]\nname en = W\nobjective en = O\nworld = tt\n"
+                       "wave 1 = kh2:B_EX390x1 at 0 0 1\n");
+    std::string why;
+    // no mod makes Roxas: the mission does not read, as in the game
+    CHECK(studio::mod_mission_spots(mod, "alone", &why).empty() && why.find("B_EX390") != std::string::npos);
+    // another mod's list makes him: it reads, alone
+    studio_test::write(root / "mods" / "E" / "kh2_enemies.txt", "B_EX390\tRoxas\tyes\n");
+    why.clear();
+    const auto spots = studio::mod_mission_spots(mod, "alone", &why);
+    CHECK(spots.size() == 1 && spots[0].kh2.size() == 1 && spots[0].kh2[0] == "B_EX390" && spots[0].kh2_alone[0]);
+}
+
 TEST(a_new_missions_places_read_and_saved_at_once) {
     const auto root = studio_test::scratch("mission_places");
     const auto mod = root / "mods" / "M";

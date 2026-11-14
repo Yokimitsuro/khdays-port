@@ -113,8 +113,24 @@ void reported(const char* mod, int line, const char* why, void* context) {
     r->lines.push_back(line > 0 ? "missions.txt:" + std::to_string(line) + ": " + why : why);
 }
 
-// The mod's descriptions read by the port's reader; the reports into `reports`.
-void read_registry(const std::string& text, KhdaysMissions* r, Reports* reports) {
+// The KH2 enemies the mods beside the one being read make (kh2_mission_enemies), for the port's reader: a wave's
+// KH2 enemy with no Days enemy standing in for it reads when one of them makes it, as the game reads it when
+// it is loaded.
+std::set<std::string>& kh2_made() {
+    static std::set<std::string> made;
+    return made;
+}
+
+int kh2_made_here(const char* name) {
+    return kh2_made().count(name) != 0 ? 1 : 0;
+}
+
+// The descriptions of the mod in `mod_dir` read by the port's reader; the reports into `reports`.
+void read_registry(const fs::path& mod_dir, const std::string& text, KhdaysMissions* r, Reports* reports) {
+    kh2_made().clear();
+    for (const auto& [name, label] : kh2_mission_enemies(mod_dir.parent_path()))
+        kh2_made().insert(name);
+    khdays_missions_set_kh2_ready(kh2_made_here);
     khdays_missions_read(r, "mod", "mod", text.data(), text.size(), reported, reports);
 }
 
@@ -147,7 +163,7 @@ bool write_missions_txt(const fs::path& mod_dir, const std::string& text, const 
         [&](const fs::path& temporary) -> std::string {
             KhdaysMissions back{};
             Reports reports;
-            read_registry(read_text(temporary), &back, &reports);
+            read_registry(mod_dir, read_text(temporary), &back, &reports);
             const bool there = has_key(back, key);
             khdays_missions_free(&back);
             if (!there)
@@ -241,7 +257,7 @@ bool write_checked(const fs::path& mod_dir, const std::vector<std::string>& line
         out += l + "\n";
     KhdaysMissions back{};
     Reports reports;
-    read_registry(out, &back, &reports);
+    read_registry(mod_dir, out, &back, &reports);
     const bool there = has_key(back, key);
     khdays_missions_free(&back);
     if (!there)
@@ -258,14 +274,14 @@ std::vector<std::pair<std::string, std::string>> kh2_mission_enemies(const fs::p
         std::ifstream in(mod.path() / "kh2_enemies.txt", std::ios::binary);
         std::string line;
         while (std::getline(in, line)) {
-            if (!line.empty() && line.back() == '')
+            if (!line.empty() && line.back() == '\r')
                 line.pop_back();
             if (line.empty() || line[0] == '#')
                 continue;
             std::vector<std::string> cells;
             std::string cell;
             std::istringstream row(line);
-            while (std::getline(row, cell, '	'))
+            while (std::getline(row, cell, '\t'))
                 cells.push_back(cell);
             if (cells.size() > 2 && cells[2] == "yes" && (cells[0].rfind("M_", 0) == 0 || cells[0].rfind("B_", 0) == 0))
                 found.emplace(cells[0], cells[1]);
@@ -313,7 +329,7 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
     Reports reports;
     const std::string text = read_text(missions_txt(mod_dir));
     const std::vector<std::string> file_lines = lines_of(text);
-    read_registry(text, &r, &reports);
+    read_registry(mod_dir, text, &r, &reports);
     for (int i = 0; i < r.count; ++i) {
         const KhdaysMission& m = r.list[i];
         ModMission mm;
@@ -394,7 +410,7 @@ bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std
     {
         KhdaysMissions r{};
         Reports reports;
-        read_registry(text, &r, &reports);
+        read_registry(mod_dir, text, &r, &reports);
         const bool taken = has_key(r, key);
         khdays_missions_free(&r);
         if (taken)
@@ -516,13 +532,14 @@ std::vector<MissionSpot> mod_mission_spots(const fs::path& mod_dir, const std::s
     std::vector<MissionSpot> out;
     KhdaysMissions r{};
     Reports reports;
-    read_registry(read_text(missions_txt(mod_dir)), &r, &reports);
+    read_registry(mod_dir, read_text(missions_txt(mod_dir)), &r, &reports);
     const KhdaysMission* m = nullptr;
     for (int i = 0; i < r.count; ++i)
         if (key == r.list[i].key)
             m = &r.list[i];
     if (m == nullptr) {
-        fail_with(why, "the mod has no mission " + key + " that reads");
+        fail_with(why, "the mod has no mission " + key + " that reads" +
+                           (reports.lines.empty() ? std::string() : ": " + reports.lines.back()));
     } else {
         if (m->has_start) {
             MissionSpot s;
@@ -697,7 +714,7 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
     use_game_items(nitrofs);
     KhdaysMissions r{};
     Reports reports;
-    read_registry(read_text(missions_txt(mod_dir)), &r, &reports);
+    read_registry(mod_dir, read_text(missions_txt(mod_dir)), &r, &reports);
     const KhdaysMission* m = nullptr;
     for (int i = 0; i < r.count; ++i)
         if (key == r.list[i].key)
@@ -706,7 +723,8 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
     if (m != nullptr && off_floor != nullptr)
         *off_floor = off_the_floor(nitrofs, mod_dir, *m);
     if (m == nullptr) {
-        ok = fail_with(why, "the mod has no mission " + key + " that reads");
+        ok = fail_with(why, "the mod has no mission " + key + " that reads" +
+                           (reports.lines.empty() ? std::string() : ": " + reports.lines.back()));
     } else if (khdays_mission_built(m)) {
         *has_waves = true;
         MissionPlan plan;
@@ -789,7 +807,7 @@ bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::v
     KhdaysMissions r{};
     Reports reports;
     KhdaysFieldStore store{};
-    read_registry(read_text(missions_txt(mod_dir)), &r, &reports);
+    read_registry(mod_dir, read_text(missions_txt(mod_dir)), &r, &reports);
     khdays_missions_number(&r, &store, nullptr, nullptr);
     for (int l = 0; l < KHDAYS_MISSION_LANGUAGES && r.count > 0; ++l) {
         const fs::path list = nitrofs.parent_path() / "decompressed" / "UI" / "cm" /
