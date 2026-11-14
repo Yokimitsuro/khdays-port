@@ -14,7 +14,9 @@ extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
 extern void NNSi_FndFreeFromDefaultHeap(KhdaysRef block);
 extern int Session_GetLocalPlayerIndex(void);
 extern void Actor_SetVecAndSyncChild(KhdaysRef node, KhdaysRef pos);
-extern KhdaysRef Collision_CastRay(KhdaysRef world, KhdaysRef from, KhdaysRef way);
+extern KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
+extern KhdaysRef Collision_RunSphereCast(KhdaysRef world, KhdaysRef params);
+extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
 
 #define ACTOR_SCENE 0x4u
 #define ACTOR_MODE 0x50u    /* 1: this game's own */
@@ -233,31 +235,106 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
 #define SCENE_COLLISION 0x7cu /* a scene's room collision (the actor's + 0x4's) */
 #define HIT_SHARE 0xcu        /* a hit's distance along the way cast, a Q27 share of it */
 
-int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3])
+/* CollCastParams: `map_only` (the decomp's directionIsUnit) leaves the collision's objects out -- what
+ * Coll_WalkTreeForHit and Coll_WalkSphereTreeForHit read it for -- as the camera's casts set it */
+#define CAST_ORIGIN 0x0u
+#define CAST_WAY 0x4u
+#define CAST_RADIUS 0x8u
+#define CAST_MAP_ONLY 0xcu /* u16 */
+#define CAST_FLAGS 0xeu    /* u16 */
+#define CAST_EXCLUDE 0x10u
+#define CAST_SIZE 0x14u
+#define HIT_FACE 0x4u     /* the face met */
+#define FACE_NORMAL 0x14u /* its plane's normal, s16 x3 */
+
+typedef KhdaysRef (*CastRoutine)(KhdaysRef world, KhdaysRef params);
+
+/* The room's collision under the actor (its scene's), 0 none */
+static unsigned room_collision(unsigned actor)
 {
     const unsigned scene = rd32(actor + ACTOR_SCENE);
-    const unsigned world = scene != 0 ? rd32(scene + SCENE_COLLISION) : 0;
-    if (world == 0) {
-        return 0;
-    }
-    const KhdaysRef v = words(24);
+    return scene != 0 ? rd32(scene + SCENE_COLLISION) : 0;
+}
+
+/* One of Days's casts of the room's collision from `from` along to `to` (metres) with `radius`: how far along the way
+ * it meets a face (0 to 1, its distance a Q27 share of the way) and that face's normal (a unit way); whether it does.
+ * The hit record and the face are the collision's own (not the game's heap): read where they lie, as the camera's
+ * casts do. */
+static int cast_room(CastRoutine cast, unsigned world, const float from[3], const float to[3], float radius,
+                     double *share, float normal[3])
+{
+    const KhdaysRef v = words(24 + CAST_SIZE);
     if (v == 0) {
         return 0;
     }
+    const KhdaysRef params = v + 24u;
     for (int i = 0; i < 3; ++i) {
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(from[i]);
         *(int *)KHDAYS_W(v + 12u + 4u * (unsigned)i) = to_fx(to[i] - from[i]);
     }
-    const KhdaysRef h = Collision_CastRay(world, v, v + 12u);
+    *(KhdaysRef *)KHDAYS_W(params + CAST_ORIGIN) = v;
+    *(KhdaysRef *)KHDAYS_W(params + CAST_WAY) = v + 12u;
+    *(int *)KHDAYS_W(params + CAST_RADIUS) = to_fx(radius);
+    *(unsigned short *)KHDAYS_W(params + CAST_MAP_ONLY) = 1;
+    *(unsigned short *)KHDAYS_W(params + CAST_FLAGS) = 0;
+    *(KhdaysRef *)KHDAYS_W(params + CAST_EXCLUDE) = 0;
+    const KhdaysRef h = cast(world, params);
     words_done(v);
     if (h == 0) {
         return 0;
     }
-    /* the hit record is the collision's own (not the game's heap): read where it lies, as the camera's casts do */
-    const double share = (double)*(const int *)KHDAYS_W(h + HIT_SHARE) / 134217728.0;
+    *share = (double)*(const int *)KHDAYS_W(h + HIT_SHARE) / 134217728.0;
+    const KhdaysRef face = *(const KhdaysRef *)KHDAYS_W(h + HIT_FACE);
+    const short *plane = face != 0 ? (const short *)KHDAYS_W(face + FACE_NORMAL) : NULL;
+    const double size = plane != NULL ? sqrt((double)plane[0] * plane[0] + (double)plane[1] * plane[1] +
+                                             (double)plane[2] * plane[2])
+                                      : 0.0;
+    for (int i = 0; i < 3; ++i) {
+        normal[i] = size > 0.0 ? (float)(plane[i] / size) : 0.0f;
+    }
+    return 1;
+}
+
+static void along(const float from[3], const float to[3], double share, float hit[3])
+{
     for (int i = 0; i < 3; ++i) {
         hit[i] = from[i] + (float)((double)(to[i] - from[i]) * share);
     }
+}
+
+int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3])
+{
+    const unsigned world = room_collision(actor);
+    if (world == 0) {
+        return 0;
+    }
+    /* the three lists, as the camera's line meets them: the ray's floors and slopes, the sphere cast's walls (with no
+     * radius a line), the plain cast's ceilings -- the nearest */
+    const CastRoutine casts[3] = {Collision_RunRayCast, Collision_RunSphereCast, Collision_CastNearest};
+    double nearest = 2.0;
+    for (int k = 0; k < 3; ++k) {
+        double share = 0.0;
+        float normal[3];
+        if (cast_room(casts[k], world, from, to, 0.0f, &share, normal) && share < nearest) {
+            nearest = share;
+        }
+    }
+    if (nearest > 1.0) {
+        return 0;
+    }
+    along(from, to, nearest, hit);
+    return 1;
+}
+
+int khdays_kh2_shell_wall(unsigned actor, const float from[3], const float to[3], float radius, float hit[3],
+                          float normal[3])
+{
+    const unsigned world = room_collision(actor);
+    double share = 0.0;
+    if (world == 0 || !cast_room(Collision_RunSphereCast, world, from, to, radius, &share, normal)) {
+        return 0;
+    }
+    along(from, to, share, hit);
     return 1;
 }
 

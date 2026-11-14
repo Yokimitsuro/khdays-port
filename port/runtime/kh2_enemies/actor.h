@@ -411,6 +411,13 @@ public:
     {
         return false;
     }
+    // A way along the ground (`way`, KH2's cm) from `place` swept by a body's sphere of `radius` (KH2's cm; 0 the actor's
+    // own) against the room's walls (Days's: its wall list, which its ray never meets): up to the first wall, the rest
+    // slid along it when `slide`; the way made back in `way`, whether a wall stopped it
+    virtual bool wall_sweep(Actor & /*a*/, const Vec3 & /*place*/, float /*radius*/, Vec3 & /*way*/, bool /*slide*/)
+    {
+        return false;
+    }
     // A point's distance to what a target record names (6:9, FUN_1403bdd90: its shape -- an attack's sphere, an
     // actor's aim shape -- FUN_1403c99f0)
     virtual bool record_distance(std::uint32_t /*record*/, const Vec3 & /*point*/, float & /*out*/)

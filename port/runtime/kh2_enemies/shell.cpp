@@ -101,6 +101,8 @@ void to_days(const Vec3 &k, float out[3])
     out[2] = k[2] / kKh2PerDays;
 }
 
+bool wall_sweep(unsigned shell, const Vec3 &place, float radius, Vec3 &way, bool slide);
+
 std::vector<std::uint8_t> read_file(const fs::path &p)
 {
     std::ifstream in(p, std::ios::binary);
@@ -1697,6 +1699,13 @@ public:
             return false;
         hit = to_kh2(h);
         return true;
+    }
+    bool wall_sweep(Actor &a, const Vec3 &place, float radius, Vec3 &way, bool slide) override
+    {
+        const auto it = by_actor.find(&a);
+        return it != by_actor.end() && ::wall_sweep(shell_of(*it->second), place,
+                                                    radius > 0.0F ? radius : it->second->radius * kKh2PerDays, way,
+                                                    slide);
     }
     bool record_distance(std::uint32_t record, const Vec3 &point, float &out) override
     {
@@ -3478,25 +3487,14 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         if (air || i != 1)
             h.place[std::size_t(i)] += h.move[std::size_t(i)] + h.steer[std::size_t(i)];
     h.move = {};
-    // the room's walls stop him as KH2's collision does: a cast at his middle from where he was to where he goes, the
-    // way along the ground, him kept his radius short of what it meets (the Soldier's Cyclone steps him 3.6 m aside)
-    if (const float dx = h.place[0] - was[0], dz = h.place[2] - was[2]; dx * dx + dz * dz > 0.0F) {
-        const float went = std::sqrt(dx * dx + dz * dz), middle = was[1] - kPlayerMiddle * kKh2PerDays;
-        const float reach = went + kHeldRadius;
-        float from[3], to[3], hit[3];
-        to_days({was[0], middle, was[2]}, from);
-        to_days({was[0] + dx / went * reach, middle, was[2] + dz / went * reach}, to);
-        if (khdays_kh2_shell_ray(shell_of(e), from, to, hit)) {
-            const Vec3 at = to_kh2(hit);
-            const float d =
-                std::max(0.0F, std::sqrt((at[0] - was[0]) * (at[0] - was[0]) + (at[2] - was[2]) * (at[2] - was[2])) -
-                                   kHeldRadius);
-            if (d < went) {
-                h.place[0] = was[0] + dx / went * d, h.place[2] = was[2] + dz / went * d;
-                if (trace_level() >= 2)
-                    khdays_log("kh2 enemies: held player %08x stopped by a wall %.1f along (KH2's cm)", object,
-                               double(d));
-            }
+    // the room's walls stop him as KH2's collision does: his body's sphere swept along his way from where he was, slid
+    // along what it meets (the Soldier's Cyclone steps him 3.6 m aside; Days's collision's ray meets no wall)
+    if (Vec3 way = {h.place[0] - was[0], 0.0F, h.place[2] - was[2]}; way[0] * way[0] + way[2] * way[2] > 0.0F) {
+        if (wall_sweep(shell_of(e), was, kHeldRadius, way, true)) {
+            h.place[0] = was[0] + way[0], h.place[2] = was[2] + way[2];
+            if (trace_level() >= 2)
+                khdays_log("kh2 enemies: held player %08x stopped by a wall: %.1f %.1f made (KH2's cm)", object,
+                           double(way[0]), double(way[2]));
         }
     }
     if (!air) {
@@ -4347,6 +4345,90 @@ void motion_states(Enemy &e)
     a.set_u32(0xd18, disable);
 }
 
+// The walls swept by a body's sphere along its way (KH2's cm): its radius this when none is given (no larger than
+// Days's own sphere's: Days's collision keeps it that far off the walls, a larger one would start in them), its centre
+// this much over its radius above its feet -- a step's height under it, as Days's own mover sweeps its 0.56 m sphere
+// 0.65 m up (Actor_ResolveMove) -- and kept this far off what it meets
+constexpr float kWallRadius = 45.0F, kWallStepOver = 30.0F, kWallGap = 1.0F;
+
+// A sphere of `radius` (KH2's cm) from `from` along `way` (KH2's) against the room's walls (khdays_kh2_shell_wall: Days's
+// collision's wall list, which its ray cast never meets): how far along the way it meets one (0 to 1) and the wall's
+// normal; whether it does. A wall whose front the way leaves (a sphere touching it going away or along it) is none:
+// Days's casts count faces from their front alone, so only one it starts against looks that way
+bool wall_cast(unsigned shell, const Vec3 &from, const Vec3 &way, float radius, float &share, Vec3 &normal)
+{
+    float f[3], t[3], h[3], n[3];
+    to_days(from, f);
+    to_days({from[0] + way[0], from[1] + way[1], from[2] + way[2]}, t);
+    if (!khdays_kh2_shell_wall(shell, f, t, radius / kKh2PerDays, h, n))
+        return false;
+    const Vec3 at = to_kh2(h);
+    const float length = std::sqrt(way[0] * way[0] + way[1] * way[1] + way[2] * way[2]);
+    const float done = std::sqrt((at[0] - from[0]) * (at[0] - from[0]) + (at[1] - from[1]) * (at[1] - from[1]) +
+                                 (at[2] - from[2]) * (at[2] - from[2]));
+    share = length > 0.0F ? std::clamp(done / length, 0.0F, 1.0F) : 0.0F;
+    normal = {n[0], -n[1], n[2]};
+    return normal[0] * way[0] + normal[2] * way[2] < 0.0F;
+}
+
+// A way along the ground (`way`, KH2's cm) from `place` swept by a body's sphere of `radius` against the room's walls,
+// as KH2's own collision moves a character (its body swept along the step, slid along what it meets): up to the first
+// wall, the rest of the way along it (its part into the wall taken out), swept again and stopped at the next. The
+// way made, in `way`; whether a wall stopped it. Days's collision pushes back only one standing in a wall, so a step
+// longer than its radius went through one: the Lingering Will's knuckle rush (23 m in a second and a half) left the
+// coliseum through its ring's and its stands' walls. Not `slide`: stopped at the first wall.
+bool wall_sweep(unsigned shell, const Vec3 &place, float radius, Vec3 &way, bool slide)
+{
+    if (!(radius > 0.0F))
+        radius = kWallRadius;
+    const Vec3 start = {place[0], place[1] - radius - kWallStepOver, place[2]};
+    Vec3 at = start, left = {way[0], 0.0F, way[2]};
+    bool stopped = false;
+    for (int pass = 0; pass < 2; ++pass) {
+        const float length = std::hypot(left[0], left[2]);
+        if (!(length > kWallGap))
+            break;
+        float share = 0.0F;
+        Vec3 n{};
+        if (!wall_cast(shell, at, left, radius, share, n)) {
+            at[0] += left[0], at[2] += left[2];
+            break;
+        }
+        stopped = true;
+        const float kept = std::max(0.0F, share - kWallGap / length);
+        at[0] += left[0] * kept, at[2] += left[2] * kept;
+        if (pass == 1 || !slide)
+            break; // its way along the wall met another (or it does not slide): it stops there
+        left = {left[0] * (1.0F - kept), 0.0F, left[2] * (1.0F - kept)};
+        const float nl = std::hypot(n[0], n[2]);
+        if (!(nl > 0.0F))
+            break;
+        const float nx = n[0] / nl, nz = n[2] / nl, into = left[0] * nx + left[2] * nz;
+        if (into < 0.0F)
+            left[0] -= into * nx, left[2] -= into * nz;
+    }
+    way[0] = at[0] - start[0];
+    way[2] = at[2] - start[2];
+    return stopped;
+}
+
+// Its way along the ground this tick (`travel`, KH2's cm, from `place`), on the ground or in the air, swept with its
+// Days sphere's radius against the room's walls (wall_sweep); whether a wall stopped it. Days's collision keeps it that
+// radius off them: a sphere any larger started in the wall it stood by, and every way, even away from it, was stopped
+// (the Lingering Will stood against the coliseum's ring for good)
+bool wall_stop(Enemy &e, const Vec3 &place, Vec3 &travel)
+{
+    if (!(std::hypot(travel[0], travel[2]) > 0.0F))
+        return false;
+    const Vec3 asked = travel;
+    if (!wall_sweep(shell_of(e), place, e.radius * kKh2PerDays, travel, true))
+        return false;
+    if (trace_level() >= 2)
+        khdays_log("kh2 enemies: %08x's way of %.1f %.1f stopped by a wall: %.1f %.1f made (KH2's cm)", e.days,
+                   double(asked[0]), double(asked[2]), double(travel[0]), double(travel[2]));
+    return true;
+}
+
 // The vacuums' pull on an object this tick (KH2's cm), as FUN_1403f9130 sums it for each object's move: none on one
 // of no weight (its entry's + 0x50: the Hydra's 0), + 0x120 bit 2 or + 0x18c bit 25 set (FUN_1403ba7d0; its last
 // test, FUN_1403da520, not read); each vacuum that does not let its kind be (+ 0x10's bit of its entry's kind, 0 for
@@ -4487,6 +4569,12 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
     if (e.aloft && motion_air && !a.jump.on && e.floor_known && place[1] + travel[1] >= e.floor - 0.01F) {
         e.aloft = false;
         ground_event(e, 14);
+    }
+    // the room's walls stop its way, on the ground or in the air; its slide and its steering end there (KH2's
+    // FUN_140421450, FUN_1403b9420)
+    if (wall_stop(e, place, travel)) {
+        a.slide_speed = 0.0F;
+        a.steer_speed = 0.0F;
     }
     // on the ground of its own (no jump, no motion in the air, not falling), its way along the ground does not take it
     // off a ledge (the ground more than a step below, or none): KH2's rooms wall their edges, Days's arenas and

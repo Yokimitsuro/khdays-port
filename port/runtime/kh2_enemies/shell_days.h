@@ -60,11 +60,19 @@ int khdays_kh2_shell_players(unsigned actor, KhdaysKh2Player *out, int room);
  * Whether the hit was taken. */
 int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3]);
 
-/* A segment of Days's world (from, to: metres) against the room's collision the enemy at `actor` stands in
- * (Collision_CastRay on its scene's collision, + 0x4's + 0x7c, as Ov107_AiState_ResolveContacts and
- * Collision_ProbeGround cast one): where it first meets it in `hit` (its distance a Q27 share of the way); whether it
- * does. */
+/* A segment of Days's world (from, to: metres) against the room's collision the enemy at `actor` stands in (its
+ * scene's, + 0x4's + 0x7c, as Ov107_AiState_ResolveContacts and Collision_ProbeGround cast it): where it first meets
+ * it in `hit`; whether it does. Days's collision keeps three lists, each met by its own cast, as the camera's line
+ * meets them: Collision_RunRayCast its floors and slopes (Coll_WalkTreeForHit reads a node's first list alone),
+ * Collision_RunSphereCast with no radius its walls (the second), Collision_CastNearest its ceilings -- the nearest of
+ * the three. Until 2026-11-14 the ray alone: no wall was ever met. */
 int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3]);
+
+/* The same segment's sphere of `radius` (metres) against the room's walls (Collision_RunSphereCast: the second list,
+ * Actor_ResolveMove's walls), the collision's objects left out: where the sphere's centre is as it first meets one in
+ * `hit`, that face's normal in `normal` (a unit way); whether it does. */
+int khdays_kh2_shell_wall(unsigned actor, const float from[3], const float to[3], float radius, float hit[3],
+                          float normal[3]);
 
 /* Its first attack slot with a power (Ov107_SetAttackPower's, +0x290 + 6 n), 0 when none has. */
 int khdays_kh2_shell_attack_slot(unsigned actor);

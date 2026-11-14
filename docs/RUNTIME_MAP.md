@@ -5975,6 +5975,11 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
 - **The ground under it** (+ 0x13c the distance under its sphere's centre, + 0x140 whether found): a KH2 leap of
   5 m came down 0.5 m and more a tick and went through the floor, Days's collision not stopping it, the ground then
   not found under it.
+- **The room's walls** (seen 2026-11-14, the coliseum made from KH2's `he00`, its ring walled at +-9.2 m and its
+  stands at +-20 m from the floor up): `Collision_CastRay` along the ground a metre up met none of them, in 200 s of
+  the Lingering Will's rushes; the ground under a point it met everywhere. A sphere cast (`Collision_RunSphereCast`,
+  `map_only` 1) along the same way met the walls (1556 ways stopped in the next 200 s, none crossed). A stand-in set
+  down its Days sphere's radius (0.45 m) off a wall stays there: Days's collision pushes it no further.
 
 ## 38. Days's commands on KH2's reaction command bar
 

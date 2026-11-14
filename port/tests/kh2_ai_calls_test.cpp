@@ -2188,6 +2188,17 @@ struct RoxasWorld final : kh::World {
         hit = {from[0] + (to[0] - from[0]) * s, from[1] + (to[1] - from[1]) * s, 100.0F};
         return true;
     }
+    // the same wall against a body's sphere swept along the ground: it stops its radius short of it (the actor's own,
+    // asked as 0, half a metre here)
+    bool wall_sweep(kh::Actor &, const kh::Vec3 &place, float radius, kh::Vec3 &way, bool) override
+    {
+        const float stop = 100.0F - (radius > 0.0F ? radius : 50.0F);
+        if (place[2] > stop || place[2] + way[2] <= stop)
+            return false;
+        const float s = (stop - place[2]) / way[2];
+        way = {way[0] * s, 0.0F, way[2] * s};
+        return true;
+    }
     std::vector<kh::Actor *> actors() override
     {
         return all;

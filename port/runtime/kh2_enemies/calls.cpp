@@ -1554,24 +1554,18 @@ void add_moving(ai::Calls &calls)
         if (Object *o = object_of(m, a[0]))
             o->set_bits(field::kFade, 1u << 12, true);
     });
-    // KH2 sweeps its collision along the step and stops it at a wall; the port casts at its middle (a metre up) and
-    // keeps it its body's half metre short of what it meets: Days's collision pushes back only one standing in a wall,
-    // so a step through one left it outside (Roxas's 2.5 m before his hold, 1:18, out of Days's arena)
+    // KH2 sweeps its collision along the step and stops it at a wall (FUN_1403b9ac0); the port sweeps its body's sphere
+    // (its Days sphere's) along it against the room's walls and stops it short of the first: Days's collision pushes
+    // back only one standing in a wall, so a step through one left it outside (Roxas's 2.5 m before his hold, 1:18, out
+    // of Days's arena)
     const auto step_to_space = [](ai::Machine &m, Actor *x, float length) {
-        constexpr float kMiddle = 100.0F, kKeptOff = 50.0F; // KH2's cm (y down)
         const Vec3 at = x->place(), f = facing_of(x->yaw());
         if (!(length > 0.0F))
             return at;
-        if (World *w = running(m)->world) {
-            Vec3 hit{};
-            const Vec3 from = {at[0], at[1] - kMiddle, at[2]};
-            const Vec3 to = {from[0] + f[0] * (length + kKeptOff), from[1], from[2] + f[2] * (length + kKeptOff)};
-            if (w->ray(*x, from, to, hit)) {
-                const float d = std::sqrt((hit[0] - at[0]) * (hit[0] - at[0]) + (hit[2] - at[2]) * (hit[2] - at[2]));
-                length = std::min(length, std::max(0.0F, d - kKeptOff));
-            }
-        }
-        return Vec3{at[0] + f[0] * length, at[1], at[2] + f[2] * length};
+        Vec3 way = {f[0] * length, 0.0F, f[2] * length};
+        if (World *w = running(m)->world)
+            w->wall_sweep(*x, at, 0.0F, way, false);
+        return Vec3{at[0] + way[0], at[1], at[2] + way[2]};
     };
     calls.set(1, 220, [step_to_space](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -2359,7 +2353,9 @@ void add_shots(ai::Calls &calls)
     // 1:247 a point at random round another, between two distances, on the ground (trap_bg_get_random_pos;
     // FUN_14042ead0 -> FUN_1403f3fa0: the distance at random, the way one of eight sectors in a running order --
     // FUN_1403f3fa0's counter, its bits turned -- and at random within it, KH2's chance twice; FUN_1403f4180's search
-    // of the way not read: the way's room stops it, the ground under it found): the shared vector
+    // of the way not read: the way's room stops it, the ground under it found): the shared vector. The way out to it
+    // is swept with the actor's body against the room's walls, the point its body short of the first: the Lingering
+    // Will's warp beside the player (atk_bazu_warp_near: 4 to 6 m off him) put him outside the coliseum's ring
     calls.set(1, 247, [world](ai::Machine &m, std::span<ai::Value> a) {
         static std::uint32_t sector = 0; // DAT_142ae5d78
         const Vec3 at = xyz(read_vec(m, a[0].bits));
@@ -2367,11 +2363,11 @@ void add_shots(ai::Calls &calls)
         const std::uint32_t turned = ((sector >> 2) & 1u) | (sector * 2u);
         const float turn = (float(turned) + float(next_chance()) * 2.32830644e-10F) * 0.785398163F;
         sector = (sector + 1u) & 7u;
-        Vec3 p = {at[0] + std::sin(turn) * r, at[1], at[2] + std::cos(turn) * r};
+        Vec3 way = {std::sin(turn) * r, 0.0F, std::cos(turn) * r};
         World *w = world(m);
-        Vec3 hit{};
-        if (w != nullptr && w->ray(*running(m), at, p, hit))
-            p = hit;
+        if (w != nullptr)
+            w->wall_sweep(*running(m), at, 0.0F, way, false);
+        Vec3 p = {at[0] + way[0], at[1], at[2] + way[2]}, hit{};
         if (w != nullptr && w->ray(*running(m), {p[0], p[1] - 200.0F, p[2]}, {p[0], p[1] + 1000.0F, p[2]}, hit))
             p = hit;
         Vec v;

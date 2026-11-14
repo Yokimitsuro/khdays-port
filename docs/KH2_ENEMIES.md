@@ -1618,9 +1618,23 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
 - **Put by a script** (1:148, 1:153, 1:220): the place its script gives it in a tick is kept (until 2026-11-11 the
   place Days had was written over it), and the place another's script gives it between two frames (the cubes put the
   Sorcerer they made where they stand) is taken at the next frame's start, not Days's. 1:220's step stops at the
-  room's walls as KH2's sweep does: a cast a metre up along it, the actor kept half a metre short of what it meets.
+  room's walls as KH2's sweep does (a body's sphere half a metre round swept along it, stopped at the first wall).
   Until 2026-11-13 it stepped the whole length: Days's collision pushes back only one standing in a wall, so a step
   through one (Roxas's 2.5 m before his hold) left it outside.
+- **The room's walls stop its way** (2026-11-14): each tick its way along the ground -- its motion's root, its
+  steering, its slide, a vacuum's pull, on the ground or in the air -- is swept by a sphere of its Days sphere's radius
+  (half a metre at least), its centre that radius and a step (30 cm) over its feet, against the room's walls: up to the
+  first, the rest along it (its part into the wall taken out), swept again and stopped at the next; its steering and
+  its slide end there (`FUN_140421450`). A held player's moves are swept the same way. Days's collision keeps three
+  lists: `Collision_CastRay` walks a node's first (floors and slopes; `Coll_WalkTreeForHit`), the sphere cast
+  (`Collision_RunSphereCast`, `Coll_WalkSphereTreeForHit`) its second, the walls -- as `Actor_ResolveMove` sweeps
+  Days's own characters. Before, the port's wall checks cast rays and met no wall at all: the Lingering Will's knuckle
+  rush (motion 203, 23 m in a second and a half) left the coliseum through its ring's and its stands' walls (built
+  from KH2's `he00` collision, both there) and stopped 50 m out where its floor ends. The scripts' casts of the room
+  (`World::ray`: 1:347's line of sight, 6:51's segment and 6:52's normal, 1:141's ground) meet the three lists, the
+  nearest, as the camera's line does (the sphere cast with no radius is a line); 1:247's point round another is swept
+  out to with the actor's body and kept its body short of the first wall (the Will's warp beside the player, 4 to 6 m
+  off him, had put him outside the ring, where Days's player cannot reach him).
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
   fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
 - **Its height is KH2's**: between two steps Days lowers a stand-in that is off the ground by 0.148 units a frame
