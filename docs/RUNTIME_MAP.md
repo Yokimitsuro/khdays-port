@@ -5838,7 +5838,15 @@ and the `missions_waves` mission played in one, 2026-11-02. The port puts the ro
   room is in at +0x17, 24 bytes, indexed by the room: `Ov002_LoadPeerIntoSlot` writes `aSlotMappings[nPeer]`, the
   fills of `Ov002_LoadWorldLinkResources`, `Ov002_AllocSceneState` and `Ov002_ReleaseContextBuffers` are 24 bytes,
   `Ov002_GetCtxTableByte` reads by index. Joined (`port/tools/prepare.py`) to a table of the port's that grows
-  (`runtime/rooms/slots.c`); the game's 24 bytes are still filled and no longer read.
+  (`runtime/rooms/slots.c`); the game's 24 bytes are still filled and no longer read. Two more hold 24 and do not
+  grow yet (2026-11-14, a tester's mission in eh's third added room, index 25, stopped at its start): the field's
+  pieces' lists, one for each room, the scene context's first 0x18 words (`Ov002_PushBucketNode`, `_ClearListA`/`_B`,
+  `_UnlinkNode`, the walks of `_SceneStep`, `_NotifyNodesOfKind`, `_SetSceneObjectsActive`,
+  `_TeardownAllSpawnSlots`, `_ReleaseAllSlotObjects`: room 24's head is the context's handle, room 25's its scale,
+  0x1000, taken for a piece), and the scene manager's spawn places (`Ov002_EnsureSceneManager`: 24 of 0x184 bytes at
+  + 0xb8, `Ov002_BindSlotActorModel` and `_ResetSlotActorPose` by the room). So a world's added rooms stop at 24
+  rooms in all (`kFieldRooms`, `runtime/rooms/added.cpp`): eh, with 23 of its own, takes one; the others are told
+  in the log and left out, a mission there played in the world's room 0.
 - **A room's collision is LZ-packed** where the game loads it (`Entity_LoadAndAttach`, `Archive_LoadFile` streaming
   it unpacked into `ModelGroup_Open`): an added room's is written LZ11 (literals, `lz11_literals`).
 - **The lower screen's chain** (`Ov002_ShowSlotSummary` through `Ov002_SnapshotChainEntry`, looked up by the field

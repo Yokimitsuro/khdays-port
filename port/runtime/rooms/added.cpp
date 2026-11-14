@@ -164,6 +164,15 @@ std::vector<unsigned char> write_p2(const P2 &p)
 // its exits' offset at +0x1c), then its objects' offsets (u32 each, from the record), then its object (u8 flags, u8
 // its model's member, u16).
 constexpr std::size_t kRecord = 0x20;
+// The field keeps its pieces (chests, elements, spawned entries) in one list for each room, the scene context's first
+// 0x18 words (Ov002_PushBucketNode, Ov002_ClearListA and _B, Ov002_UnlinkNode, the walks of Ov002_SceneStep,
+// Ov002_NotifyNodesOfKind, Ov002_SetSceneObjectsActive, Ov002_TeardownAllSpawnSlots, Ov002_ReleaseAllSlotObjects):
+// a room past them lists into the context's next words, its handle and its scale -- a mission in eh's third added
+// room (25: the scale's 0x1000 taken for a piece) stopped at its start, 2026-11-14. The scene manager holds as many
+// spawn places (Ov002_EnsureSceneManager: 24 of 0x184 bytes at + 0xb8, Ov002_BindSlotActorModel's and
+// Ov002_ResetSlotActorPose's by the room). Rooms are added up to that, the rest told and left out, until those grow
+// as the rooms' slots did (slots.c)
+constexpr unsigned kFieldRooms = 0x18;
 
 // The worlds the mod in `dir` adds (rooms/worlds.txt): blocks "[world <key>]" of "like = <a game world's code>",
 // "name = <text>" and "name <language> = <text>".
@@ -320,6 +329,20 @@ bool plan(const std::string &world, const std::vector<unsigned char> &archive)
         khdays_log("rooms: %s's room 0's model is not in the archive: its added rooms left out", game_path.c_str());
         return false;
     }
+    // as many as the field's lists hold (kFieldRooms), in the mods' order; the others left out
+    const unsigned fit = count < kFieldRooms ? kFieldRooms - count : 0u;
+    for (std::size_t k = fit; k < here.size(); ++k) {
+        khdays_log("rooms: %s's room %s left out: %s has %u rooms and the field keeps lists for %u (a mission there is "
+                   "played in the world's room 0)",
+                   here[k]->mod_path.c_str(), here[k]->key.c_str(), world.c_str(), count + static_cast<unsigned>(k),
+                   kFieldRooms);
+        here[k]->id = -1;
+        here[k]->index = -1;
+    }
+    if (here.size() > fit)
+        here.resize(fit);
+    if (here.empty())
+        return false;
     const unsigned added = static_cast<unsigned>(here.size());
     // members are a byte in the records, rooms a byte in the table (the game's widths)
     if (p.entries.size() + 2 * added > 0xff || count + added > 0xff) {
@@ -705,9 +728,9 @@ bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned
     const std::string world = game_path.substr(9);
     if (!plan(world, source))
         return false;
-    std::vector<Added *> here;
+    std::vector<Added *> here; // those plan placed
     for (auto &a : rooms) {
-        if (a.world == world)
+        if (a.world == world && a.id >= 0)
             here.push_back(&a);
     }
     P2 p;
