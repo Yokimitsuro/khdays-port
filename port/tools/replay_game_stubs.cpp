@@ -150,6 +150,11 @@ extern "C" int khdays_kh2_corridors_begin(const void *, const void *)
 extern "C" void khdays_kh2_corridors_node(unsigned) {}
 extern "C" void khdays_kh2_corridors_shape(void) {}
 
+extern "C" int khdays_host_graphics_flags(void) // the default settings (host.h)
+{
+    return 0;
+}
+
 // --- the game's memory, clock and log: none of the game's own, one VBlank a draw, the log to stderr off ------------
 
 unsigned char *khdays_window = no_window;
@@ -292,6 +297,14 @@ void khdays_g3d_light(const KhdaysG3dMaterial *, const float[3], float rgb[3])
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *, int, uint32_t, uint32_t, int32_t, int, int) {}
 void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *) {}
 void khdays_g3d_set_clip_owner(int) {}
+
+// no draw is being recorded: nothing left out past the view (models.cpp's culling, g3d.h)
+int khdays_g3d_mod_cull_sides(float *, float *)
+{
+    return 0;
+}
+
+void khdays_g3d_mod_skip(uint32_t, uint32_t) {}
 
 int khdays_shadow_sprite_active(void)
 {
