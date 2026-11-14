@@ -69,7 +69,21 @@ static void print_stack(HANDLE thread, CONTEXT *context)
         if (SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol)) {
             fprintf(stderr, "  #%-2d %08llx %s+0x%llx", depth, frame.AddrPC.Offset, symbol->Name, displacement);
         } else {
-            fprintf(stderr, "  #%-2d %08llx ?", depth, frame.AddrPC.Offset);
+            /* no symbol (a player's build carries no .pdb): its module and the offset in it, for the build's
+             * symbols to name later (llvm-symbolizer --obj=<exe> --relative-address) */
+            const DWORD64 base = SymGetModuleBase64(process, frame.AddrPC.Offset);
+            char path[MAX_PATH];
+            const char *name = "?";
+            if (base != 0 && GetModuleFileNameA((HMODULE)(size_t)base, path, (DWORD)sizeof(path)) > 0) {
+                const char *slash = strrchr(path, '\\');
+                name = slash != NULL ? slash + 1 : path;
+            }
+            if (base != 0) {
+                fprintf(stderr, "  #%-2d %08llx %s+0x%llx", depth, frame.AddrPC.Offset, name,
+                        frame.AddrPC.Offset - base);
+            } else {
+                fprintf(stderr, "  #%-2d %08llx ?", depth, frame.AddrPC.Offset);
+            }
         }
         if (SymGetLineFromAddr64(process, frame.AddrPC.Offset, &line_displacement, &line)) {
             fprintf(stderr, "  (%s:%lu)", line.FileName, line.LineNumber);

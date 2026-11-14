@@ -11,6 +11,7 @@ extern int Ov107_UpdateCollisionSphere(KhdaysRef actor);
 extern int Srt_SetRotationQuat(KhdaysRef srt, KhdaysRef quaternion);
 extern int Ov107_InvokeHitCallback(KhdaysRef victim, KhdaysRef a, KhdaysRef b, int mode, KhdaysRef push, int flags);
 extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
+extern void NNSi_FndFreeFromDefaultHeap(KhdaysRef block);
 extern int Session_GetLocalPlayerIndex(void);
 extern void Actor_SetVecAndSyncChild(KhdaysRef node, KhdaysRef pos);
 extern KhdaysRef Collision_CastRay(KhdaysRef world, KhdaysRef from, KhdaysRef way);
@@ -67,14 +68,28 @@ static int to_fx(float v)
     return d > 2147483647.0 ? 0x7fffffff : d < -2147483647.0 ? -0x7fffffff : (int)lrint(d);
 }
 
-/* words of the game's heap for the routines' pointers (a vector, a quaternion), made once */
-static KhdaysRef scratch(void)
+/* words of the game's heap for a routine's pointers (a vector, a quaternion): taken for the call and given back
+ * after it -- the field's heap goes with its area, so a block kept from one area would be another's in the next (a
+ * mission played again: a task's or the information panel's list written over) */
+static KhdaysRef words(unsigned size)
 {
-    static KhdaysRef at;
-    if (at == 0) {
-        at = NNSi_FndAllocFromDefaultExpHeap(32);
+    return NNSi_FndAllocFromDefaultExpHeap(size);
+}
+
+static void words_done(KhdaysRef at)
+{
+    if (at != 0) {
+        NNSi_FndFreeFromDefaultHeap(at);
     }
-    return at;
+}
+
+/* the point khdays_kh2_shell_point gives the game's code, which reads it after the call: kept for the area */
+static KhdaysRef area_point;
+
+void khdays_kh2_shell_area_left(void)
+{
+    words_done(area_point); /* the field's heap still stands (Ov002_ReleaseResources frees its own after) */
+    area_point = 0;
 }
 
 int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out)
@@ -118,8 +133,11 @@ void khdays_kh2_shell_set_health(unsigned actor, int hp, int most)
 
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw)
 {
-    const KhdaysRef v = scratch();
-    if (v == 0 || !khdays_game_ram(actor)) {
+    if (!khdays_game_ram(actor)) {
+        return;
+    }
+    const KhdaysRef v = words(32);
+    if (v == 0) {
         return;
     }
     /* its turn about the up (a quaternion w, x, y, z: Quat_FromTwoVectors'), so that what Days puts on its model's
@@ -134,22 +152,22 @@ void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw)
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(place[i]);
     }
     Srt_SetTranslation(actor + ACTOR_SRT, v);
+    words_done(v);
     Ov107_UpdateCollisionSphere(actor);
 }
 
 unsigned khdays_kh2_shell_point(const float place[3])
 {
-    static KhdaysRef at;
-    if (at == 0) {
-        at = NNSi_FndAllocFromDefaultExpHeap(16);
+    if (area_point == 0) {
+        area_point = words(16);
     }
-    if (at == 0) {
+    if (area_point == 0) {
         return 0;
     }
     for (int i = 0; i < 3; ++i) {
-        *(int *)KHDAYS_W(at + 4u * (unsigned)i) = to_fx(place[i]);
+        *(int *)KHDAYS_W(area_point + 4u * (unsigned)i) = to_fx(place[i]);
     }
-    return at;
+    return area_point;
 }
 
 void khdays_kh2_shell_size(unsigned actor, float radius, float centre, float *old_radius, float *old_centre)
@@ -197,14 +215,19 @@ int khdays_kh2_shell_players(unsigned actor, KhdaysKh2Player *out, int room)
 
 int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3])
 {
-    const KhdaysRef v = scratch();
-    if (v == 0 || !khdays_game_ram(actor) || !khdays_game_ram(victim)) {
+    if (!khdays_game_ram(actor) || !khdays_game_ram(victim)) {
+        return 0;
+    }
+    const KhdaysRef v = words(12);
+    if (v == 0) {
         return 0;
     }
     for (int i = 0; i < 3; ++i) {
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(push[i]);
     }
-    return Ov107_InvokeHitCallback(victim, actor, actor, slot, v, 0) != 0;
+    const int hit = Ov107_InvokeHitCallback(victim, actor, actor, slot, v, 0) != 0;
+    words_done(v);
+    return hit;
 }
 
 #define SCENE_COLLISION 0x7cu /* a scene's room collision (the actor's + 0x4's) */
@@ -212,13 +235,13 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
 
 int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3])
 {
-    static KhdaysRef v;
-    if (v == 0) {
-        v = NNSi_FndAllocFromDefaultExpHeap(32);
-    }
     const unsigned scene = rd32(actor + ACTOR_SCENE);
     const unsigned world = scene != 0 ? rd32(scene + SCENE_COLLISION) : 0;
-    if (v == 0 || world == 0) {
+    if (world == 0) {
+        return 0;
+    }
+    const KhdaysRef v = words(24);
+    if (v == 0) {
         return 0;
     }
     for (int i = 0; i < 3; ++i) {
@@ -226,6 +249,7 @@ int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3],
         *(int *)KHDAYS_W(v + 12u + 4u * (unsigned)i) = to_fx(to[i] - from[i]);
     }
     const KhdaysRef h = Collision_CastRay(world, v, v + 12u);
+    words_done(v);
     if (h == 0) {
         return 0;
     }
@@ -263,10 +287,13 @@ unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *no
 
 void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw)
 {
-    const KhdaysRef v = scratch();
     const unsigned node = rd32(actor + PLAYER_NODE);
     const double turn = 6.283185307179586;
-    if (v == 0 || node == 0 || !khdays_game_ram(node + NODE_ANGLE) || !khdays_game_ram(actor + PLAYER_POS + 8u)) {
+    if (node == 0 || !khdays_game_ram(node + NODE_ANGLE) || !khdays_game_ram(actor + PLAYER_POS + 8u)) {
+        return;
+    }
+    const KhdaysRef v = words(12);
+    if (v == 0) {
         return;
     }
     for (int i = 0; i < 3; ++i) {
@@ -274,6 +301,7 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
         *(int *)KHDAYS_W(actor + PLAYER_POS + 4u * (unsigned)i) = to_fx(place[i]);
     }
     Actor_SetVecAndSyncChild(node, v);
+    words_done(v);
     *(unsigned short *)KHDAYS_W(node + NODE_ANGLE) = (unsigned short)(lrint((double)yaw / turn * 65536.0) & 0xffff);
 }
 

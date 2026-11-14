@@ -4673,6 +4673,15 @@ Read from the decompilation and measured in the port.
 - **A room's collision has a format limit of its own**: a node of the collision tree names its
   first face in 16 bits, so a room holds at most 32,767 faces of each kind (khdays-studio refuses
   more); the largest such room made from nm room 9 is 8,081,760 bytes.
+- **No block of the default heap outlives its area** (2026-11-14, a tester's crash on a KH2
+  enemy's mission played a second time): the field's blocks go with it (`HeapState_Recreate` at
+  the scene's change, Retry's too), so a block the port took once and kept was another's in the
+  next run -- the KH2 shell's words for its routines' vectors, written each tick over a task's
+  state (`Ov107_NodeXformTaskStart` reading a null state) or the information panel's snapshot
+  list (`Ov002_SelectEntryByKey` walking to 0x74b8, a coordinate). The port's links take a block
+  for a call and free it after it (`runtime/scripts/*_link.c`, `kh2_enemies/shell_days.c`); one
+  the game reads after the call (a KH2 enemy's lock-on point) is kept for the area and freed in
+  `Ov002_ReleaseResources`'s join, before the game frees its own.
 
 ## 20. What gameplay mods hear and change
 

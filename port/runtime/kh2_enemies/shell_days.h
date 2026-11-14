@@ -35,8 +35,11 @@ void khdays_kh2_shell_set_health(unsigned actor, int hp, int most);
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw);
 
 /* A point of Days's world (metres) put in the game's memory as its vectors are (fx32 x3), for its own code to read:
- * the place it lies in, 0 when there is no room for it. The same place each call. */
+ * the place it lies in, 0 when there is no room for it. The same place each call within an area. */
 unsigned khdays_kh2_shell_point(const float place[3]);
+
+/* The area is left (khdays_kh2_enemies_area_left, while the field's heap still stands): the point's place given back. */
+void khdays_kh2_shell_area_left(void);
 
 /* Its collision sphere's radius and its centre's height over its place (+ 0x70, + 0x64's y; Days makes the sphere of
  * them each frame, Ov107_UpdateCollisionSphere): what the room's collision, the players' pushes and Days's hits use.

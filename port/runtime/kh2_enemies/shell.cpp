@@ -5160,6 +5160,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
 {
     reference_blow = 0; // the next area's first hit measures its KH2 enemies anew
     khdays_sound_shots_stop();
+    khdays_kh2_shell_area_left();
     made_row.clear();
     row_kinds.clear();
     kh2_rows = false;
@@ -5179,6 +5180,16 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     appeared.clear();
     forget_teamwork();
     held.clear();
+    // what the area's enemies offered or played for its players: the next area's objects may stand at the same
+    // addresses (a mission played again), so none of it may carry over -- the deck's rows drawn as Days's own
+    script_offer = {};
+    top_offer = {};
+    playing.reset();
+    drawn_weapons.clear();
+    shell_draws.clear();
+    local_player = 0;
+    last_days_damage = 0;
+    local_taken = -1;
     shouts.clear();
     waiting_threads.clear();
     player_of_node.clear();
