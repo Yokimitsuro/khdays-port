@@ -73,7 +73,7 @@ int khdays_room_place(char *world, int world_size, int *room)
 void khdays_room_place_frame(void)
 {
     static int present = -1;
-    static char said_world[16];
+    static char said_world[16] = ""; /* "" none yet: a string from the start, for the analysis (C6054) */
     static int said_room = -2;
     static char folder[520]; /* a room a mod adds: its folder ("" the game's) */
     char world[16] = "";
