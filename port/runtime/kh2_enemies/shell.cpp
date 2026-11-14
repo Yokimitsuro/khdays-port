@@ -6,6 +6,7 @@
 #include "calls.h"
 #include "kinds.h"
 #include "lights.h"
+#include "patterns.h"
 #include "shell_days.h"
 
 #include "khdays/assets/kh2_ai.h"
@@ -1091,6 +1092,7 @@ std::set<int> groups_on(const Enemy &e);
 bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out);
 constexpr float kPlayerMiddle = 0.725F; // a player's middle over his feet (Days's units): half kPlayerHeight
 void strike(AttackObject &o, Object &target);
+void hitback_push(int atkp, float dx, float dz, float push[3]);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = false);
 int attack_power(int atkp);
@@ -2540,8 +2542,8 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
                 if (const auto h = held.find(p.object); h != held.end() && h->second.unhittable)
                     continue; // its motion's range 27
                 e.struck[r].insert(p.object);
-                const float flat = std::sqrt(d[0] * d[0] + d[2] * d[2]);
-                const float push[3] = {flat > 0.0F ? d[0] / flat : 0.0F, 0.0F, flat > 0.0F ? d[2] / flat : 0.0F};
+                float push[3]; // from the sphere to him, as far as the attack throws (hitback_push)
+                hitback_push(int(std::int16_t(range.params[0])), d[0], d[2], push);
                 const int took = khdays_kh2_shell_hit(e.days, p.object, e.slot, push);
                 if (tracing())
                     khdays_log("kh2 enemies: %08x's motion %d at %.1f (atkp %d, group %d) hits %08x%s", e.days,
@@ -2846,6 +2848,7 @@ const kh2::MotionSkeleton *player_skeleton()
 // kh2/00battle.bin or no such attack
 struct AttackParam final {
     int power = 0, team = 0, reaction = 0;
+    int hitback = 0x7fff; // + 0xc, a short: how far its hit throws (KH2's cm), 0x7fff the battle constant's
 };
 const AttackParam &attack_param(int atkp)
 {
@@ -2861,10 +2864,12 @@ const AttackParam &attack_param(int atkp)
                     std::memcpy(&count, battle.data() + e.offset + 4, 4);
                     for (std::uint32_t i = 0; i < count && 8 + 48 * (i + 1) <= e.size; ++i) {
                         std::uint16_t number = 0, value = 0;
+                        std::int16_t back = 0;
                         std::memcpy(&number, battle.data() + e.offset + 8 + 48 * i + 2, 2);
                         std::memcpy(&value, battle.data() + e.offset + 8 + 48 * i + 6, 2);
+                        std::memcpy(&back, battle.data() + e.offset + 8 + 48 * i + 0xc, 2);
                         power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8],
-                                                          battle[e.offset + 8 + 48 * i + 10]});
+                                                          battle[e.offset + 8 + 48 * i + 10], back});
                     }
                 }
         } catch (const std::exception &x) {
@@ -2887,6 +2892,39 @@ int attack_power(int atkp)
 int attack_team(int atkp)
 {
     return attack_param(atkp).team;
+}
+
+// KH2's damage patterns (00battle.bin's patn: patterns.h), read once from the mod's kh2/00battle.bin
+const std::vector<DamagePattern> &damage_patterns()
+{
+    static std::vector<DamagePattern> patterns;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> battle = read_file(kh2_file("00battle.bin"));
+        try {
+            for (const kh2::BarEntry &e : kh2::bar_entries(battle.data(), battle.size()))
+                if (e.name == "patn")
+                    patterns = parse_damage_patterns(battle.data() + e.offset, e.size);
+        } catch (const std::exception &x) {
+            khdays_log("kh2 enemies: the mod's kh2/00battle.bin cannot be read (%s)", x.what());
+        }
+        if (patterns.empty())
+            khdays_log("kh2 enemies: no KH2 damage patterns (the mod's kh2/00battle.bin): every hit's reaction kept");
+    }
+    return patterns;
+}
+
+// A hit's reaction on `a` as its damage patterns on change its first one (patterns.h): those on are BTLOBJ's
+// Pattern, (Default | Enable) & ~Disable (YS::PIERROT::_OVR_exec_damage): + 0xd10 Default (1:211 sets a bit, 1:212
+// and 1:324 clear it), + 0xd14 Enable and + 0xd18 Disable (its motion's ranges 36 and 37 while they last,
+// motion_states); in the air as 1:60 tells it
+int hit_pattern_reaction(const Actor &a, int first)
+{
+    const bool air = (a.u32(field::kStatus) & 0x1000020u) != 0 || (a.u32(field::kFlags) & bit::kInAir) != 0 ||
+                     (a.u32(field::kStatus) & 0x40u) != 0;
+    const std::uint32_t on = (a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18);
+    return pattern_reaction(damage_patterns(), on, air, first);
 }
 
 // A KH2 player's blow with attack `atkp` on `t`: its reaction kept with the blow's, the strongest
@@ -3965,6 +4003,40 @@ bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out)
     return false;
 }
 
+// How far a KH2 attack throws back what it strikes, in Days's units (KH2's YS::DAMAGE::get_hitback, as 2:86 reads
+// it): the attack's own hitback (atkp + 0xc, KH2's cm) or, at 0x7fff, KH2's battle constant for its reaction
+// (03system.bin's sstm + 0x34 for a small one, else + 0x30); none for an attack that gives no reaction
+float hitback_of(int atkp)
+{
+    const AttackParam &p = attack_param(atkp);
+    if (p.reaction == 0 || p.reaction == 255)
+        return 0.0F;
+    float cm = float(p.hitback);
+    if (p.hitback == 0x7fff) {
+        const int r = p.reaction;
+        const bool small = r == 3 || r == 6 || r == 8 || r == 10 || r == 13 || r == 16 || r == 18;
+        const std::vector<std::uint8_t> &values = system_constants();
+        const std::size_t offset = small ? 0x34u : 0x30u;
+        cm = 200.0F;
+        if (offset + 4 <= values.size())
+            std::memcpy(&cm, values.data() + offset, 4);
+    }
+    return cm > 0.0F ? cm / kKh2PerDays : 0.0F;
+}
+
+// The push a KH2 hit gives a Days player (Ov107_InvokeHitCallback's), along the ground way (dx, dz) from what struck to
+// him: Days's recoil moves him twice the push it is given (Ov022_IntegrateRecoilVec adds it and halves it each
+// frame), so half the attack's hitback. Days's own enemies give 0.25 to 0.375
+void hitback_push(int atkp, float dx, float dz, float push[3])
+{
+    push[0] = push[1] = push[2] = 0.0F;
+    const float flat = std::sqrt(dx * dx + dz * dz), half = hitback_of(atkp) * 0.5F;
+    if (!(flat > 0.0F) || !(half > 0.0F))
+        return;
+    push[0] = dx / flat * half;
+    push[2] = dz / flat * half;
+}
+
 // A hit made with an attack on an object at once (2:17): a Days player its enemy's hit (KH2's own attack landing on
 // him: trigger 15 too), a KH2 enemy KH2's player's blow when he owns it (the Neoshadow's strike: Days's damage the
 // player's last hit times the attack's power)
@@ -3977,7 +4049,10 @@ void strike(AttackObject &o, Object &target)
     if (const unsigned player = days_object(target); player != 0) {
         if (o.players || !o.struck.insert(player).second)
             return;
-        const float push[3] = {0.0F, 0.0F, 0.0F};
+        float push[3], at[3], to[3]; // from the enemy to him: its attack of its own's way
+        to_days(e.actor->place(), at);
+        to_days(target.place(), to);
+        hitback_push(o.atkp, to[0] - at[0], to[2] - at[2], push);
         o.landed = true; // KH2's hit lands whether Days's player takes it or not (his guard, his dodge)
         o.hit = target.address();
         if (khdays_kh2_shell_hit(e.days, player, e.slot, push))
@@ -4222,13 +4297,24 @@ void motion_states(Enemy &e)
     }
     // its ranges 16 to 19 ("AI" ranges: special movement, its combos): bits 0 to 3 of + 0x2ac (FUN_14040d810; 1:150)
     std::uint32_t ai_ranges = 0;
+    // and its ranges 36 and 37: a damage pattern on and off while they last, the bit their parameter names (+ 0xd14
+    // Pattern.Enable, + 0xd18 Pattern.Disable: FUN_14040d810's 0x24 and 0x25; patterns.h) -- Roxas's dashing combo
+    // (motion 201, pattern 1 over frames 0 to 240) takes no flinch so, as in KH2
+    std::uint32_t enable = 0, disable = 0;
     if (const kh2::MotionAttributes *attr = a.motion.id >= 0 && (!a.motion.ended || loops)
                                                 ? e.motions->attributes(a.motion.id)
                                                 : nullptr)
-        for (const auto &r : attr->ranges)
-            if (r.id >= 16 && r.id <= 19 && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
+        for (const auto &r : attr->ranges) {
+            if (a.motion.time < float(r.start) || a.motion.time >= float(r.end))
+                continue;
+            if (r.id >= 16 && r.id <= 19)
                 ai_ranges |= 1u << (r.id - 16);
+            else if ((r.id == 36 || r.id == 37) && !r.params.empty())
+                (r.id == 36 ? enable : disable) |= 1u << (r.params[0] & 31u);
+        }
     a.set_u32(field::kMotionMarks, (a.u32(field::kMotionMarks) & ~0xffu) | ai_ranges);
+    a.set_u32(0xd14, enable);
+    a.set_u32(0xd18, disable);
 }
 
 // The vacuums' pull on an object this tick (KH2's cm), as FUN_1403f9130 sums it for each object's move: none on one
@@ -5516,9 +5602,11 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     e->health_taken = 0;
     const bool blow = e->blow_landing; // a KH2 player's blow's hit, not a Days hit
     e->blow_landing = false;
-    // its reaction: a Days hit's a small one (2); a KH2 player's blow's its attacks' (atkp + 10): "The End"'s and
-    // Cerberus's finish's none (0) -- the enemy then goes on as it was (Roxas's rc_duelbaut on to his second phase)
-    const int hit_reaction = blow ? e->landing_reaction : 2;
+    // its reaction: a Days hit's a small one (REACTION_SMALL, 3: most of KH2's player's attacks' in atkp); a KH2
+    // player's blow's its attacks' (atkp + 10): "The End"'s and Cerberus's finish's none (0) -- the enemy then goes on
+    // as it was (Roxas's rc_duelbaut on to his second phase); then as the enemy's damage patterns on change it
+    const int first_reaction = blow ? e->landing_reaction : 3;
+    const int hit_reaction = hit_pattern_reaction(*e->actor, first_reaction);
     // a hit its least health kept from taking any (KH2's YS::SHEET MinHp) is a hit all the same: its reaction and its
     // trigger 6 (the Prison Keeper's spits a captive out and lowers its least on it)
     const bool at_least = e->held_at_least;
@@ -5564,12 +5652,12 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         days_hit = std::make_unique<Object>(mod().memory, "a Days hit");
     // the hit as KH2's YS::DAMAGE, at the offsets KH2FM.exe's calls read: its way (Dir, + 0) from the player who
     // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, its
-    // reaction (Reaction, + 0x26: 2:7, 2:8), no first one (OrigReaction, + 0x27: none of Days's hits a finish)
+    // reaction (Reaction, + 0x26: 2:7, 2:8) and the one it had before the patterns (OrigReaction, + 0x27)
     mod().memory.write(days_hit->address(), way, sizeof way);
     days_hit->set_u32(0x10, striker != nullptr ? striker->address() : 0u);
     days_hit->set_u32(0x14, a.address());
     days_hit->set_u32(0x18, 0);
-    days_hit->set_u32(0x24, std::uint32_t(hit_reaction & 0xff) << 16);
+    days_hit->set_u32(0x24, std::uint32_t(hit_reaction & 0xff) << 16 | std::uint32_t(first_reaction & 0xff) << 24);
     // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
     // and no push back of its own (+ 0xc, 0x7fff: 2:86 gives KH2's battle constants' then)
     static std::uint32_t params = 0;
@@ -5605,7 +5693,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         a.states().event(a, 3, {&packet, 1});
         a.event(6, {&packet, 1});
         if (tracing())
-            khdays_log("kh2 enemies: %08x hit (%d to %d) with no reaction (a KH2 player's blow)", days, hp_before, s.hp);
+            khdays_log("kh2 enemies: %08x hit (%d to %d) with no reaction (%s)", days, hp_before, s.hp,
+                       first_reaction == 0 ? "a KH2 player's blow" : "its damage patterns");
         return;
     }
     const int motion = front ? 10 : 12;

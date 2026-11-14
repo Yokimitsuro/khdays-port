@@ -6,6 +6,7 @@
 #include "../runtime/kh2_enemies/calls.h"
 #include "../runtime/kh2_enemies/kinds.h"
 #include "../runtime/kh2_enemies/lights.h"
+#include "../runtime/kh2_enemies/patterns.h"
 
 #include <cmath>
 #include <cstdio>
@@ -1696,6 +1697,40 @@ struct LightsWorld final : kh::World {
     }
 };
 
+// KH2's damage patterns (patterns.h): a made-up patn section of four -- 1 makes small (3) and blow (4) none, 7 makes a
+// small a hitback (1) on the ground, 8 makes it a blow in the air, 2 (the attacker's) makes it none -- and the
+// reaction a hit keeps by the patterns on
+void test_damage_patterns()
+{
+    std::vector<std::uint8_t> patn(8 + 4 * 32, 0xff);
+    const std::uint32_t version = 2, count = 4;
+    std::memcpy(patn.data(), &version, 4);
+    std::memcpy(patn.data() + 4, &count, 4);
+    const auto set = [&](int i, int number, int from, int to) {
+        patn[std::size_t(8 + 32 * i)] = std::uint8_t(number);
+        patn[std::size_t(8 + 32 * i + 1 + from)] = std::uint8_t(to);
+    };
+    set(0, 1, 3, 0);
+    set(0, 1, 4, 0);
+    set(1, 7, 3, 1);
+    set(2, 8, 3, 4);
+    set(3, 2, 3, 0);
+    const auto patterns = kh::parse_damage_patterns(patn.data(), patn.size());
+    CHECK(patterns.size() == 4 && patterns[0].number == 1 && patterns[0].to[3] == 0 && patterns[0].to[5] == 0xff);
+    CHECK(kh::parse_damage_patterns(patn.data(), 4).empty());
+    // none on: the first reaction kept; pattern 1 on (Roxas's desperation move): small and blow none, a spot kept
+    CHECK(kh::pattern_reaction(patterns, 0, false, 3) == 3);
+    CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 3) == 0 && kh::pattern_reaction(patterns, 1u << 1, false, 4) == 0);
+    CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 2) == 2);
+    // 7 only on the ground, 8 only in the air; 2 never; with 1 and 7 on the later in the table (7) wins
+    CHECK(kh::pattern_reaction(patterns, 1u << 7, false, 3) == 1 && kh::pattern_reaction(patterns, 1u << 7, true, 3) == 3);
+    CHECK(kh::pattern_reaction(patterns, 1u << 8, true, 3) == 4 && kh::pattern_reaction(patterns, 1u << 8, false, 3) == 3);
+    CHECK(kh::pattern_reaction(patterns, 1u << 2, false, 3) == 3);
+    CHECK(kh::pattern_reaction(patterns, (1u << 1) | (1u << 7), false, 3) == 1);
+    // a reaction past the table's 19 kept
+    CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 255) == 255);
+}
+
 void test_lights()
 {
     using Bytes = std::array<std::uint8_t, 3>;
@@ -2278,6 +2313,7 @@ int main()
     test_leave_after_end();
     test_second_bosses();
     test_lights();
+    test_damage_patterns();
     test_hydra_friends();
     test_port_royal();
     test_data_saix();

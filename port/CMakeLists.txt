@@ -322,6 +322,7 @@ add_library(khdays-kh2-ai STATIC
     runtime/kh2_enemies/calls.cpp
     runtime/kh2_enemies/kinds.cpp
     runtime/kh2_enemies/lights.cpp
+    runtime/kh2_enemies/patterns.cpp
     runtime/kh2_enemies/tools.cpp)
 target_include_directories(khdays-kh2-ai PUBLIC ../assets/include)
 target_compile_options(khdays-kh2-ai PRIVATE /W4 /std:c++20 /EHsc)

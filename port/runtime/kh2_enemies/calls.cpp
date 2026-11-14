@@ -997,7 +997,7 @@ void add_actor_fields(ai::Calls &calls)
     });
     // 2:8 whether a hit's reaction kind (+ 0x26) is past 1 (FUN_140431f70, FUN_1403ce980: 1 and 12 are 1; 3, 6, 8,
     // 10, 13, 16, 18 are 3; 4, 7, 9, 11, 15, 17 are 4; the others themselves): trigger 6's hit, a Days hit a small
-    // reaction (2)
+    // reaction (3) unless the enemy's damage patterns make it none
     calls.set(2, 8, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t kind = 0;
         m.memory().read(a[0].bits + 0x26, &kind, 1);
@@ -1425,7 +1425,7 @@ void add_motions(ai::Calls &calls)
     // PS3 build): by its first reaction's kind (+ 0x27, as 2:91 sorts it) KH2's battle constants' (03system.bin's
     // pref "sstm", World::system_value) + 0x30 -- + 0x34 for kind 3 -- then its attack's own (atkp's + 0xc, a short)
     // unless that is 0x7fff; half that for a reaction (+ 0x26) of 12 or 13. Kinds 4 and 5 (a blow's and a pull's
-    // length) are none of the port's hits: their first reaction is 0. The Undead Pirates slide by it (2:3)
+    // length) are none of the port's hits: a Days hit's first reaction is 3. The Undead Pirates slide by it (2:3)
     calls.set(2, 86, [](ai::Machine &m, std::span<ai::Value> a) {
         const std::uint32_t hit = a[0].bits;
         std::uint8_t first = 0, reaction = 0;

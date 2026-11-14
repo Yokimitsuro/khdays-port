@@ -1541,7 +1541,36 @@ blows, as much as is left of it): then it falls at once, the hit its whole Days 
 quarter of a blow, to the first swing of Wild Dance). Its reaction is its attacks' (`atkp`'s + 10, `YS::DAMAGE`'s
 REACTION_*, the strongest of the blow's; 255, ignored, as none): the hit the scripts read carries it (+ 0x26: 2:7,
 2:8), and with none the enemy makes no reaction motion and enters no "revenge" -- it goes on as it was, trigger 6
-told (Roxas's `rc_duelbaut` under "The End", 1839; Cerberus's finish, 598). A Days hit's is a small one (2).
+told (Roxas's `rc_duelbaut` under "The End", 1839; Cerberus's finish, 598). A Days hit's is a small one
+(REACTION_SMALL, 3: what most of KH2's player's attacks give, `atkp`'s player-team entries 3 or 4, none 2).
+
+**Damage patterns** (2026-11-14, a tester: Thunder on Roxas during his desperation move cut it short, the sky left
+dark, his orbs still falling while he fought on). Before a hit reaches the script, KH2 changes its reaction by the
+enemy's patterns (`YS::PIERROT::_OVR_exec_damage` -> `YS::PATTERN::Convert`, the PS3 build's 0x47b310 and 0x47a65c):
+`00battle.bin`'s `patn`, 18 records of 32 bytes (`YS::PATTERN`: + 0 its number, + 1 a reaction for each of the 19 a hit
+may have, 0xff none), and the enemy's `BTLOBJ::Pattern` (Default, Enable, Disable; the patterns on are
+`(Default | Enable) & ~Disable`). 1:211 sets bit n of Default, 1:212 and 1:324 clear it (the PC's + 0xd10). Each
+pattern on, in the table's order, maps the hit's first reaction (OrigReaction, + 0x27) to its own when it has one --
+the last such wins -- into Reaction (+ 0x26); pattern 7 only on the ground, 8 only in the air, 2 only when the attacker
+has a flag (+ 0x588 bit 14) no Days player has. Pattern 1 makes every flinch and blow (3 to 11, 15 to 18) none: Roxas
+turns it on in the entering routine of `atk_final_hard`, `_superhard` and `_revenge` (his desperation move: flags 1,
+not locked, priority 200 under "revenge"'s 300) and of his spotbeam revenges, and off in their leaving routines, so in
+KH2 no hit stops them. Enable and Disable are the motion's: its ranges 36 and 37 (`FUN_14040d810`'s 0x24 and 0x25,
+the PC's + 0xd14 and + 0xd18) turn a pattern, their parameter's bit, on and off while they last -- Roxas's dashing
+combo `atk_tate` (motion 201) holds pattern 1 over its frames 0 to 240, his motions 205 and 208 patterns 3 and 1, so
+no blow breaks them off. The port reads `patn` and applies the patterns on to Days hits and to KH2 player's blows
+(`runtime/kh2_enemies/patterns.h`, `motion_states`); a reaction made none plays no motion and enters no "revenge"
+(2026-11-14: a Days hit had sent Roxas into "revenge" in the middle of his combo, which then began again from where he
+faced -- away from the player, the tester's "he does not aim at you"). The karma (`YS::ENEMY` + 0xaf0, the attack's + 0x2a added on each hit; 2:76 its limit, + 0xaf4)
+is another matter: a motion's trigger asks the enemy's act for its revenge once the karma reaches the limit
+(`YS::ANMATR::ExecTriggerCallback`) -- not read yet.
+
+**A KH2 hit throws the Days player** back as KH2 throws its own (the hit's `Dir` and `YS::DAMAGE::get_hitback`, as 2:86
+reads them): an attack of its own (2:17) along the ground from the enemy to him, as far as its `atkp`'s + 0xc (KH2's
+cm; Roxas's dashing combo 75, its last blows' 10) or, at 0x7fff, KH2's battle constant for its reaction; none for an
+attack that gives no reaction. Days's recoil (`Ov022_IntegrateRecoilVec`: added, then halved each frame) moves him
+twice the push it is given, so half of it in Days's units is given. A motion's attack spheres (its ranges 33) the same,
+from the sphere to him (they had given one Days unit each, about 2 m of recoil, where KH2's Roxas combo throws 75 cm).
 
 An attack of the **player's team** (its `atkp`'s + 8, `YS::ATTACKPARAM`'s Team, 1): KH2's `YS::ATTACK` constructor
 makes the player its owner whoever made it, its team his (`set_team`: 3 counts as 4) and its hit teams every other
