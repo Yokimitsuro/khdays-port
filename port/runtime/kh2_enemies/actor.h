@@ -430,6 +430,12 @@ public:
     // 1:165: a reaction command offered KH2's player this tick by `by`'s script (FUN_1403b2850 on his + 0xdd0), from
     // `source`: what a press sends it (trigger 11)
     virtual void offer(Actor & /*by*/, int /*command*/, Object * /*source*/) {}
+    // 0:81: whether this game's own player pressed the button of KH2's pad bit `bit` this frame (the PS2 pad's bits:
+    // 4 to 7 the D-pad, 10 L1, 11 R1, 12 triangle, 13 circle, 14 cross, 15 square, 3 Start, 0 Select)
+    virtual bool pad_pressed(int /*bit*/)
+    {
+        return false;
+    }
     // 1:237: the four top commands of KH2's player's command menu (Attack, Magic, Items, Drive) this tick, given by
     // `by`'s script (FUN_1403b2910 on his + 0xdd0), each sent to `target` when chosen
     virtual void override_top(Actor & /*by*/, const std::array<int, 4> & /*commands*/, Object * /*target*/) {}

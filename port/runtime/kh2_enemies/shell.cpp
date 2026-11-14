@@ -1018,6 +1018,7 @@ struct TopOffer final {
 };
 TopOffer top_offer;
 bool top_menu_standing();
+std::uint16_t frame_pressed();
 bool command_usable(int id);
 void deck_sync();
 // Days's command deck (prepare.py's joins in Ov002_PanelAdvanceCursor's file, no pointers: the game's code takes them
@@ -1724,6 +1725,18 @@ public:
         if (it == by_actor.end() || command < 0)
             return;
         script_offer = {it->second->days, command, khdays_link_frame()};
+    }
+    // KH2's pad's bits as Days's buttons, by what they do: the D-pad, L1 and R1 the shoulders, triangle the reaction
+    // command's X, cross the attack's A, circle the jump's B, square the guard's Y, Start, Select; L2, R2 and the
+    // sticks' presses none
+    bool pad_pressed(int bit) override
+    {
+        static const std::map<int, int> keys = {
+            {0, KHDAYS_KEY_SELECT}, {3, KHDAYS_KEY_START}, {4, KHDAYS_KEY_UP},   {5, KHDAYS_KEY_RIGHT},
+            {6, KHDAYS_KEY_DOWN},   {7, KHDAYS_KEY_LEFT},  {10, KHDAYS_KEY_L},   {11, KHDAYS_KEY_R},
+            {12, KHDAYS_KEY_X},     {13, KHDAYS_KEY_B},    {14, KHDAYS_KEY_A},   {15, KHDAYS_KEY_Y}};
+        const auto k = keys.find(bit);
+        return k != keys.end() && (frame_pressed() & k->second) != 0;
     }
     void override_top(Actor &by, const std::array<int, 4> &commands, Object *target) override
     {
@@ -3288,9 +3301,8 @@ void event_point(const Playing &p, const std::array<float, 3> &k, float out[3])
     out[2] = p.base[2] + t[2] / kKh2PerDays;
 }
 
-// Whether this game's own player pressed an action this game frame (A, B or Y: his attack, jump, guard), his own pad's
-// or an input script's
-bool action_pressed()
+// The DS buttons this game's own player pressed this game frame (newly down), his own pad's or an input script's
+std::uint16_t frame_pressed()
 {
     static std::uint32_t frame = ~0u;
     static std::uint16_t was = 0, pressed = 0;
@@ -3301,7 +3313,13 @@ bool action_pressed()
         pressed = std::uint16_t(buttons & ~was);
         was = buttons;
     }
-    return (pressed & (KHDAYS_KEY_A | KHDAYS_KEY_B | KHDAYS_KEY_Y)) != 0;
+    return pressed;
+}
+
+// Whether he pressed an action this game frame (A, B or Y: his attack, jump, guard)
+bool action_pressed()
+{
+    return (frame_pressed() & (KHDAYS_KEY_A | KHDAYS_KEY_B | KHDAYS_KEY_Y)) != 0;
 }
 
 // A KH2 tick of a player its enemy holds: its motion on (its root's travel turned by its yaw, as Actor::step), held at
@@ -4210,8 +4228,8 @@ void motion_states(Enemy &e)
 // test, FUN_1403da520, not read); each vacuum that does not let its kind be (+ 0x10's bit of its entry's kind, 0 for
 // the player) and whose reach (+ 0x14, 0 none) it is within pulls it along the ground toward its point at weight /
 // 100 x its speed, kept between its least and its most, times (distance - its near range) x its rate kept between -1
-// and 1 -- toward it from beyond 2 m, away within 1 m with the near range of 100 and the rate of 0.01. A vacuum's
-// turning (+ 0x24) is not applied: none the port's kinds make turns. Demyx's water clones' pull Demyx (500) and each
+// and 1 -- toward it from beyond 2 m, away within 1 m with the near range of 100 and the rate of 0.01 -- and its
+// turning (+ 0x24, 2:82) across that way. Demyx's water clones' pull Demyx (500) and each
 // other (10), not the player (their kind 0 let be). Days's players are pulled by none here
 Vec3 vacuum_pull(Enemy &e, const Vec3 &place)
 {
@@ -4243,6 +4261,13 @@ Vec3 vacuum_pull(Enemy &e, const Vec3 &place)
         if (distance > 0.0F) {
             pull[0] += dx / distance * s * rate;
             pull[2] += dz / distance * s * rate;
+            // its turning (+ 0x24): the way to it turned a quarter about y (FUN_1403b7680 by DAT_140623ab0, pi / 2)
+            // times that speed, about the point (the Lingering Will's; which way round a positive speed turns,
+            // FUN_1401aad20's sign, not read)
+            if (const float turn = f32(v + 0x24); turn != 0.0F) {
+                pull[0] += dz / distance * turn;
+                pull[2] += -dx / distance * turn;
+            }
         }
     }
     return pull;

@@ -1557,13 +1557,11 @@ void add_moving(ai::Calls &calls)
     // KH2 sweeps its collision along the step and stops it at a wall; the port casts at its middle (a metre up) and
     // keeps it its body's half metre short of what it meets: Days's collision pushes back only one standing in a wall,
     // so a step through one left it outside (Roxas's 2.5 m before his hold, 1:18, out of Days's arena)
-    calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
+    const auto step_to_space = [](ai::Machine &m, Actor *x, float length) {
         constexpr float kMiddle = 100.0F, kKeptOff = 50.0F; // KH2's cm (y down)
-        Actor *x = self_of(m, a[0]);
         const Vec3 at = x->place(), f = facing_of(x->yaw());
-        float length = a[1].f();
         if (!(length > 0.0F))
-            return;
+            return at;
         if (World *w = running(m)->world) {
             Vec3 hit{};
             const Vec3 from = {at[0], at[1] - kMiddle, at[2]};
@@ -1573,7 +1571,23 @@ void add_moving(ai::Calls &calls)
                 length = std::min(length, std::max(0.0F, d - kKeptOff));
             }
         }
-        x->set_place({at[0] + f[0] * length, at[1], at[2] + f[2] * length});
+        return Vec3{at[0] + f[0] * length, at[1], at[2] + f[2] * length};
+    };
+    calls.set(1, 220, [step_to_space](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->set_place(step_to_space(m, x, a[1].f()));
+    });
+    // 1:367 where that step would put it, given back (trap_obj_get_move_to_space_pos, FUN_14042bb40 -> FUN_1403b8510:
+    // the record's object, the length, a flag): the Lingering Will's 12 m dash's end
+    calls.set(1, 367, [step_to_space](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec3 p = step_to_space(m, x, a[1].f());
+        Vec v;
+        v.v[0] = p[0];
+        v.v[1] = p[1];
+        v.v[2] = p[2];
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "shared", v);
     });
     calls.set(1, 2, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -2664,6 +2678,32 @@ void add_world(ai::Calls &calls)
                 f = 0.0F;
         m.memory().write(a[0].bits, at.v, sizeof at.v);
     });
+    // 2:82 its turning speed (+ 0x24, trap_vacuum_set_rot_speed: FUN_1404333f0), 2:83 its near range (+ 0x28,
+    // FUN_140433420), 2:84 its rate (+ 0x2c, FUN_140433450), 7:32 its reach (+ 0x14, Ts::trap_vacuum_set_effective_range:
+    // FUN_14053fa60): the Lingering Will's vacuum
+    for (const auto &[kind, number, at] : {std::tuple{2u, 82u, 0x24u}, std::tuple{2u, 83u, 0x28u},
+                                           std::tuple{2u, 84u, 0x2cu}, std::tuple{7u, 32u, 0x14u}})
+        calls.set(kind, number, [at](ai::Machine &m, std::span<ai::Value> a) {
+            if (a[0].bits != 0)
+                m.memory().set_u32(a[0].bits + at, a[1].bits);
+        });
+    // 2:96 whether an attack it made still stands (trap_attack_is_valid, FUN_140432ca0: its + 8 bit 12): one not ended
+    // nor run out (World::attack_finished)
+    calls.set(2, 96, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && a[0].bits != 0 && !w->attack_finished(a[0].bits) ? 1 : 0);
+    });
+    // 0:81 whether a button of the pad was pressed this frame (trap_pad_is_trigger, FUN_14041dae0: bit n of the pad's
+    // pressed mask, + 8 of FUN_14039b780(0)), KH2's bits the PS2 pad's: this game's own player's Days buttons
+    // (World::pad_pressed): the Lingering Will waits on 10, L1
+    calls.set(0, 81, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->pad_pressed(std::int32_t(a[0].bits)) ? 1 : 0);
+    });
+    // 1:365 a group of the player's commands turned off (trap_command_disable_group, FUN_140430230 -> FUN_1403f2770 on
+    // his command manager; a command's group its 03system.bin record's + 46): the Lingering Will turns off 1 and 2.
+    // Days's deck keeps its commands: none here
+    calls.set(1, 365, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:210 the first object of the field whose entry's + 0x4c is a number, into an AI handle's + 4
     // (trap_obj_search_by_part, FUN_14042de30 -> FUN_1403b4180): Demyx's water clones find him so (4002)
     calls.set(1, 210, [](ai::Machine &m, std::span<ai::Value> a) {
