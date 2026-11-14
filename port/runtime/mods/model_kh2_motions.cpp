@@ -111,8 +111,10 @@ void load_kh2_motions(Model &model, const std::string &path, const std::vector<s
         std::size_t at = 0;
     };
     std::vector<Carry> carries;
-    std::string weapon_mset, weapon_mdlx; // `weapon_motions <mset> <mdlx> <bone>`
+    std::string weapon_mset, weapon_mdlx; // `weapon_motions <mset> <mdlx> <bone> [days <x> <y> <z>]`
     int weapon_bone = -1;
+    bool weapon_days = false;
+    std::array<float, 3> weapon_days_degrees{};
     const auto number = [](const std::string &s, float &out) {
         char *end = nullptr;
         out = std::strtof(s.c_str(), &end);
@@ -187,6 +189,15 @@ void load_kh2_motions(Model &model, const std::string &path, const std::vector<s
             } else {
                 weapon_mset = b;
                 weapon_mdlx = mdlx;
+                std::string days;
+                weapon_days = static_cast<bool>(words >> days);
+                if (weapon_days && (days != "days" || !(words >> weapon_days_degrees[0] >> weapon_days_degrees[1] >>
+                                                        weapon_days_degrees[2]))) {
+                    say("\"" + line +
+                        "\": write `days <x> <y> <z>` after the bone (degrees: a Days weapon's axes on it); "
+                        "the game's weapons keep the `weapon` line's turn");
+                    weapon_days = false;
+                }
             }
         } else if (a == "motions") { // motions <file> [<entry>] at <slot> [own]
             Extra x{b, {}, 0, false};
@@ -974,6 +985,8 @@ void load_kh2_motions(Model &model, const std::string &path, const std::vector<s
             model.weapon_motions = std::move(weapon);
             model.weapon_skeleton = std::move(skeleton_of);
             model.weapon_blade = weapon_bone;
+            model.weapon_days = weapon_days;
+            model.weapon_days_turn = turn_of(weapon_days_degrees);
         }
     } catch (const std::exception &e) {
         say(std::string("its motions cannot be read (") + e.what() +

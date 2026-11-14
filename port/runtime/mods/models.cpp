@@ -682,7 +682,8 @@ void draw(Model &m)
         if (!m.weapon_motions || static_cast<std::size_t>(m.weapon_blade) >= weapon_pose.size())
             return mul(joint_frame(j), turn);
         const auto b = static_cast<std::size_t>(m.weapon_blade);
-        const Mat weapon = mul(weapon_pose[b], mul(inverse(m.weapon_rest[b]), turn));
+        const Mat weapon = m.weapon_days ? mul(weapon_pose[b], m.weapon_days_turn)
+                                         : mul(weapon_pose[b], mul(inverse(m.weapon_rest[b]), turn));
         held_weapon.pose = weapon_pose;
         held_weapon.from_game = inverse(weapon);
         held_weapon.frame = mul(joint_frame(j), weapon);

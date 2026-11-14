@@ -1348,6 +1348,11 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     set_rest_size(*model);
     resolve_cuffs(*model, loading.bones.cuffs, loading.bones.cuff_pose, name);
     load_kh2_motions(*model, path, loading.mdlx.empty() ? nullptr : &loading.mdlx);
+    if (!model->held_name.empty() && std::none_of(model->joints.begin(), model->joints.end(),
+                                                  [&](const Joint &j) { return j.name == model->held_name; }))
+        khdays_log("models: %s: bones.txt's `held %s` names no joint of the model, so the weapon stays where the game "
+                   "draws it; name the joint the weapon's mesh follows",
+                   name.c_str(), model->held_name.c_str());
     box_meshes(*model); // last: the meshes as they are drawn
     return model;
 }

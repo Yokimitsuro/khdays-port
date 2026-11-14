@@ -391,6 +391,10 @@ struct Model {
     std::shared_ptr<const khdays::assets::kh2::MotionSet> weapon_motions;
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton> weapon_skeleton;
     int weapon_blade = -1;
+    // `... days <x> <y> <z>`: the game's own weapons, and models in their axes, drawn on that bone so turned, where the
+    // KH2 weapon is; without it on the `weapon` line's frame, moved as the bone moves from its held pose
+    bool weapon_days = false;
+    Mat weapon_days_turn = kIdentity;
     std::vector<Mat> weapon_rest;
     std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;

@@ -799,6 +799,18 @@ Goofy's F_TT150 (`go_w01600`) stands at the origin, its face turned 45 degrees t
 W_EX030, whose mset poses it, lies flat at his hand, face down; `turn 135 0 90` puts F_TT150's face along W_EX030's
 bone 2's x (its centre 10.0 cm out, W_EX030's 10.9) and its wide end along that bone's -y, up in his idle.
 
+`weapon_motions <mset> <mdlx> <bone> days <x> <y> <z>` draws the game's own weapon, and any model made in its axes
+(no `held`, or a `held` joint not named `kh2_<n>`, such as a glTF's `Master`), on the weapon bone where the KH2 weapon
+itself is drawn, turned so from the bone's axes (`hold` in models.cpp: the body's frame times the bone's pose times the
+turn). Without it such a weapon goes on the `weapon` line's frame moved as the bone moves from its held pose: in the
+idle on the hand bone, 5.9 cm from W_EX010's bone 2 and turned off it (seen in game: Days' own keyblade and a mod's
+glTF `ro_w18600` off centre and turned, W_EX010 right). KH2's keyblades share one skeleton (W_EX010, W_EH000, W_EX200:
+bones 0-11 the same, the blade along bone 2's -x, the keychain along +x), and Days' keyblades run along +z from the
+grip (Days' Kingdom Key's cards cross on that axis), so the HD pack gives Roxas and Riku `days 180 90 0`, the cutscene
+keyblades' `held kh2_2 rest 180 90 0` (the turn is its own inverse). Not Mickey: his `weapon` line's turn differs
+(`90 -90 0`), so his Days keyblade is made in other axes. Checked in game on Roxas (Days' Kingdom Key and `ro_w18600`
+held as W_EX010). The log says when `held` names no joint of the model.
+
 `held <joint> body` is `held <joint>` for a weapon the game draws somewhere other than the frame the body's `weapon`
 line gives it: the joints go on that frame (`HeldWeapon::frame`, the last `hold` of the body's draw) instead of the
 model's own root. The boss Riku's sword object (Ms/54.p's `B13_02w`, `Ov260_Construct`'s +0x390 part) is drawn at his

@@ -10,7 +10,9 @@ root_motion off
 # game's weapon is made in: ri_h_R's rest frame on the game's model, the same turn as roxas_b_h's keyblade
 weapon ri_h_R 262 rotate 0 -90 90
 # What he holds plays W_EH000.mset's slots as his own play P_EH000's (on W_EH000's bones; bone 2 the blade)
-weapon_motions W_EH000.mset W_EH000.mdlx 2
+# The game's own keyblade (and a model made as it is, along +z from the grip) on bone 2 where the KH2 keyblade is
+# drawn: Days' axes into that bone's (`held kh2_2 rest 180 90 0` of the cutscene keyblades, the same turn either way)
+weapon_motions W_EH000.mset W_EH000.mdlx 2 days 180 90 0
 
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the calm idle) turns
 # them at its first frame
