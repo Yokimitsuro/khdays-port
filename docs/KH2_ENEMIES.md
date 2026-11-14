@@ -778,8 +778,15 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   turned about all three axes (8:2) and leaving their trails where they were (1:169). His calls: 1:223 the camera given
   back (the reaction camera, as 1:295), 2:57 a limit's effect on an object (1:21's on it), 6:52 a BGHIT's polygon's
   normal (Days's rooms give no polygon: two more segments beside the first give it), 10:52 a reflecting motion
-  (140 to 150). The journal names him by the prologue's Roxas (`P_EX110`). **Seen**: his slides, spins, shield,
-  duel and charge, revenge on Roxas's blows.
+  (140 to 150), 1:237 the duel's command menu with "The End" ("A command menu given by a script", below). The journal
+  names him by the prologue's Roxas (`P_EX110`). **Seen**: his slides, spins, shield, duel and charge, revenge on
+  Roxas's blows; (2026-11-14, the coliseum, a walk pressing X and A by turns) the duel's deck saying "¿?" three times,
+  "FIN" in one row from the duel's frame 80, chosen with A, then his second phase -- `atk_spotbeam_roxas`, `_sora`,
+  `_wall`, `_core` -- and his grab (`atk_torikaeshi`) offering "Finta", taken: `rc_slideturn`, his motion 247.
+  "Reversal"'s message (675, 0x36e) starts a thread (2:20, routine 0x3bb) that plays the player's AR10 or AR22 (slots
+  252, 255: the side he stands on) turned 15 degrees, asks his own idle after it (1:13) and moves him round Roxas for
+  30 ticks: KH2's player code does nothing of its own for it (`FUN_1403a8b10`: exec 675, no Action). Its range 2 from
+  frame 0 had let him go in the tick it began (below: range 2 is FLAG_CANCEL).
 - **Larxene** `B_EX400` (`n_larxene`): her Absent Silhouette and her data battle, `hb33`'s `b_83` and `b_81` (battle
   level 32 and 99). 2:95 a sheet of her own (battle entry 216), 6:69 the others of her part number hidden as she ends,
   10:22 whether an object is blown away (KH2's blow class: 1:129, 2:1). **Seen**: her clones (`bunshin`), her claws and
@@ -1020,10 +1027,13 @@ Dusk's (group 5: 69, Reversal).
 
 - **Offered** (`zone_offer` in `shell.cpp`): while this game's own player's place (+ 0x670) lies within a zone's radius
   of its point (the test KH2's own uses of a zone make, `FUN_14054ae70`: the place's distance, `FUN_140140f50`, under
-  the shape's + 0x10). The general check was not found in KH2FM.exe (the collision passes, `FUN_1403beec0`, gather
-  shapes by kind, `FUN_14040b140`); the port takes the same test for every zone. The deepest zone's command shows (the
-  bar, and KH2's mark at the enemy's aim point), not while an enemy holds the player, nor again in the motion one was
-  taken in. The press sends the command's argument to the enemy (trigger 11, as a held player's).
+  the shape's + 0x10). The general check, read later, is KH2's player's searcher (`FUN_140407de0` from `FUN_1404081c0`,
+  "A command menu given by a script" below: every object's shapes of kinds 5 and 14); the port takes the test above for
+  every zone. The deepest zone's command shows (the bar, and KH2's mark at the enemy's aim point), not again in the
+  motion one was taken in; while an enemy holds the player only a command he can take then (`command_usable`: its
+  require his motion's range 26 -- Roxas's grab, `atk_torikaeshi`, holds him in AR20, range 26 675, and the zone his
+  motion 246 turns on, group 14, offers "Reversal", 675; before, no zone offered to a held player). The press sends the
+  command's argument to the enemy (trigger 11, as a held player's).
 - **The command's record**: trigger 11's third value is the command's target record (the manager's + 0x10:
   `FUN_1403bee60`'s -- the object, its group, none, -1), not the object: the Soldier's and the Dusk's routines take
   the object from its first word (`1:94` on it, then its place); the port sends one (the enemy, group 0). With the
@@ -1052,8 +1062,9 @@ Dusk's (group 5: 69, Reversal).
   below), turns him to the loader, and on his motion's triggers 9
   (frame 12) and 10 (42) -- bits of his + 0x2ad, as an enemy's -- dashes him to it (1:89 on the player: (distance + 2
   m) / 32 a tick, at least 10, slowing after 42) while it waits on his + 0x18c bit 14 (1:101: he plays another's
-  motion). His weapon's attacks (657 at 14, 656 at 69) are the blow on it; his motion's range 2 (blend to idle, from
-  107) gives him back. A blow on an enemy not hit yet takes the player's last Days hit on any KH2 enemy, else 1.
+  motion). His weapon's attacks (657 at 14, 656 at 69) are the blow on it; his motion's end gives him back, or a press
+  of his from its range 2 (from 107, FLAG_CANCEL). A blow on an enemy not hit yet takes the player's last Days hit on
+  any KH2 enemy, else 1.
 - **Seen** (the Magnum Loader alone, Roxas still, the HD PACK; the press by a test switch, not kept): its charge offers
   Quick Blade ("Estocada rápida"), the press dashes Roxas to it and strikes twice (2 and 4: no Days hit before), it
   comes back into sight as its charge ends (1:19 at its start fades it out, 1:20 at its end in, as KH2's), and its
@@ -1067,8 +1078,10 @@ Dusk's (group 5: 69, Reversal).
   (1:165, up to five times: its count at the work area's + 0x94). A press starts routine 1749, which dives him again
   (60, 70, 80 a tick, steeper each time). His weapon's attack in AB51 (644, power 1000) lands on the knight.
 - **The player's own motion asked for** (1:13 on a player an enemy holds): KH2 queues it, so a motion still playing keeps
-  him till it blends back to idle (range 2) or ends; one at its end lets him go at once (Cerberus's). A defeated enemy's
-  thread takes him no more.
+  him till it ends, or till a press of his (A, B, Y: his attack, jump, guard) while its range 2 is on -- the PS3
+  build's YS::MOTION flags name the bit range 2 sets (+ 0x34 bit 4) FLAG_CANCEL, the bits of ranges 0 and 1 FLAG_IDLE
+  and FLAG_CONTROL; read as "back to idle", range 2 from frame 0 had let the player go as Roxas's Reversal began -- one
+  at its end lets him go at once (Cerberus's). A defeated enemy's thread takes him no more.
 - **Seen** (the Armored Knight alone, Roxas attacking, the HD PACK; the presses by a test switch): Rising Sun from its
   spin, then 427 four times more, each a flight and a blow of 490 (its last Days hit's 49 times 10), the knight
   defeated in the fifth.
@@ -1114,6 +1127,49 @@ port's KH2 sequence player on the GPU (docs/KH2_SEQUENCES.md), as the obtained n
   ahí arriba?" as Days's A does with the setting off; A with it on made nothing. Cerberus's three commands came with 5,
   3 and 3 ("¡COMBO!"), each press's flash in the circle, and the bar left as the blow ended. The button's icon is the
   player's input's; without one (a keyboard here) the game's X glyph, from the 10-dot font (the 8-dot has none).
+
+## A command menu given by a script
+
+Some commands are no reaction command's bar's but the player's own menu's: **1:237** (`trap_command_override_top`;
+`FUN_1404300a0` -> `FUN_1403b2910` on the player's command manager, + 0xdd0) gives the four top commands of his menu
+(Attack, Magic, Items, Drive: their slots at the manager's + 0xa28, 0x24 bytes apart) four commands of the script's
+for that tick, its submenus closed; each chosen goes to the object of the target record given last (the script's
+trigger 11, as a reaction command taken). A script renews it each tick it wants it, as 1:165's offer.
+
+- **Roxas's duel** (`atk_duelbaut_a`, routine 0x7a5b; KH2's "The End", 672): the routine plays the player's AR11
+  (B_EX390's slot 253, 1:29) and starts a thread on him (1:112, routine 0x7b2d: its routine pushed with another value
+  after it, which the walk reads only knowing the calls' shapes, as the mod tool does with kh2/calls.txt). Each tick
+  while he stays in that motion (1:101, 1:238) the thread
+  gives the menu four "?" (command 104: no action, flags Cursor and Battle), and while his motion's range 18 is on
+  (frames 80 to 120; the data battle's range 19, 90 to 120: `trap_obj_motion_check_range`, 1:150 with 3 and 4) one
+  of the four, at random once for the thread (0:16), "The End" (672). AR11's range 26 (672) the whole motion
+  (`FLAG_RC_EXEC`: + 0x18c bit 21, + 0x638) is what lets the player choose it held: KH2's `FUN_1403ba070` passes a
+  command whose require (672's own) is that number, and no other while his motion gives him no state to act (no range
+  0 to 2: "?" cannot be chosen). Chosen, Roxas's trigger 11 takes 672 to `rc_duelbaut` (0x7c9e), which hooks his
+  motion slot 161 (1:75: a set of its own, type 0x14) -- his second phase, in which his revenge turns to
+  `atk_spotbeam_revenge_*` and, after 20 blows in the data battle (50 in the other), `atk_torikaeshi` with "Reversal".
+  The player's blow in "The End" (atkp 1839) gives him no reaction (atkp + 10: 0), so `rc_duelbaut` plays on to its
+  hook; the port had given every KH2 player's blow a small one and sent him to "revenge" first (now each blow's own
+  reaction: "Health" below). Missed, the duel ends as it would. "The End" is offered by no motion's
+  range 20, no zone, no 1:165 and no code of KH2FM.exe (no 0x2a0 there): only this thread's 1:237.
+- **KH2's player's searcher**, read with it (`FUN_1404081c0`, the PS3 build's `YS::RC_SEARCHER::exec`): the reaction
+  command shown is the best of a script's 1:263 (`trap_player_set_exec_rc`, the player's + 0xdd8: priority 0xc9),
+  an offer of kind 1 (range 20, 1:165: 0xcb), his own motion's range 25 (`FLAG_RC_SIGN`, + 0x638: 0xcc), the zones
+  of every object (shapes of kind 5, the command at + 2 -- 131 the object's + 0x9f0's + 0x2c -- and of kind 14,
+  `TYPE_REF_RC`, the object's + 0xcf0; one with the "Require" flag, 0x40, only while the player's range 26 is its
+  require, then at 0xca) and the attacks carrying one (2:51). No object of KH2's has a shape of kind 14.
+- **The port** (`World::override_top`, `take_command` and `deck_sync` in `shell.cpp`): the menu stands while a script
+  renews it (this VBlank or the one before), and Days's command deck shows it -- its main rows (Attack, Magic, Items:
+  `Ov002_DrawPanelRowText`'s main block, lines 0 to 2 its first row as Attack or a command in its place, 3 to 5 the
+  rows after it) say the menu's first three commands, the fourth said by one of them chosen as the menu comes, so
+  "The End" is as likely in any (of two there, the one the player can choose). As it comes the deck goes back to its
+  main rows (KH2 closes its submenus: `Ov002_HandlePanelInput` 0); its text is drawn again (`Ov002_BuildTileRow`)
+  whenever what the rows say changes, and once more as it goes. While an enemy holds the player Days's own input does
+  not run, so the runtime moves the deck's cursor: X and Down the next row, Up the one before (Days's own steps,
+  `Ov002_PanelCursorNext` and `Prev`, and their sound), and A sends the command of the row it is on as a reaction
+  command taken is, when the player can choose it; on another, nothing. Joins in `prepare.py` (in
+  `Ov002_DrawPanelRowText` and `Ov002_PanelAdvanceCursor`'s file). Days's deck has three main rows where KH2's menu
+  has four, and greys none of them; KH2's cursor sounds are Days's.
 
 ## The reaction command's mark
 
@@ -1456,7 +1512,10 @@ and ended Xaldin with half his health left). One that lands before any Days hit 
 Days hit measures it, the enemy's health starts that much lower (a first measure taken from the strike itself had made
 the blow 1 and Xaldin 60 health) -- unless they are enough to end it in KH2's own measure (its health in KH2's Soldier
 blows, as much as is left of it): then it falls at once, the hit its whole Days health (Demyx's water clones, a
-quarter of a blow, to the first swing of Wild Dance).
+quarter of a blow, to the first swing of Wild Dance). Its reaction is its attacks' (`atkp`'s + 10, `YS::DAMAGE`'s
+REACTION_*, the strongest of the blow's; 255, ignored, as none): the hit the scripts read carries it (+ 0x26: 2:7,
+2:8), and with none the enemy makes no reaction motion and enters no "revenge" -- it goes on as it was, trigger 6
+told (Roxas's `rc_duelbaut` under "The End", 1839; Cerberus's finish, 598). A Days hit's is a small one (2).
 
 An attack of the **player's team** (its `atkp`'s + 8, `YS::ATTACKPARAM`'s Team, 1): KH2's `YS::ATTACK` constructor
 makes the player its owner whoever made it, its team his (`set_team`: 3 counts as 4) and its hit teams every other

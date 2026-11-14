@@ -2151,6 +2151,13 @@ struct RoxasWorld final : kh::World {
     {
         loop_ended.push_back(handle);
     }
+    std::array<int, 4> menu{};
+    kh::Object *menu_target = nullptr;
+    void override_top(kh::Actor &, const std::array<int, 4> &commands, kh::Object *target) override
+    {
+        menu = commands;
+        menu_target = target;
+    }
     void stop_effect(std::uint32_t handle) override
     {
         killed.push_back(handle);
@@ -2225,6 +2232,13 @@ void test_data_roxas()
     roxas.set_place({0.0F, 0.0F, -300.0F});
     call(rig, roxas, 1, 220, {self, f(100.0F), i(0)});
     CHECK(std::fabs(roxas.place()[2] + 200.0F) < 1e-3F);
+    // 1:237: the player's four top commands, as his duel gives them ("The End" in the third row), each going to the
+    // object of the target record given last (its + 4: the record his script builds for himself)
+    const std::uint32_t record = rig.memory.add(16, "a test's target record");
+    rig.memory.set_u32(record + 4, twin.address());
+    call(rig, roxas, 1, 237, {i(104), i(104), i(672), i(104), adr(record)});
+    const std::array<int, 4> duel{104, 104, 672, 104};
+    CHECK(world.menu == duel && world.menu_target == &twin);
 }
 
 int main()

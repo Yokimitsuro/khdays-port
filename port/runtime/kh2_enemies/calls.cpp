@@ -2444,6 +2444,18 @@ void add_world(ai::Calls &calls)
         if (x->world != nullptr)
             x->world->offer(*x, std::int32_t(a[1].bits), object_of(m, a[2]));
     });
+    // 1:237 the four top commands of the player's menu in place of his own this tick (trap_command_override_top;
+    // FUN_1404300a0 -> FUN_1403b2910: the menu's submenus closed, each of its four slots given its command, all sent to
+    // the object of the target record given last; renewed each tick, as 1:165's): Roxas's duel turns the four into "?"
+    // (104) and, while the player's motion has its range 18 (19 in the data battle), one at random into "The End" (672)
+    calls.set(1, 237, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->override_top(*x,
+                                   {std::int32_t(a[0].bits), std::int32_t(a[1].bits), std::int32_t(a[2].bits),
+                                    std::int32_t(a[3].bits)},
+                                   object_of(m, a[4]));
+    });
     // 1:149 an effect on the actor at another object (FUN_14042d5c0 -> FUN_1403b6670: its element's number, two values,
     // the object it is on), its handle; 0:44 one stopped at once (FUN_14041e190 -> FUN_1402be8e0)
     calls.set(1, 149, [](ai::Machine &m, std::span<ai::Value> a) {

@@ -724,6 +724,9 @@ struct Enemy final {
     int blow = 0;        // a KH2 player's blow on it to land (its Days damage), 0 none
     bool blow_landing = false; // that blow's hit going through Days now
     double blow_blows = 0.0;   // that blow in KH2's plain hits (its attacks' power over 100)
+    // that blow's reaction (its attacks' atkp + 10, the strongest; YS::DAMAGE's REACTION_*: 0 none, 255 ignored as
+    // none) and the one of the blow landing now
+    int blow_reaction = 0, landing_reaction = 0;
     double pending_blows = 0.0; // KH2 player's blows that landed before the area's first Days hit measured a blow
 };
 
@@ -873,6 +876,7 @@ struct Held final {
     Vec3 place{}; // KH2's, its feet
     float yaw = 0.0F;
     int offered = -1;       // the reaction command its motion offers now (range 20), -1 none
+    std::set<int> follows;  // the commands its motion follows on from now (range 26: KH2's + 0x638, + 0x18c bit 21)
     std::set<int> taken;    // the commands taken in this motion
     bool unhittable = false; // range 27
     ai::Machine *machine = nullptr; // its thread (1:112), in its enemy's machine
@@ -952,6 +956,31 @@ struct ScriptOffer final {
     unsigned frame = 0;
 };
 ScriptOffer script_offer;
+// KH2's player's command menu as an enemy's script gives it (1:237: its four top commands, renewed each tick it
+// stands) and the VBlank it last did; the enemy each command chosen goes to. Days's command deck shows it: its main
+// rows (Attack, Magic, Items) the menu's first three slots, the fourth slot in one of them chosen as the menu comes
+// (`extra_row`); the commands its rows were last drawn with (`labels`, 0 none; `shown`)
+struct TopOffer final {
+    unsigned enemy = 0;
+    std::array<int, 4> commands{-1, -1, -1, -1};
+    unsigned frame = 0;
+    int extra_row = 0;
+    bool shown = false;
+    std::array<int, 4> labels{};
+};
+TopOffer top_offer;
+bool top_menu_standing();
+bool command_usable(int id);
+void deck_sync();
+// Days's command deck (prepare.py's joins in Ov002_PanelAdvanceCursor's file, no pointers: the game's code takes them
+// as its own references): the main row its cursor is on (-1 off them: a list open; -2 no deck) and how many there are
+// (0 off them); its cursor on (Ov002_PanelCursorNext) or back (Ov002_PanelCursorPrev); back to its main rows
+// (Ov002_HandlePanelInput 0); its rows' text drawn again (Ov002_BuildTileRow)
+extern "C" int khdays_deck_main_row(void);
+extern "C" int khdays_deck_main_rows(void);
+extern "C" void khdays_deck_step(int back);
+extern "C" void khdays_deck_to_main(void);
+extern "C" void khdays_deck_relabel(void);
 int last_days_damage = 0;      // the last Days hit's damage on any KH2 enemy (a blow on one not hit yet)
 int local_taken = -1;          // the last of them
 std::map<unsigned, unsigned> player_of_node; // each player's model's scene node -> its object (the models' draws)
@@ -1647,6 +1676,27 @@ public:
         if (it == by_actor.end() || command < 0)
             return;
         script_offer = {it->second->days, command, khdays_link_frame()};
+    }
+    void override_top(Actor &by, const std::array<int, 4> &commands, Object *target) override
+    {
+        Actor *to = target != nullptr && target->actor() != nullptr ? target->actor() : &by;
+        const auto it = by_actor.find(to);
+        if (it == by_actor.end())
+            return;
+        const unsigned now = khdays_link_frame();
+        if (!top_menu_standing()) {
+            if (tracing())
+                khdays_log("kh2 enemies: %08x gives the player's command menu %d %d %d %d", it->second->days,
+                           commands[0], commands[1], commands[2], commands[3]);
+        } else if (tracing() && commands != top_offer.commands)
+            khdays_log("kh2 enemies: %08x's command menu now %d %d %d %d", it->second->days, commands[0], commands[1],
+                       commands[2], commands[3]);
+        const bool changed = !top_offer.shown || commands != top_offer.commands;
+        top_offer.enemy = it->second->days;
+        top_offer.commands = commands;
+        top_offer.frame = now;
+        if (changed) // on the deck at once ("The End" in its row the tick its range begins)
+            deck_sync();
     }
     std::vector<Actor *> actors() override
     {
@@ -2722,10 +2772,11 @@ const kh2::MotionSkeleton *player_skeleton()
 }
 
 // An attack in KH2's battle table (00battle.bin's atkp, 48 bytes each, the PS3 build's YS::ATTACKPARAM: + 2 its
-// number, + 6 its power, + 8 its team; OpenKH's 00battle page; its first entry of that number): its power and team, 0
-// when the mod has no kh2/00battle.bin or no such attack
+// number, + 6 its power, + 8 its team, + 10 the reaction it gives an enemy, YS::DAMAGE's REACTION_*; OpenKH's
+// 00battle page; its first entry of that number): its power, team and reaction, 0 when the mod has no
+// kh2/00battle.bin or no such attack
 struct AttackParam final {
-    int power = 0, team = 0;
+    int power = 0, team = 0, reaction = 0;
 };
 const AttackParam &attack_param(int atkp)
 {
@@ -2743,7 +2794,8 @@ const AttackParam &attack_param(int atkp)
                         std::uint16_t number = 0, value = 0;
                         std::memcpy(&number, battle.data() + e.offset + 8 + 48 * i + 2, 2);
                         std::memcpy(&value, battle.data() + e.offset + 8 + 48 * i + 6, 2);
-                        power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8]});
+                        power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8],
+                                                          battle[e.offset + 8 + 48 * i + 10]});
                     }
                 }
         } catch (const std::exception &x) {
@@ -2766,6 +2818,13 @@ int attack_power(int atkp)
 int attack_team(int atkp)
 {
     return attack_param(atkp).team;
+}
+
+// A KH2 player's blow with attack `atkp` on `t`: its reaction kept with the blow's, the strongest
+void blow_reaction(Enemy &t, int atkp)
+{
+    const int r = attack_param(atkp).reaction;
+    t.blow_reaction = std::max(t.blow_reaction, r == 255 ? 0 : r);
 }
 
 // A motion's attack of the player's team (attack, above): each of its group's spheres strikes the other KH2 enemies
@@ -2796,6 +2855,7 @@ void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group,
             const int base = t.days_damage > 0 ? t.days_damage : last_days_damage > 0 ? last_days_damage : 1;
             t.blow += power > 0 ? std::max(1, base * power / 100) : 0;
             t.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
+            blow_reaction(t, atkp);
             if (tracing())
                 khdays_log("kh2 enemies: %08x's motion %d at %.1f (atkp %d, the player's team, power %d) strikes %08x: "
                            "%d damage",
@@ -2942,9 +3002,9 @@ void Field::player_own_motion(Object &o, int id)
 {
     const unsigned object = days_object(o);
     // KH2 queues it on the player's controller (1:13, FUN_1403c8310), taken once the motion of another's set he plays
-    // gives him back: one still playing keeps him till it blends back to his idle (range 2) or ends (the Magnum
-    // Loader's thread asks for 0 as Quick Blade begins, the Armored Knight's as Rising Sun's AB52 does); one at its end
-    // (Cerberus's) lets him go now
+    // gives him back: one still playing keeps him till it ends, or till a press of his acts out of it while its range
+    // 2 (FLAG_CANCEL) is on (the Magnum Loader's thread asks for 0 as Quick Blade begins, the Armored Knight's as Rising
+    // Sun's AB52 does, Roxas's as the Reversal's AR10 or AR22 does); one at its end (Cerberus's) lets him go now
     if (const auto h = held.find(object); h != held.end() && !h->second.ended) {
         h->second.own_queued = true;
         if (tracing())
@@ -3178,6 +3238,22 @@ void event_point(const Playing &p, const std::array<float, 3> &k, float out[3])
     out[2] = p.base[2] + t[2] / kKh2PerDays;
 }
 
+// Whether this game's own player pressed an action this game frame (A, B or Y: his attack, jump, guard), his own pad's
+// or an input script's
+bool action_pressed()
+{
+    static std::uint32_t frame = ~0u;
+    static std::uint16_t was = 0, pressed = 0;
+    if (const std::uint32_t now = khdays_input_game_frames(); now != frame) {
+        frame = now;
+        const KhdaysInputSnapshot *s = khdays_input_snapshot();
+        const std::uint16_t buttons = std::uint16_t((s != nullptr ? s->ds_buttons : 0) | khdays_input_script_buttons());
+        pressed = std::uint16_t(buttons & ~was);
+        was = buttons;
+    }
+    return (pressed & (KHDAYS_KEY_A | KHDAYS_KEY_B | KHDAYS_KEY_Y)) != 0;
+}
+
 // A KH2 tick of a player its enemy holds: its motion on (its root's travel turned by its yaw, as Actor::step), held at
 // its end (the ended bit its script waits on) or looped; its ranges now (20 a reaction command offered when the one
 // it follows is on -- range 26's -- 27 not to be hit), its triggers passed (1 the enemy's effect, 8 its sound), its
@@ -3314,8 +3390,9 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
     h.offered = -1;
     h.unhittable = false;
     h.idle = false;
+    h.follows.clear();
     if (const kh2::MotionAttributes *attr = h.body->attributes.get()) {
-        std::set<int> chain; // range 26: the commands this motion follows on from
+        std::set<int> &chain = h.follows; // range 26: the commands this motion follows on from
         for (const auto &r : attr->ranges)
             if (r.id == 26 && !r.params.empty() && in(r))
                 chain.insert(std::int16_t(r.params[0]));
@@ -3324,7 +3401,10 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                 continue;
             if (r.id == 27)
                 h.unhittable = true;
-            if (r.id == 2 && h.own_queued) // his own idle asked for: back to it (Quick Blade's frame 107)
+            // range 2, FLAG_CANCEL (+ 0x34 bit 4: YS::MOTION's flags, the PS3 build's names): a press of his acts out
+            // of it -- his own motion asked for, he is let go to Days's control on A, B or Y. It once let him go as it
+            // began: the Reversal's AR22, 2 from its frame 0, ended in the tick it started
+            if (r.id == 2 && h.own_queued && object == local_player && action_pressed())
                 h.idle = true;
             if (r.id == 20 && !r.params.empty()) {
                 const int id = std::int16_t(r.params[0]);
@@ -3372,6 +3452,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             const int base = e.days_damage > 0 ? e.days_damage : last_days_damage > 0 ? last_days_damage : 1;
             e.blow += power > 0 ? std::max(1, base * power / 100) : 0;
             e.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
+            blow_reaction(e, atkp);
             if (tracing())
                 khdays_log("kh2 enemies: player %08x's weapon strikes %08x (atkp %d, power %d): %d damage (its last Days "
                            "hit's %d)",
@@ -3482,8 +3563,8 @@ void zone_offer(Enemy &e)
     if (a.motion.id != e.zone_taken_motion)
         e.zone_taken_motion = -1; // a motion after the one a command was taken in: its zones offer again
     const auto p = players.find(local_player);
-    if (local_player == 0 || held.count(local_player) != 0 || e.dying || !e.kind->plays_player || p == players.end() ||
-        !p->second || a.motion.id < 0 || a.motion.id == e.zone_taken_motion)
+    if (local_player == 0 || e.dying || !e.kind->plays_player || p == players.end() || !p->second || a.motion.id < 0 ||
+        a.motion.id == e.zone_taken_motion)
         return;
     const std::set<int> groups = groups_on(e);
     if (groups.empty())
@@ -3494,7 +3575,10 @@ void zone_offer(Enemy &e)
         pose(e);
     const Vec3 player = p->second->place();
     for (const Shape &sh : e.kind->shapes) {
-        if ((sh.kind & 0xff) != 5 || groups.count(sh.group) == 0 || sh.command <= 0 || sh.radius <= 0.0F)
+        // held, only a command he can take (command_usable: Roxas's grab holds him in AR20, whose range 26 is
+        // "Reversal"'s 675, and the zone his own motion turns on offers it)
+        if ((sh.kind & 0xff) != 5 || groups.count(sh.group) == 0 || sh.command <= 0 || sh.radius <= 0.0F ||
+            !command_usable(sh.command))
             continue;
         float d[3];
         days_point(e, now, sh.bone, sh.at, d);
@@ -3550,6 +3634,42 @@ int script_offered()
                : -1;
 }
 
+// Whether an enemy's script gives this game's own player's command menu now (1:237 this frame or the one before)
+bool top_menu_standing()
+{
+    return khdays_link_frame() - top_offer.frame <= 2u && enemies.count(top_offer.enemy) != 0;
+}
+
+// Whether this game's own player can take command `id` now, from his menu or a zone (KH2's FUN_1403ba070): free, any;
+// held, one whose require the motion an enemy holds him in follows on from (its range 26: Roxas's duel, AR11, "The
+// End"'s 672; his grab, AR20, "Reversal"'s 675), no other -- KH2's is then in no state to act (no range 0 to 2 in his
+// motion: the duel's "?", 104)
+bool command_usable(int id)
+{
+    const auto h = held.find(local_player);
+    if (h == held.end())
+        return true;
+    const Command *c = command(id);
+    return c != nullptr && c->require != 0 && h->second.follows.count(c->require) != 0;
+}
+
+// The command the deck's main row `row` (of `rows`) shows of the menu a script gives: its slot's, the slot past the
+// deck's rows in the row chosen for it; of two there, the one the player can choose (the duel's "The End" in any row
+// alike); 0 none
+int deck_command(int row, int rows)
+{
+    int found = 0;
+    for (int slot = 0; slot < int(top_offer.commands.size()); ++slot) {
+        const int at = slot < rows ? slot : top_offer.extra_row;
+        const int id = top_offer.commands[std::size_t(slot)];
+        if (at != row || id <= 0)
+            continue;
+        if (found == 0 || (!command_usable(found) && command_usable(id)))
+            found = id;
+    }
+    return found;
+}
+
 // The enemy whose zone offers this game's own player a command now, the deepest in; null none
 Enemy *zone_offerer()
 {
@@ -3575,11 +3695,14 @@ void take_command(Enemy &e)
         pressed = std::uint16_t(buttons & ~was);
         was = buttons;
     }
-    // a press takes one command: the one a held player's motion offers, else a script's, else a zone's
-    const auto send = [&e](int id, const char *how) {
-        pressed = std::uint16_t(pressed & ~KHDAYS_KEY_X);
-        ++local_takes;
-        local_taken = id;
+    // a press takes one command: the one a held player's motion offers, else a script's, else a zone's; one chosen in
+    // the menu a script gives (A) is no reaction command's bar's
+    const auto send = [&e](int id, const char *how, bool menu = false) {
+        pressed = std::uint16_t(pressed & ~(menu ? KHDAYS_KEY_A : KHDAYS_KEY_X));
+        if (!menu) {
+            ++local_takes;
+            local_taken = id;
+        }
         const Command *c = command(id);
         const int number = c != nullptr ? c->argument : id;
         const auto o = players.find(local_player);
@@ -3609,12 +3732,56 @@ void take_command(Enemy &e)
         script_offer.command = -1;
         send(id, "offered by the script of");
     }
-    if (e.zone >= 0 && (pressed & KHDAYS_KEY_X) != 0 && held.count(local_player) == 0 && zone_offerer() == &e) {
+    if (e.zone >= 0 && (pressed & KHDAYS_KEY_X) != 0 && zone_offerer() == &e) {
         const int id = e.zone;
         e.zone = -1;
         e.zone_taken_motion = e.actor->motion.id;
         send(id, "from the zone of");
     }
+    // the command menu a script gives (1:237) on Days's deck: its cursor moved as the deck's is (X the next row, Days's
+    // own steps and sound) and KH2's (Up, Down), A the command its row shows -- sent to the enemy as a reaction command
+    // is when the player can choose it now (command_usable), else nothing. Held, Days's own input does not run.
+    if (top_menu_standing() && top_offer.enemy == e.days && held.count(local_player) != 0) {
+        if ((pressed & (KHDAYS_KEY_DOWN | KHDAYS_KEY_X)) != 0)
+            khdays_deck_step(0);
+        if ((pressed & KHDAYS_KEY_UP) != 0)
+            khdays_deck_step(1);
+        pressed = std::uint16_t(pressed & ~(KHDAYS_KEY_DOWN | KHDAYS_KEY_X | KHDAYS_KEY_UP));
+        if ((pressed & KHDAYS_KEY_A) != 0) {
+            const int row = khdays_deck_main_row();
+            const int id = row >= 0 ? deck_command(row, khdays_deck_main_rows()) : 0;
+            if (id > 0 && command_usable(id))
+                send(id, "chosen on the deck as the command menu given by", true);
+            else if (tracing())
+                khdays_log("kh2 enemies: the player cannot choose command %d (the deck's row %d) of the menu %08x gives",
+                           id, row, e.days);
+            pressed = std::uint16_t(pressed & ~KHDAYS_KEY_A);
+        }
+    }
+}
+
+// The deck's rows as the command menu a script gives shows them (each frame, from khdays_kh2_enemies_holding): as the
+// menu comes, the deck back to its main rows (KH2 closes its submenus) and the row for its fourth slot chosen; their
+// text drawn again whenever what they show changes, and once more as the menu goes (Days's own again)
+void deck_sync()
+{
+    const bool wanted = top_menu_standing() && held.count(local_player) != 0 && khdays_deck_main_row() != -2;
+    if (wanted && !top_offer.shown && khdays_deck_main_row() == -1)
+        khdays_deck_to_main();
+    const int rows = wanted ? khdays_deck_main_rows() : 0;
+    const bool show = rows > 0;
+    std::array<int, 4> want{};
+    if (show) {
+        if (!top_offer.shown)
+            top_offer.extra_row = int(khdays_link_frame() % unsigned(rows));
+        for (int r = 0; r < rows && r < int(want.size()); ++r)
+            want[std::size_t(r)] = deck_command(r, rows);
+    }
+    if (show == top_offer.shown && want == top_offer.labels)
+        return;
+    top_offer.shown = show;
+    top_offer.labels = want;
+    khdays_deck_relabel();
 }
 
 // A KH2 tick of the enemy: its script (not while a reaction plays), its motion and travel; KH2's gravity off the ground
@@ -3756,6 +3923,7 @@ void strike(AttackObject &o, Object &target)
     const int base = hit.days_damage > 0 ? hit.days_damage : last_days_damage > 0 ? last_days_damage : 1;
     hit.blow += power > 0 ? std::max(1, base * power / 100) : 0;
     hit.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
+    blow_reaction(hit, o.atkp);
     if (tracing())
         khdays_log("kh2 enemies: KH2's player's attack (atkp %d, power %d) struck on %08x: %d damage", o.atkp, power,
                    hit.days, hit.blow);
@@ -5254,6 +5422,9 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     e->health_taken = 0;
     const bool blow = e->blow_landing; // a KH2 player's blow's hit, not a Days hit
     e->blow_landing = false;
+    // its reaction: a Days hit's a small one (2); a KH2 player's blow's its attacks' (atkp + 10): "The End"'s and
+    // Cerberus's finish's none (0) -- the enemy then goes on as it was (Roxas's rc_duelbaut on to his second phase)
+    const int hit_reaction = blow ? e->landing_reaction : 2;
     // a hit its least health kept from taking any (KH2's YS::SHEET MinHp) is a hit all the same: its reaction and its
     // trigger 6 (the Prison Keeper's spits a captive out and lowers its least on it)
     const bool at_least = e->held_at_least;
@@ -5298,13 +5469,13 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     if (!days_hit)
         days_hit = std::make_unique<Object>(mod().memory, "a Days hit");
     // the hit as KH2's YS::DAMAGE, at the offsets KH2FM.exe's calls read: its way (Dir, + 0) from the player who
-    // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, a
-    // small reaction (Reaction, + 0x26: 2:7, 2:8), no first one (OrigReaction, + 0x27: none of Days's hits a finish)
+    // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, its
+    // reaction (Reaction, + 0x26: 2:7, 2:8), no first one (OrigReaction, + 0x27: none of Days's hits a finish)
     mod().memory.write(days_hit->address(), way, sizeof way);
     days_hit->set_u32(0x10, striker != nullptr ? striker->address() : 0u);
     days_hit->set_u32(0x14, a.address());
     days_hit->set_u32(0x18, 0);
-    days_hit->set_u32(0x24, 2u << 16);
+    days_hit->set_u32(0x24, std::uint32_t(hit_reaction & 0xff) << 16);
     // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
     // and no push back of its own (+ 0xc, 0x7fff: 2:86 gives KH2's battle constants' then)
     static std::uint32_t params = 0;
@@ -5334,6 +5505,14 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         if (tracing())
             khdays_log("kh2 enemies: %08x hit (%d to %d) in a locked state", days, hp_before, s.hp);
         return; // a locked state (its leaving, an event) plays on
+    }
+    if (hit_reaction == 0) { // no reaction: no motion, no "revenge"; trigger 6 told all the same
+        const ai::Value packet = ai::Value::of_address(days_hit->address());
+        a.states().event(a, 3, {&packet, 1});
+        a.event(6, {&packet, 1});
+        if (tracing())
+            khdays_log("kh2 enemies: %08x hit (%d to %d) with no reaction (a KH2 player's blow)", days, hp_before, s.hp);
+        return;
     }
     const int motion = front ? 10 : 12;
     // KH2's hit (FUN_140411060): the reaction applied -- its motion asked, the actor held while it plays
@@ -5454,8 +5633,10 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
     const unsigned object = khdays_kh2_shell_player_object(unsigned(KHDAYS_REF(actor)), &local, &node);
     if (object == 0)
         return 0;
-    if (local)
+    if (local) {
         local_player = object;
+        deck_sync();
+    }
     if (node != 0)
         player_of_node[node] = object;
     if (tracing()) { // its HP as it changes (the KH2 enemies' hits on it)
@@ -5483,8 +5664,8 @@ extern "C" int khdays_kh2_enemies_offered(int *text)
         id = h->second.offered;
     if (id < 0)
         id = script_offered();
-    if (id < 0 && held.count(local_player) == 0)
-        if (const Enemy *z = zone_offerer())
+    if (id < 0)
+        if (const Enemy *z = zone_offerer()) // held, only one he can take (zone_offer)
             id = z->zone;
     if (id < 0)
         return 0;
@@ -5628,6 +5809,24 @@ extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room)
 {
     int text = 0;
     return khdays_kh2_enemies_offered(&text) != 0 ? put_name(text, out, room) : 0;
+}
+
+// Ov002_DrawPanelRowText (prepare.py's join): the text of the deck's main block's line `line` while it shows the
+// command menu a script gives -- lines 0 to 2 its first row (Attack, or Talk and the rest in its place), 3 to 5 the
+// rows after it (Magic, Items) -- its UTF-16 letters into `out` (at most `room`, then a 0), how many; 0 Days's own
+extern "C" int khdays_kh2_enemies_deck_label(int line, unsigned short *out, int room)
+{
+    const int row = line < 3 ? 0 : line - 2;
+    if (!top_offer.shown || out == nullptr || room <= 0 || row >= int(top_offer.labels.size()))
+        return 0;
+    const int id = top_offer.labels[std::size_t(row)];
+    const Command *c = id > 0 ? command(id) : nullptr;
+    const std::u16string name = c != nullptr ? command_name(c->text) : std::u16string{};
+    const int n = std::min(int(name.size()), room);
+    for (int i = 0; i < n; ++i)
+        out[i] = static_cast<unsigned short>(name[std::size_t(i)]);
+    out[n] = 0;
+    return n;
 }
 
 // The name of the last reaction command this game's own player took and its id in `id` (0 none)
@@ -5795,6 +5994,8 @@ extern "C" int khdays_kh2_enemies_blow(void *actor, int *amount)
     }
     e->blow = 0;
     e->blow_landing = true;
+    e->landing_reaction = e->blow_reaction;
+    e->blow_reaction = 0;
     return 1;
 }
 

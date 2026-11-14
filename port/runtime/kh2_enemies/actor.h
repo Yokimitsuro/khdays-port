@@ -430,6 +430,9 @@ public:
     // 1:165: a reaction command offered KH2's player this tick by `by`'s script (FUN_1403b2850 on his + 0xdd0), from
     // `source`: what a press sends it (trigger 11)
     virtual void offer(Actor & /*by*/, int /*command*/, Object * /*source*/) {}
+    // 1:237: the four top commands of KH2's player's command menu (Attack, Magic, Items, Drive) this tick, given by
+    // `by`'s script (FUN_1403b2910 on his + 0xdd0), each sent to `target` when chosen
+    virtual void override_top(Actor & /*by*/, const std::array<int, 4> & /*commands*/, Object * /*target*/) {}
     // KH2's actors of the field (6:5's search goes through them, FUN_1403bf4f0)
     virtual std::vector<Actor *> actors()
     {

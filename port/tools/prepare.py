@@ -2617,7 +2617,52 @@ HOOKS["ov002@0205b39c"] = [
     ),
     (
         "extern int *Ov002_FindNamedEntry(int nName);\n",
-        "extern int *Ov002_FindNamedEntry(int nName);\nextern int khdays_reaction_talk_active(void);\n",
+        "extern int *Ov002_FindNamedEntry(int nName);\nextern int khdays_reaction_talk_active(void);\n"
+        "extern int khdays_kh2_enemies_deck_label(int line, unsigned short *out, int room);\n",
+    ),
+    (  # ... and while a KH2 enemy's script gives the player's command menu (runtime/kh2_enemies: 1:237, Roxas's duel)
+        # its main rows say that menu's commands ("?", "The End")
+        "    int aBind[3];\n",
+        "    int aBind[3];\n    int khdays_deck_text[16]; /* a KH2 command menu's row, UTF-16, 0-ended */\n",
+    ),
+    (
+        "                pText = Ov002_GetVarRecordByIndex(aRecords, nSelect);\n",
+        "                pText = Ov002_GetVarRecordByIndex(aRecords, nSelect);\n"
+        "                if (khdays_kh2_enemies_deck_label(i, (unsigned short *)khdays_deck_text, 31) > 0) {\n"
+        "                    pText = khdays_deck_text;\n"
+        "                }\n",
+    ),
+]
+# The command deck as a KH2 enemy's script gives the player's command menu (runtime/kh2_enemies: 1:237): the main row
+# its cursor is on, its cursor stepped as X and the D-pad step it (Days's own sound), the deck back to its main rows,
+# its rows' text drawn again -- the runtime moves the deck while an enemy holds the player, when Days's input is off
+HOOKS["ov002@0205d658"] = [
+    (  # Ov002_PanelAdvanceCursor's file
+        "    Ov002_PanelApplyCursorMove(s->bKind, *(volatile int *)&nNextKind);\n    return nResult;\n}\n",
+        "    Ov002_PanelApplyCursorMove(s->bKind, *(volatile int *)&nNextKind);\n    return nResult;\n}\n\n"
+        "extern void Ov002_PanelCursorNext(void);\n"
+        "extern void Ov002_PanelCursorPrev(void);\n"
+        "extern void Ov002_BuildTileRow(void);\n\n"
+        "/* the main row the deck's cursor is on, -1 off them (a list open), -2 no deck; how many main rows (0 off them)\n"
+        " * -- no pointers: the runtime calls these with its own */\n"
+        "int khdays_deck_main_row(void)\n{\n"
+        "    Ov002PanelSession *s = data_ov002_0207f620;\n"
+        "    int nRow;\n\n"
+        "    if (s == 0) {\n        return -2;\n    }\n"
+        "    if (Ov002_ClassifyCode(&nRow, s->bMode) != 0) {\n        return -1;\n    }\n"
+        "    return s->bKind;\n}\n\n"
+        "int khdays_deck_main_rows(void)\n{\n"
+        "    Ov002PanelSession *s = data_ov002_0207f620;\n"
+        "    int nRow;\n\n"
+        "    if (s == 0 || Ov002_ClassifyCode(&nRow, s->bMode) != 0) {\n        return 0;\n    }\n"
+        "    return s->bSlotCount;\n}\n\n"
+        "void khdays_deck_step(int bBack)\n{\n"
+        "    if (data_ov002_0207f620 == 0) {\n        return;\n    }\n"
+        "    if (bBack != 0) {\n        Ov002_PanelCursorPrev();\n    } else {\n        Ov002_PanelCursorNext();\n    }\n}\n\n"
+        "void khdays_deck_to_main(void)\n{\n"
+        "    Ov002_HandlePanelInput(0, -1);\n}\n\n"
+        "void khdays_deck_relabel(void)\n{\n"
+        "    if (data_ov002_0207f620 != 0) {\n        Ov002_BuildTileRow();\n    }\n}\n",
     ),
 ]
 HOOKS["ov022@0209045c"] = [
