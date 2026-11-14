@@ -303,7 +303,7 @@ void khdays_kh2_camera_held(int camera)
 /* The movement stick as KH2's Stick[1] has it: a unit direction, y down, and how far. */
 static void read_movement(Kh2CameraInput *in)
 {
-    const KhdaysInputSnapshot *snapshot = khdays_input_previous_snapshot();
+    const KhdaysInputSnapshot *snapshot = khdays_input_movement_snapshot(); /* the one the player moves by */
     float x = 0.0f, y = 0.0f, amount = 0.0f;
     if ((snapshot->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) != 0 &&
         (snapshot->move_x != 0 || snapshot->move_y != 0)) {

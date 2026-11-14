@@ -125,6 +125,9 @@ void khdays_host_input_take(KhdaysInputSnapshot *out);
  * snapshot. */
 uint16_t khdays_host_buttons(void);
 
+/* The movement stick (KhdaysInputSnapshot's move_x, move_y) from the latest snapshot. */
+void khdays_host_movement(int *x, int *y);
+
 /* KHDAYS_TRACE_LATENCY: the game sampled the pad at VBlank `vblank` (game thread). */
 void khdays_host_latency_sampled(uint32_t vblank);
 

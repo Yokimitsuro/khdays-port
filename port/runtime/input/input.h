@@ -42,9 +42,14 @@ void khdays_input_pad_sample(void);
 const KhdaysInputSnapshot *khdays_input_snapshot(void);
 
 /* The snapshot taken at the khdays_input_pad_sample before: what the
- * actors read this frame, since their buttons come a game frame late (in
- * the control packet). */
+ * actors read this frame in the game's own order, their buttons a game frame
+ * late (in the control packet). */
 const KhdaysInputSnapshot *khdays_input_previous_snapshot(void);
+
+/* The snapshot the local player moves by (its stick for analog movement and the KH2 camera): this game
+ * frame's while the port builds the field's control packet before the characters read it (this frame
+ * or the last: controls_hooks.c, khdays_controls_send_early), else the one before. */
+const KhdaysInputSnapshot *khdays_input_movement_snapshot(void);
 
 /* How many times Pad_Sample has run: the game's own frames. */
 u32 khdays_input_game_frames(void);

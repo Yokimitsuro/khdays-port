@@ -56,6 +56,10 @@ int khdays_events_in_vblank_period(void);
  * until an interrupt is due and takes it, as the CPU would between two of the loop's instructions. */
 void khdays_wait_point(void);
 
+/* A halt until an interrupt is taken or `stop` says to end it, asked each time the wait is woken
+ * (khdays_clock_wake) or an event passes: the press pace's (runtime/input/input.c). */
+void khdays_runtime_wait_or(int (*stop)(void));
+
 /* The alarm timer (hal/sdk_time.c): timer 1 overflowing `ticks` ticks (64 cycles each) from now,
  * raising IE bit 4 once; or stopped. */
 void khdays_alarm_set_after(u64 ticks);

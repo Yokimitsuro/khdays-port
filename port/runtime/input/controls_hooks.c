@@ -9,6 +9,7 @@
 #include "../mods/models.h"
 #include "analog.h"
 #include "input.h"
+#include "sequencers.h"
 #include "walk.h"
 #include "../net/net_session.h"
 
@@ -357,11 +358,12 @@ typedef struct Stick {
 #define PARTY 4 /* the game's members: the host's and three guests' */
 
 /* Whether analog movement drives this actor now, and its stick. The local actor's stick is the
- * snapshot before this frame's (its buttons reach the game a frame later); on the host a guest's actor
- * takes the stick that guest sent with its controls (net_session.c). */
+ * snapshot its buttons came with (khdays_input_movement_snapshot: this frame's alone, the one before in
+ * the game's order); on the host a guest's actor takes the stick that guest sent with its controls
+ * (net_session.c). */
 static int analog_moving(int actor, Stick *s)
 {
-    const KhdaysInputSnapshot *in = khdays_input_previous_snapshot();
+    const KhdaysInputSnapshot *in = khdays_input_movement_snapshot();
     if (actor == local_actor()) {
         if ((in->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) == 0 || (in->move_x == 0 && in->move_y == 0)) {
             return 0;
@@ -550,4 +552,209 @@ void khdays_trace_frame_mode(int value)
         trace("frame-rate mode set to %d (heap+0x8b54)", value);
     }
     last = value;
+}
+
+/* ---- The control packet's buttons (Ov022_RefreshSlotRows) ----------------- */
+
+extern void Ov022_SendControlPacket(void);
+extern int Session_GetLinkMode(void);
+
+static KhdaysControlSender sender;
+/* inside an early build: MsgQueue_SendGate hands gate 3 to its handler at once -- 1 its directions alone
+ * (khdays_controls_send_early), 2 the whole packet (khdays_controls_command_early) */
+static int delivering;
+static u32 early_frame; /* the game frame the directions went early in (0: none yet) */
+
+int khdays_controls_deliver_now(void)
+{
+    return delivering;
+}
+
+/* KHDAYS_DS_CONTROL_ORDER=1: the game's own order, the characters a game frame behind the buttons (to compare). */
+static int ds_order(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("KHDAYS_DS_CONTROL_ORDER") != NULL;
+    }
+    return on;
+}
+
+/* Alone (in a session a guest's packets come when they come, and its prediction of its own character
+ * follows the host's order): the directions of a packet built as the host's characters are about to read
+ * the table, put in the local player's row (MsgQueue_SendGate's hook, port/tools/prepare.py). The rest of
+ * the row -- the other buttons, the command chosen, its target -- stays the game's own packet's, built
+ * after the characters' update and queued as the game does: with them, the actor saw the A the command
+ * menu took for Talk a frame before the Talk, and the player could not talk to anyone. `ready`: the game's network send builds one this frame (its object is
+ * there, not paused), the battle is the ordinary one (not Sora's memory's, whose frames take turns with
+ * it) and the game puts in no buttons of its own after it (the mode word 0x2a's saved masks,
+ * Ov022_RefreshSlotRows). */
+void khdays_controls_send_early(int ready)
+{
+    static int last = -1;
+    const int early =
+        khdays_control_sender_early(&sender, khdays_input_game_frames(), ready && !khdays_net_in_session() && !ds_order());
+    if (early) {
+        early_frame = khdays_input_game_frames();
+        /* the packet's building clears the command chosen and bInput1 once sent (Ov022_SendControlPacket):
+         * those stay for the game's own packet */
+        const int actor = local_actor();
+        unsigned char *chosen = actor != 0 ? (unsigned char *)KHDAYS_W(actor) + 0x4d0 : NULL;
+        const unsigned char kind = chosen != NULL ? chosen[0] : 0, bits = chosen != NULL ? chosen[0x18] : 0;
+        delivering = 1;
+        Ov022_SendControlPacket();
+        delivering = 0;
+        if (chosen != NULL) {
+            chosen[0] = kind;
+            chosen[0x18] = bits;
+        }
+    }
+    if (trace_on() && early != last) {
+        trace("control packet: its directions put in %s (link mode %d)",
+              early ? "as the characters are about to read them" : "by the game's network send, after them",
+              Session_GetLinkMode());
+    }
+    last = early;
+}
+
+/* ---- Commands at once (Ov022_ActorUpdate, after Ov022_UpdateCommandInput) ----------------------------
+ * The command menu chooses inside the local player's update (+0x4d0), after its row was read into it
+ * (+0x4d6), so a command reached the actor a game frame late: the game's packet carried it to the next
+ * frame's row. Right after the menu chose one with a press of this frame, the packet is built there and
+ * given whole to the local player's row (gate 3's handler, MsgQueue_SendGate's hook), the pressed buttons
+ * made again from the held of the frame before, and the actor's own copy set as Ov022_LoadNodeFromResource
+ * sets it -- so Ov022_TranslateCommandToAction, next in the update, acts on it in this frame. Building it
+ * clears the command chosen (Ov022_SendControlPacket), so the game's own packet, later, has none: no command
+ * twice, and its buttons, held by then, are no new press either. Only commands nothing else waits on: an
+ * attack (kind 9, the deck's Attack, with the weapon out: an attached part, func_ov022_0209fc78) and the
+ * deck's magic and items (kinds 8, 11-13). The Grey Area's A chooses no command (7), and its Talk comes
+ * through other objects a frame on: given early, the actor saw the A before the Talk (the first try,
+ * 2026-11-10). Measured on the `play` walk's mission: the attack requested (+0x1c) a game frame sooner.
+ * Alone, as the directions (khdays_controls_send_early);
+ * KHDAYS_FAST_COMMANDS=0 keeps the game frame (the game's own order). */
+#define PAD_PRESSED (*(volatile u16 *)KHDAYS_W(0x0204c190)) /* gPadPressed */
+
+static int fast_commands(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *v = getenv("KHDAYS_FAST_COMMANDS");
+        on = v == NULL || v[0] != '0';
+    }
+    return on;
+}
+
+static void *command_actor; /* the actor the whole packet is for (khdays_controls_command_given) */
+
+void khdays_controls_command_early(void *actor_pointer)
+{
+    const int actor = local_actor();
+    unsigned char *a;
+    int kind, weapon;
+    if (!fast_commands() || ds_order() || khdays_net_in_session() || early_frame == 0 ||
+        early_frame != khdays_input_game_frames() || actor == 0) {
+        return;
+    }
+    a = (unsigned char *)KHDAYS_W(actor);
+    if ((void *)a != actor_pointer || (PAD_PRESSED & 0xc03u) == 0) {
+        return;
+    }
+    kind = (signed char)a[0x4d0];
+    weapon = a[0xda9] != 0 || a[0xda9 + 0x164] != 0;
+    if (!((kind == 9 && weapon) || kind == 8 || (kind >= 11 && kind <= 13))) {
+        if (trace_on()) {
+            trace("command: kind %d chosen (%s): given as the game gives it", kind,
+                  weapon ? "the weapon out" : "no weapon out");
+        }
+        return;
+    }
+    command_actor = a;
+    delivering = 2;
+    Ov022_SendControlPacket();
+    delivering = 0;
+    command_actor = NULL;
+}
+
+void khdays_controls_command_given(const unsigned short *packet, unsigned pressed, unsigned held)
+{
+    unsigned char *a = (unsigned char *)command_actor;
+    unsigned int word;
+    if (a == NULL) {
+        return;
+    }
+    word = (unsigned int)packet[2] | ((unsigned int)packet[3] << 16);
+    *(unsigned short *)(a + 0x18) = (unsigned short)pressed;
+    *(unsigned short *)(a + 0x1a) = (unsigned short)held;
+    a[0x4d6] = (unsigned char)(word & 0xfu);
+    *(unsigned short *)(a + 0x4d8) = (unsigned short)((word >> 4) & 0x3ffu);
+    *(unsigned short *)(a + 0x4da) = (unsigned short)((word >> 14) & 0x3ffu);
+    a[0x4e8] = (unsigned char)((a[0x4e8] & ~0x14u) | (((word >> 24) & 1u) << 2) | (((word >> 25) & 1u) << 4));
+    if (trace_on()) {
+        trace("command: kind %u given in the frame it was chosen (pressed %03x, held %03x)", word & 0xfu, pressed,
+              held);
+    }
+}
+
+const KhdaysInputSnapshot *khdays_input_movement_snapshot(void)
+{
+    /* sender.early is the frame + 1 of the last packet built early: this frame's (0) or the last's (1) */
+    const u32 since = khdays_input_game_frames() + 1u - sender.early;
+    return sender.early != 0 && since <= 1u ? khdays_input_snapshot() : khdays_input_previous_snapshot();
+}
+
+/* ---- Turn speed (Ov022_ClampAngleTowardTarget) ---------------------------- */
+
+/* How far the actor may turn this game frame (its +0x4b0, a share of 0x10000 a turn), asked by every steer -- the
+ * run's and walk's, a jump's, a glide's, a rush's, a lock-on's -- with `apart` (0..0x8000) still to turn. The
+ * game's 0xc00 on the ground (17 degrees a frame at 30, a whole turn in 0.7 s) keeps a running player from circling
+ * any tighter than the D-pad's eighths ever needed. For the local player, by stick, keys or D-pad alike, the turn
+ * eases out instead: each frame KHDAYS_TURN_EASE percent of what is left (default 50; 100 all of it at once), never
+ * less than KHDAYS_TURN_SPEED percent of the game's (default 100, its own) -- a key's eighth or quarter turned in
+ * three or four frames, not one, and a stick turned round quickly followed half a step behind (turned fast enough, the
+ * player spins where he stands). Nor does the game's snap round past 157 degrees (khdays_controls_turn_eased): a
+ * turn about eases too. Not in a session (the others' machines steer their copy of this player with the game's) nor
+ * in the game's own order (KHDAYS_DS_CONTROL_ORDER). */
+static int percent_of(const char *name, int fallback, int least, int most)
+{
+    const char *v = getenv(name);
+    int n = v != NULL && v[0] != '\0' ? atoi(v) : fallback;
+    return n < least ? least : n > most ? most : n;
+}
+
+static int turn_ease(void)
+{
+    static int ease = -1;
+    if (ease < 0) {
+        ease = percent_of("KHDAYS_TURN_EASE", 50, 0, 100);
+    }
+    return ease;
+}
+
+static int turn_speed(void)
+{
+    static int speed = -1;
+    if (speed < 0) {
+        speed = percent_of("KHDAYS_TURN_SPEED", 100, 100, 1100);
+    }
+    return speed;
+}
+
+int khdays_controls_turn_eased(int actor)
+{
+    return (turn_ease() > 0 || turn_speed() > 100) && !ds_order() && !khdays_net_in_session() &&
+           actor == local_actor();
+}
+
+int khdays_controls_turn_limit(int actor, int limit, int apart)
+{
+    long long most;
+    if (limit <= 0 || !khdays_controls_turn_eased(actor)) {
+        return limit;
+    }
+    most = (long long)limit * turn_speed() / 100;
+    {
+        const long long eased = (long long)apart * turn_ease() / 100;
+        most = eased > most ? eased : most;
+    }
+    return most > 0x8000 ? 0x8000 : (int)most;
 }

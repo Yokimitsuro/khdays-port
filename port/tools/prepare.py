@@ -1337,7 +1337,8 @@ HOOKS = {
             "        Ov022_UpdateCommandInput(pActor);\n",
             "        { extern void khdays_mp_predict_pause(int paused); khdays_mp_predict_pause(1);\n"
             "          Ov022_UpdateCommandInput(pActor);\n"
-            "          khdays_mp_predict_pause(0); }\n",
+            "          khdays_mp_predict_pause(0); }\n"
+            "        { extern void khdays_controls_command_early(void *actor); khdays_controls_command_early(pActor); }\n",
         )
     ],
     "ov022@02087ac0": [
@@ -1412,7 +1413,56 @@ HOOKS = {
             "          return 1;\n"
             "      } }\n"
             "    switch (Session_GetLinkMode()) {\n",
-        )
+        ),
+        # The field's directions, alone (runtime/input/controls_hooks.c, khdays_controls_send_early): the
+        # control packet built as the characters are about to read the table gives only its directions
+        # (the held buttons, the halfword at +2's bits 3-14: Right, Left, Up, Down at bits 7-10) to the
+        # local player's row as it stands -- the other buttons, the command chosen and the target stay
+        # those of the game's own packet, built after the characters' update and queued (an A the
+        # command menu took for Talk is left out of it there) -- through gate 3's handler
+        # (Ov022_PublishRequestToSlot: the row at *data_ov022_020b2ea4 + 0x28 + slot * 0xc), as
+        # CmdPacket_Dispatch hands a packet on. Queued, they reached the table only at the next frame's
+        # List_TryInvokeEntry.
+        (
+            '#include "game/engine.h"\n',
+            '#include "game/engine.h"\n'
+            "typedef struct {\n"
+            "    char pad00[0xc];\n"
+            "    void (*handlers[20])(void *buf, int size); /* 0x0c */\n"
+            "    void *buf;                                  /* 0x5c */\n"
+            "} KhdaysGates;\n"
+            "extern KhdaysGates *data_0204c22c;\n"
+            "extern char *data_ov022_020b2ea4;\n"
+            "extern int khdays_controls_deliver_now(void);\n",
+        ),
+        (
+            "    switch (Session_GetLinkMode()) {\n",
+            "    if (param_1 == 3 && khdays_controls_deliver_now() == 2 && data_0204c22c != 0 &&\n"
+            "        data_0204c22c->handlers[3] != 0 && data_ov022_020b2ea4 != 0 && param_3 == 0xc) {\n"
+            "        /* a command given at once (khdays_controls_command_early): the whole packet, the pressed\n"
+            "         * buttons made again from the frame before's held (func_ov022_0208a1fc's) */\n"
+            "        extern void khdays_controls_command_given(const unsigned short *packet, unsigned pressed,\n"
+            "                                                 unsigned held);\n"
+            "        unsigned short *khdays_keys;\n"
+            "        MI_CpuCopy8(param_2, data_0204c22c->buf, 0xc);\n"
+            "        data_0204c22c->handlers[3](data_0204c22c->buf, 0xc);\n"
+            "        khdays_keys = (unsigned short *)(data_ov022_020b2ea4 + 0x14 + (param_2[1] & 7u) * 6 + 0x84);\n"
+            "        khdays_keys[1] = (unsigned short)(khdays_keys[1] | (khdays_keys[0] & ~khdays_keys[2]));\n"
+            "        khdays_keys[2] = khdays_keys[0];\n"
+            "        khdays_controls_command_given(param_2, khdays_keys[1], khdays_keys[0]);\n"
+            "        return 1;\n"
+            "    }\n"
+            "    if (param_1 == 3 && khdays_controls_deliver_now() == 1 && data_0204c22c != 0 &&\n"
+            "        data_0204c22c->handlers[3] != 0 && data_ov022_020b2ea4 != 0 && param_3 == 0xc) {\n"
+            "        unsigned short merged[6];\n"
+            "        MI_CpuCopy8(data_ov022_020b2ea4 + 0x28 + (param_2[1] & 7u) * 0xc, merged, 0xc);\n"
+            "        merged[1] = (unsigned short)((merged[1] & ~0x780u) | (param_2[1] & 0x780u));\n"
+            "        MI_CpuCopy8(merged, data_0204c22c->buf, 0xc);\n"
+            "        data_0204c22c->handlers[3](data_0204c22c->buf, 0xc);\n"
+            "        return 1;\n"
+            "    }\n"
+            "    switch (Session_GetLinkMode()) {\n",
+        ),
     ],
     # The field camera: where the game applies its turn and tilt (the D-pad's look view, a drag on
     # the touch screen, L/R), the analog camera adds its own and marks the frame as a camera frame
@@ -1577,6 +1627,26 @@ HOOKS = {
             "    Ov022_UpdateSelectionMarker();\n    Ov002_ReaimActor(object, 0);\n",
         ),
     ],
+    # The field's buttons, alone: a control packet built as the host's characters are about to read the
+    # table, its buttons put in the local player's row (MsgQueue_SendGate's hook above); the game's own
+    # packet is still built by the network send after them and queued, with the command chosen and the
+    # target (the game's order: they moved by the buttons of the game frame before). The conditions are
+    # the network send's own (its object there, not paused), the ordinary battle (not Sora's memory's,
+    # data_0204be04) and no saved masks put in after it (mode word 0x2a); the rest in
+    # runtime/input/controls_hooks.c (khdays_controls_send_early).
+    "ov022@0208739c": [  # Ov022_RefreshSlotRows
+        (
+            "    actor = func_ov022_02083f0c();\n    func_ov022_0208a1fc();\n",
+            "    actor = func_ov022_02083f0c();\n"
+            "    { extern void khdays_controls_send_early(int ready);\n"
+            "      extern char *data_ov022_020b2ea4;\n"
+            "      extern unsigned char data_0204be04;\n"
+            "      khdays_controls_send_early(data_ov022_020b2ea4 != 0 &&"
+            " (*(unsigned int *)data_ov022_020b2ea4 & 1u) == 0 && data_0204be04 == 0 &&"
+            " LoadGlobalU16At0() != 0x2a); }\n"
+            "    func_ov022_0208a1fc();\n",
+        )
+    ],
     # The command menu: that the player has field control this frame (past
     # the suppression tests, with or without a HUD panel open) and the
     # game's Config option 6, for the command menu on the D-pad; and what
@@ -1654,8 +1724,20 @@ HOOKS = {
         (
             "    if ((int)arg1 < 0) return 0xffffffff;\n",
             "    if ((int)arg1 < 0) return 0xffffffff;\n"
+            "    extern int khdays_controls_turn_eased(int actor);\n"
             "    { extern int khdays_kh2_camera_strafing(int actor);\n"
             "      if (khdays_kh2_camera_strafing(arg0)) return arg1; }\n",
+        ),
+        # how far it may turn a frame: faster for the local player (KHDAYS_TURN_SPEED, controls_hooks.c)
+        (
+            "    lim = *(int *)(arg0 + 0x4b0);\n",
+            "    { extern int khdays_controls_turn_limit(int actor, int limit, int apart);\n"
+            "      lim = khdays_controls_turn_limit(arg0, *(int *)(arg0 + 0x4b0), ad); }\n",
+        ),
+        # ... nor snapped round past 157 degrees: a turn about eases too
+        (
+            "    if ((*(unsigned int *)(arg0 + 0x24) & 4) != 0 &&\n",
+            "    if ((*(unsigned int *)(arg0 + 0x24) & 4) != 0 && !khdays_controls_turn_eased(arg0) &&\n",
         ),
     ],
     "ov022@020a3ccc": [  # Ov022_SteerIdleByAim
@@ -1863,7 +1945,21 @@ HOOKS = {
             "        SoundMgr_Update();\n"
             "        { extern void khdays_scripts_frame(void); khdays_scripts_frame(); }\n\n"
             "        /* frame-rate pacing",
-        )
+        ),
+        (  # the press pace (runtime/input/input.c, KHDAYS_PRESS_PACE): a new press ends the pace's wait,
+            # and a quiet frame waits a VBlank more to give it back
+            "            frameTarget += (gObjSystem == 1) ? 2 : 1;\n"
+            "            while (VBlank_GetCount() < frameTarget) {\n"
+            "                OS_WaitVBlankIntr();\n",
+            "            frameTarget += (gObjSystem == 1) ? 2 : 1;\n"
+            "            { extern unsigned khdays_press_pace_target(unsigned target);\n"
+            "              frameTarget = khdays_press_pace_target(frameTarget); }\n"
+            "            while (VBlank_GetCount() < frameTarget) {\n"
+            "                extern int khdays_press_pace_wait(unsigned (*count)(void), unsigned target);\n"
+            "                const int khdays_paced = khdays_press_pace_wait(VBlank_GetCount, frameTarget);\n"
+            "                if (khdays_paced == 2) break;\n"
+            "                if (khdays_paced == 0) OS_WaitVBlankIntr();\n",
+        ),
     ],
     "ov002@02068090": [
         (  # Ov002_BeginMissionRun: the session request went through, a run starts (the first after the

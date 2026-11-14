@@ -2052,6 +2052,26 @@ static void test_menu_stepper(void)
     CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
 }
 
+/* The field's buttons are put in the input table once a game frame, before the characters read it, when
+ * allowed. */
+static void test_control_sender(void)
+{
+    KhdaysControlSender s;
+    khdays_control_sender_reset(&s);
+
+    /* Alone: every frame. */
+    for (uint32_t frame = 0; frame < 3; ++frame) {
+        CHECK(khdays_control_sender_early(&s, frame, 1));
+    }
+    /* Read twice in a frame: put in once. */
+    CHECK(khdays_control_sender_early(&s, 3, 1));
+    CHECK(!khdays_control_sender_early(&s, 3, 1));
+
+    /* Not allowed (a session, the game's order): not at all, and then again. */
+    CHECK(!khdays_control_sender_early(&s, 4, 0));
+    CHECK(khdays_control_sender_early(&s, 5, 1));
+}
+
 /* Lock-on on its own buttons is the DS's own R presses for it. */
 static uint16_t lock_frame(KhdaysLockSequencer *s, uint32_t actions, int locked, int scheme, uint16_t held, int r_free)
 {
@@ -2342,6 +2362,7 @@ int main(void)
     test_menu_stepper();
     test_lock_sequencer();
     test_lock_auto();
+    test_control_sender();
     test_presets();
     test_languages();
     test_sources_add_up();
