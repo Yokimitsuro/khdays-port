@@ -1242,6 +1242,11 @@ void khdays_host_present(const uint32_t *upper, const uint32_t *lower)
     }
 }
 
+void khdays_host_shot_soon(void)
+{
+    khdays_present_shot_soon();
+}
+
 int khdays_host_frame_wants(void)
 {
     return SDL_GetAtomicInt(&started) ? SDL_GetAtomicInt(&wants) : 0;

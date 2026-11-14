@@ -144,6 +144,7 @@ typedef struct {
 static const char *shot_dir;
 static Shot *shots;
 static int shot_count;
+static SDL_AtomicInt shots_asked; /* pictures the game thread asked for since the last package (khdays_present_shot_soon) */
 /* KHDAYS_SHOTS_BETWEEN=1: of a frame asked, also the next five pictures, drawn from the same two game frames (no
  * newer one taken meanwhile) at 0, a quarter, a half, three quarters and all but all of the way (picture_pace
  * smooth), named frame_<n>_one_<k>_a<alpha x 1000>.png: the pictures the smoothing makes, whatever the timing */
@@ -324,6 +325,8 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
             shots[shot_count++].taken = 0;
             text = end;
         }
+    }
+    if (shot_dir != NULL) {
         SDL_CreateDirectory(shot_dir);
     }
     if (!make_renderer()) {
@@ -533,6 +536,16 @@ static void save_shots_now(const KhdaysFramePackage *p, int first);
  * skipped by the game catching up after a slow write, so frames asked in a row make a smooth picture sequence. */
 static void save_shots(const KhdaysFramePackage *p, int first)
 {
+    /* the game thread's asks: this package's frame, as KHDAYS_SHOTS names one (more asks for it, the same picture) */
+    if (first && shot_dir != NULL && SDL_SetAtomicInt(&shots_asked, 0) > 0) {
+        Shot *grown = (Shot *)SDL_realloc(shots, (size_t)(shot_count + 1) * sizeof(Shot));
+        if (grown != NULL) {
+            shots = grown;
+            shots[shot_count].frame = p->frame;
+            shots[shot_count].after = 0;
+            shots[shot_count++].taken = 0;
+        }
+    }
     if (shot_count == 0) {
         return;
     }
@@ -1154,6 +1167,13 @@ void khdays_present_redraw_took(uint64_t drawing_ns, uint64_t presenting_ns)
         ++perf.slow;
     }
     perf_tick();
+}
+
+void khdays_present_shot_soon(void)
+{
+    if (shot_dir != NULL) {
+        SDL_AddAtomicInt(&shots_asked, 1);
+    }
 }
 
 void khdays_present_package(const KhdaysFramePackage *p)

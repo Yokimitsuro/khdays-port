@@ -33,6 +33,10 @@ void khdays_host_present(const uint32_t *upper, const uint32_t *lower);
  * shows the two screens as they are. It only changes between frames. */
 int khdays_host_frame_wants(void);
 
+/* KHDAYS_SHOTS_HD=DIR: the next frame the window shows saved there as a picture, asked by the game thread (a KH2
+ * enemy entering a state KHDAYS_SHOT_STATES names); nothing without that folder or a window. */
+void khdays_host_shot_soon(void);
+
 /* How many times the DS's width the 3D should cover (more than 1 in
  * widescreen; 1 when headless or at 4:3), for khdays_g3d_set_widen. It only
  * changes between frames. */

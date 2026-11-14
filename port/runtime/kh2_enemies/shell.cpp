@@ -41,6 +41,7 @@ extern "C" {
 #include "../core/session_log.h"
 #include "../core/origin.h"
 #include "../core/window.h"
+#include "../../host/app/host.h"
 #include "../missions/missions.h"
 #include "../missions/registry.h"
 #include "../scripts/enemies_link.h"
@@ -1021,6 +1022,34 @@ struct TopOffer final {
     std::array<int, 4> labels{};
 };
 TopOffer top_offer;
+// KHDAYS_SHOT_STATES=name,name... (with KHDAYS_TRACE_KH2_ENEMIES and KHDAYS_SHOTS_HD): a KH2 enemy entering one of
+// those states has the window save pictures of the field at once and 15, 30, 60, 120 and 240 frames on (a reported
+// moment caught though a walk's timing changes from run to run)
+std::vector<unsigned> shot_frames;
+void shot_on_state(const std::string &name)
+{
+    static const std::string wanted = [] {
+        const char *t = std::getenv("KHDAYS_SHOT_STATES");
+        return t != nullptr && *t != '\0' ? "," + std::string(t) + "," : std::string();
+    }();
+    if (wanted.empty() || wanted.find("," + name + ",") == std::string::npos)
+        return;
+    const unsigned now = khdays_link_frame();
+    for (const unsigned later : {0u, 15u, 30u, 60u, 120u, 240u})
+        shot_frames.push_back(now + later);
+    khdays_log("kh2 enemies: pictures asked from frame %u (%s)", now, name.c_str());
+}
+void shots_due()
+{
+    const unsigned now = khdays_link_frame();
+    for (auto it = shot_frames.begin(); it != shot_frames.end();)
+        if (*it <= now) {
+            khdays_host_shot_soon();
+            it = shot_frames.erase(it);
+        } else {
+            ++it;
+        }
+}
 bool top_menu_standing();
 std::uint16_t frame_pressed();
 bool command_usable(int id);
@@ -2177,6 +2206,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
         a.states().entered = [days, raw](const std::string &name) {
             raw->state = name;
             khdays_log("kh2 enemies: %08x enters %s", days, name.c_str());
+            shot_on_state(name);
             if (name == "leave") { // where it and the player it went for stood (it leaves when far from it)
                 const Vec3 at = raw->actor->place();
                 Object *p = the_field().player(*raw->actor);
@@ -5355,6 +5385,8 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     const auto kind = kind_of.find(days);
     if (kind == kind_of.end())
         return;
+    if (!shot_frames.empty())
+        shots_due();
     // the frame before's KH2 ticks, each as KH2 orders its frame: its objects (each enemy's own ticks, done), its
     // loose threads, then the shouts told (once a frame here: after the first) -- the Sorcerer's turn-giving thread
     // moves the turn its shout gave on before its cubes hear the order, as KH2's must

@@ -45,6 +45,9 @@ void khdays_present_resized(void);
  * the lower screen one after the other, 256x192 each. */
 void khdays_present_package(const KhdaysFramePackage *package);
 
+/* The next package shown saved as a picture in KHDAYS_SHOTS_HD (khdays_host_shot_soon; any thread). */
+void khdays_present_shot_soon(void);
+
 /* The 3D at the monitor's rate: whether the newest package is drawn again at each refresh
  * (picture_pace smooth), the 3D placed between two of the latest logic frames at the game's time a steady
  * while ago (a logic frame and the longest the latest took to reach the window). Returns 0 when there is
