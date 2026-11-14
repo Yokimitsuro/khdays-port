@@ -53,6 +53,10 @@ int khdays_mission_slot_shown(int slot);
  * a mission names its room by; -1 when none. Known once its world's archive was read. */
 int khdays_rooms_index(const char *mod_path, const char *key, const char *world);
 
+/* The folder (rooms/<world>/<key>/ of its mod) of the room the mods add at `index` of `world`'s room table (its
+ * code), into `folder`; 0 when that room is none of theirs. Known once its world's archive was read. */
+int khdays_rooms_folder(const char *world, int index, char *folder, int size);
+
 /* Whether `name` (a model's, "mi/wd/wd_<code>#<member>/mdl/<model>") is an added room's: its mod's model into
  * `path`. */
 int khdays_rooms_model(const char *name, char *path, int size);

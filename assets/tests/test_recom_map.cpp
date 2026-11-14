@@ -115,7 +115,7 @@ Bytes azf() {
         for (const std::uint32_t c : {0x40U, 0x80U, 0x80U, 0x80U})
             w.u32(c);
         w.f32(static_cast<float>(v));
-        w.f32(0.5F);
+        w.f32(0.25F);
         w.f32(1);
         w.u32(0);  // its texture
     }
@@ -149,6 +149,7 @@ void test_room() {
            "placed by its layout and turned upright");
     expect(p.colors[0] == std::array<std::uint8_t, 4>{0x80, 0xFF, 0xFF, 0xFF}, "colours doubled from the PS2's");
     expect(std::fabs(p.uvs[2][0] - 2) < 1e-4F, "s over q");
+    expect(std::fabs(p.uvs[2][1] - 0.75F) < 1e-4F, "t from the picture's foot: glTF's v is 1 - t");
     bool threw = false;
     try {
         const Bytes junk(16, 0);
@@ -242,6 +243,19 @@ void test_picture_list() {
     expect(list.size() == 2 && list[0].name == "gai_a_00" && list[0].offset == 0x40 && list[1].name == "kab_a_01" &&
                list[1].offset == 0x1000,
            "a .VTM's pictures by name");
+
+    // the names first (MP020201's): 16 bytes, the offset at +0x10, two words, the size
+    Writer n;
+    n.text("al01_zka08.tm2", 16);
+    for (const std::uint32_t v : {0x40U, 0U, 0U, 0x480U})
+        n.u32(v);
+    n.text("al01_zka07.tm2", 16);
+    for (const std::uint32_t v : {0x4c0U, 0U, 0U, 0x480U})
+        n.u32(v);
+    const auto named = recom::picture_list(n.b.data(), n.b.size());
+    expect(named.size() == 2 && named[0].name == "al01_zka08" && named[0].offset == 0x40 &&
+               named[1].name == "al01_zka07" && named[1].offset == 0x4c0,
+           "a .VTM whose names come first");
 }
 
 }  // namespace

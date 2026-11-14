@@ -17,12 +17,15 @@ typedef struct KhdaysReplacement {
 } KhdaysReplacement;
 
 /* The original's loop, for a file that gives none: in the original's
- * samples at its rate; `looped` 0 if it plays once. */
+ * samples at its rate; `looped` 0 if it plays once. Looped at rate 0
+ * (KHDAYS_WHOLE_FILE_LOOP): the whole file, start to end. */
 typedef struct KhdaysOriginalLoop {
     uint32_t rate;
     int looped;
     uint64_t start, end;
 } KhdaysOriginalLoop;
+
+#define KHDAYS_WHOLE_FILE_LOOP {0, 1, 0, 0}
 
 /* Decodes `path` by its extension. 0 when it cannot, `why` saying so. */
 int khdays_replacement_load(KhdaysReplacement *replacement, const char *path, const KhdaysOriginalLoop *original,

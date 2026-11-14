@@ -30,7 +30,21 @@ int khdays_menu_stepper_frame(KhdaysMenuStepper *s, uint32_t directions, int fie
 
 /* Lock-on on its own buttons: the presses of R (twice to lock, once to let go or for the next target) and
  * L (Type B's previous target) the game's Ov022_ReadSelectionInput takes (docs/PLATFORM.md). */
-enum { KHDAYS_LOCK_ON, KHDAYS_LOCK_NEXT, KHDAYS_LOCK_PREV, KHDAYS_LOCK_ACTIONS };
+/* KHDAYS_LOCK_AUTO: as KHDAYS_LOCK_ON, dropped if a target is locked by the time its turn comes: it only ever locks. */
+enum { KHDAYS_LOCK_ON, KHDAYS_LOCK_NEXT, KHDAYS_LOCK_PREV, KHDAYS_LOCK_AUTO, KHDAYS_LOCK_ACTIONS };
+
+/* Auto lock-on (Enhancements): a lock lost without the player letting go (the target defeated) locks on again. */
+typedef struct KhdaysLockAuto {
+    int was_locked, let_go, pending;
+} KhdaysLockAuto;
+
+/* One game frame: KHDAYS_LOCK_AUTO's bit once a lock lost without the player letting go has a target to lock on to
+ * again (`candidate`: the game has one selected; right after a defeat it has none for a while). `let_go`: the lock-on
+ * button let go (kept until the lock is lost); `pressed`: the player's R or Select just now (a loss now is theirs).
+ * Without `field` it forgets. */
+uint32_t khdays_lock_auto_frame(KhdaysLockAuto *s, int let_go, int pressed, int field, int locked, int candidate);
+
+#define KHDAYS_LOCK_LET_GO_FRAMES 3 /* a lock lost this many frames after the player's R or Select: let go */
 
 #define KHDAYS_LOCK_QUEUE 4
 
@@ -44,6 +58,9 @@ typedef struct KhdaysLockSequencer {
 } KhdaysLockSequencer;
 
 void khdays_lock_sequencer_reset(KhdaysLockSequencer *s);
+
+/* The presses of one action dropped, queued or being played. */
+void khdays_lock_sequencer_cancel(KhdaysLockSequencer *s, int action);
 
 /* Whether the action has a DS press sequence under this Controls type. */
 int khdays_lock_action_exists(int action, int lockon_scheme);

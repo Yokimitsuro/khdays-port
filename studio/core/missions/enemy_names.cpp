@@ -138,8 +138,4 @@ const char* enemy_name(int id) {
     return kNames[id];
 }
 
-int enemy_ids() {
-    return static_cast<int>(sizeof(kNames) / sizeof(kNames[0]));
-}
-
 }  // namespace studio

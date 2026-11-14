@@ -174,7 +174,10 @@ std::vector<ReadMesh> pmo4_meshes(const Reader& r, std::size_t pmo, std::string*
         m.primitive = rec.primitive;
         for (std::size_t k = 0; k < rec.count; ++k, v += kVertexSize) {
             ReadVertex rv;
-            rv.uv = {r.get<std::uint16_t>(v) / kUvUnit, r.get<std::uint16_t>(v + 2) / kUvUnit};
+            // v from the picture's foot, as the 3DS's textures run (Birth by Sleep's v3 from its top): glTF's from
+            // the top (on walls the picture's foot was up in 73 to 93% of faces, against 2 to 18% in KH1's, KH2's
+            // and Birth by Sleep's rooms)
+            rv.uv = {r.get<std::uint16_t>(v) / kUvUnit, 1.0F - r.get<std::uint16_t>(v + 2) / kUvUnit};
             rv.color = gltf_color(r.get<std::uint8_t>(v + 4), r.get<std::uint8_t>(v + 5), r.get<std::uint8_t>(v + 6),
                                   r.get<std::uint8_t>(v + 7));
             rv.position = {r.get<float>(v + 8) / kPositionUnit, r.get<float>(v + 12) / kPositionUnit,
@@ -429,6 +432,8 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
             std::array<float, 2> s{r.get<float>(info + 16), r.get<float>(info + 20)};
             for (float& c : s)
                 c = std::isfinite(c) && std::fabs(c) < 1.0F ? c : 0.0F;  // (a texture's width a frame at most)
+            if (r.get<std::uint8_t>(pmo + 6) != 3)
+                s[1] = -s[1];  // v up the picture in v4 (pmo4_meshes): turned with it
             scrolls.push_back(s);
         }
         // a sky: the object's bit 0 at +0x2c (a sphere of a metre or two about the origin, drawn around the camera:

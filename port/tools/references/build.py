@@ -356,6 +356,7 @@ def rewrite_all(
     """Each (source, output) rewritten; the numbers into gen/khdays_data_area.h.
     Returns the outputs in the order given and the data area's size; stops
     naming every file that failed."""
+    from . import parse  # noqa: F401  (its pycparser check, here before the workers start)
     from .emit import Index
 
     processes = processes or max(1, (os.cpu_count() or 2) - 1)

@@ -364,6 +364,7 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_AUTO_LOCK, TXT_ENH_AUTO_LOCK, &e->auto_lock, 1, khdays_text(TXT_ENH_AUTO_LOCK_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
                menu_note);
     add_switch(b, KHDAYS_SET_ENH_REACTION_BUTTON, TXT_ENH_REACTION_BUTTON, &e->reaction_button_only, 1,
@@ -488,6 +489,8 @@ static void build_video(Builder *b, KhdaysProfile *w)
                         TXT_VIDEO_TEXTURES_NOTE);
     /* HD graphics and dumping work with either renderer */
     add_switch(b, KHDAYS_SET_HD_GRAPHICS, TXT_VIDEO_HD, &v->hd_graphics, 0, NULL);
+    /* read by the game thread at each mod model's draw (runtime/mods/models.cpp): takes at once */
+    add_switch(b, KHDAYS_SET_CULLING, TXT_VIDEO_CULLING, &v->culling, 1, khdays_text(TXT_VIDEO_CULLING_NOTE));
     /* the dump is read at each frame (textures.c, tiles2d.c, sheet_colours.c): a 3D texture
      * already shown is written when its room or screen is loaded again */
     add_switch(b, KHDAYS_SET_DUMP_GRAPHICS, TXT_VIDEO_DUMP, &v->dump_graphics, 1, khdays_text(TXT_VIDEO_DUMP_NOTE));

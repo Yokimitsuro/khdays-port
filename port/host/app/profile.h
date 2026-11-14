@@ -134,6 +134,7 @@ typedef struct KhdaysEnhancements {
     int analog_movement;
     int run_threshold; /* percent of stick travel, 50..95 */
     int walk_speed;    /* percent of the game's own speed, 20..90 */
+    int auto_lock;     /* a lock lost but by letting it go locks on again */
     int chase_free;    /* Chase Camera's Free: on Manual, walking keeps the tilt (runtime/menus/camp.h) */
     int reaction_button_only; /* the pad's top button (the DS X) only takes reaction commands (ui/reaction_command.h) */
     int hud[KHDAYS_OPT_COUNT];
@@ -168,6 +169,7 @@ typedef struct KhdaysVideo {
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
     int texture_smoothing;
     int hd_graphics;   /* use the replacements in mods/ */
+    int culling;       /* a mod's models leave out what lies wholly past the view (on), else drawn whole */
     int dump_graphics; /* write the graphics shown to saves/dump/ */
     int movies;        /* KhdaysMovies: HD videos, full colour or the DS's */
     int picture_ds;    /* the DS's pace (a picture each logic frame), else the 3D at the monitor's rate */

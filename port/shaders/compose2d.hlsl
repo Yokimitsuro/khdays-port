@@ -50,8 +50,12 @@ cbuffer Params : register(b0, space2) {
 #include "finish3d.hlsli"
 
 static uint g_fx, g_fy; // the output pixel's place inside its DS pixel
+static uint g_3d_x, g_3d_value; // the 3D read once before the composition (read3d_once): its column, its value
+static int g_3d_row;
 
-uint layer3d_at(uint x, int row)
+// The 3D at (x, row) as its source holds it. Called once in the shader (read3d_once): it is inlined wherever it
+// is called, several finished texels each time, and compose.h asks for the 3D in five places.
+uint layer3d_read(uint x, int row)
 {
     if (source3d == 1u) {
         return layer3d_mem.Load(((uint)row * 256u + x) * 4u);
@@ -72,6 +76,12 @@ uint layer3d_at(uint x, int row)
                       world);
     }
     return 0u;
+}
+
+// compose.h's KD_3D: the value read3d_once read, the only place the composition asks for (the DS pixel's 3D)
+uint layer3d_at(uint x, int row)
+{
+    return x == g_3d_x && row == g_3d_row ? g_3d_value : 0u;
 }
 
 #define KD_FN
@@ -114,17 +124,41 @@ float channel8(uint c6)
     return (float)((c6 << 2) | (c6 >> 4)) / 255.0f; // as to_rgb888
 }
 
+// The 3D the composition of (x, row) asks for, read before it: the column kd_layer, kd_alpha3d, kd_fine3d and
+// kd_moved3d ask for, or kd_pixel_wide's in its wider target; 0 outside the 3D's columns. Read even when the
+// composition then has no use for it (a forced blank): one read, wherever it is asked for.
+void read3d_once(int x, int row)
+{
+    uint column;
+    bool inside;
+    if (KD_DESC(KD_WIDE) != 0u) {
+        const uint hofs = KD_DESC(KD_HOFS3D);
+        const int target = x + (hofs < 256u ? (int)hofs : (int)hofs - 512);
+        column = (uint)target;
+        inside = target >= 0 && target < 256 + 2 * (int)KD_DESC(KD_WIDE);
+    } else {
+        column = ((uint)x + KD_DESC(KD_HOFS3D)) & 511u;
+        inside = column < 256u;
+    }
+    g_3d_x = column;
+    g_3d_row = row;
+    g_3d_value = inside && source3d != 0u ? layer3d_read(column, row) : 0u;
+}
+
 [numthreads(8, 8, 1)]
 void cs_main(uint3 id : SV_DispatchThreadID)
 {
     uint c6;
+    int x, row;
     if (id.x >= width || id.y >= height) {
         return;
     }
     g_fx = id.x % scale;
     g_fy = id.y % scale;
-    c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale))
-                                 : kd_pixel((int)(id.x / scale), (int)(id.y / scale));
+    x = (int)(id.x / scale);
+    row = (int)(id.y / scale);
+    read3d_once(x, row);
+    c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide(x, row) : kd_pixel(x, row);
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {
         // the one-screen picture's source: K in 8 bits, its alpha 0 (not shown over
         // the 3D) or 1 + the 3D's factor x 254 (kd_split)

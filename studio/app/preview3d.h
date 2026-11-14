@@ -113,6 +113,20 @@ private:
 Mat orbit_view_projection(std::array<float, 3> target, float yaw, float pitch, float distance, float aspect);
 std::array<float, 3> orbit_eye_direction(float yaw, float pitch);
 
+// A room's sky as the game draws it (port/runtime/mods/models.cpp: turned with the room, never moved): about the
+// viewer, out of reach. `points` its points as the room is drawn; Sky::at() one of them put about the orbit camera's
+// `eye`, as far as fifteen times the camera's `distance` from what it turns around (its far plane is at twenty): the
+// room in front of it, never a ball in the room.
+class Sky {
+public:
+    explicit Sky(const std::vector<std::array<float, 3>>& points);
+    std::array<float, 3> at(const std::array<float, 3>& p, const std::array<float, 3>& eye, float distance) const;
+
+private:
+    std::array<float, 3> middle_{0, 0, 0};
+    float radius_ = 0.0f;
+};
+
 // The point an orbit camera turns around, moved over a view `view_height`
 // pixels tall while the mouse is over it (`hovered`): dragged with the right
 // or middle button across the view, as far as the picture moves under the

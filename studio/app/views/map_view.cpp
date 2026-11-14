@@ -9,6 +9,7 @@
 #include "core/models/model_files.h"
 #include "core/files/paths.h"
 #include "core/rooms/added_rooms.h"
+#include "core/rooms/room_music.h"
 #include "core/rooms/collection_source.h"
 #include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
@@ -625,6 +626,20 @@ void draw_room(App& app, ImVec2 size) {
                         mat_mul(on_node ? worlds[static_cast<std::size_t>(j.node)] : j.world, j.inverse_bind);
                 }
             }
+            // where a vertex is drawn as the room is placed (its sky put about the viewer below)
+            const auto drawn_at = [&](const assets::NeutralVertex& v) {
+                auto at = skinned(moved, v);
+                return moving ? placed_point(m.rep.r.place, unplaced_point(m.rep.placed_with, at)) : at;
+            };
+            std::vector<std::array<float, 3>> sky_points;
+            for (const auto& mesh : placed.model.meshes)
+                for (const auto& v : mesh.vertices)
+                    if (mesh.sky && m.show_sky)
+                        sky_points.push_back(drawn_at(v));
+            const Sky sky(sky_points);
+            const auto eye_dir = orbit_eye_direction(m.yaw, m.pitch);
+            const std::array<float, 3> eye{m.target[0] + eye_dir[0] * m.distance, m.target[1] + eye_dir[1] * m.distance,
+                                           m.target[2] + eye_dir[2] * m.distance};
             for (const auto& mesh : placed.model.meshes) {
                 if (mesh.sky && !m.show_sky)
                     continue;  // from outside, its sky hides it
@@ -647,10 +662,10 @@ void draw_room(App& app, ImVec2 size) {
                 const auto offset = khdays::room::scroll_offset(mesh.scroll, frames, tw, th);
                 auto vertex = [&](const assets::NeutralVertex& v) {
                     PreviewVertex o;
-                    o.position = skinned(moved, v);
+                    o.position = drawn_at(v);
+                    if (mesh.sky)
+                        o.position = sky.at(o.position, eye, m.distance);  // as the game draws it
                     o.normal = v.normal;
-                    if (moving)
-                        o.position = placed_point(m.rep.r.place, unplaced_point(m.rep.placed_with, o.position));
                     o.uv = {(v.texcoord[0] + offset[0]) / tw, (v.texcoord[1] + offset[1]) / th};
                     o.colour = {v.color[0] / 255.0f, v.color[1] / 255.0f, v.color[2] / 255.0f, v.color[3] / 255.0f};
                     return o;
@@ -758,9 +773,11 @@ void draw_room(App& app, ImVec2 size) {
                 list->AddLine(ImVec2(x, y), ImVec2(tx, ty), colour, 2.0f);
                 list->AddCircle(ImVec2(tx, ty), 3.0f, colour, 0, 1.5f);
             }
+            // the way it faces, as the game turns a facing: 0 along -z, 0xc000 (-90 degrees) along +x (a marker's
+            // facing goes into the field a mission's start heading does, Ov002_WriteSessionMarker; seen in the game)
             const float turn = static_cast<float>(mk.extra) / 65536.0f * 6.2831853f;
             float fx, fy;
-            if (project({q[0] + std::sin(turn), q[1], q[2] + std::cos(turn)}, &fx, &fy)) {
+            if (project({q[0] - std::sin(turn), q[1], q[2] - std::cos(turn)}, &fx, &fy)) {
                 list->AddLine(ImVec2(x, y), ImVec2(fx, fy), (colour & 0x00ffffffu) | 0xdc000000u, 2.0f);
             }
             const bool picked = static_cast<int>(k) == m.picked_marker;
@@ -1209,7 +1226,7 @@ void line_up(App& app) {
         assets::ImportedModel floors;
         std::string why;
         std::error_code ec;
-        const fs::path own = collection_made_collision(app.settings.root, *game, map);
+        const fs::path own = collection_made_collision(app.settings, *game, map);
         const bool own_floors = fs::is_regular_file(own, ec) && import_model(own, &floors, &why);
         a = kh2_alignment(game_points(), m.collision, own_floors ? floors : p.raw, game->units);
         if (a.verdict == RoomAlignment::kh2_units)
@@ -1280,12 +1297,12 @@ bool load_own_collision(App& app) {
     bool found = false;
     if (const CollectionGameInfo* game = source_game(p.r, &map)) {
         std::error_code ec;
-        file = collection_made_collision(app.settings.root, *game, map);
+        file = collection_made_collision(app.settings, *game, map);
         found = fs::is_regular_file(file, ec);
         if (!found)
             why = p.r.source + ": no floors and walls of its own";
     } else {
-        found = make_kh2_collision(app.settings.root, p.r.kh2, &file, &why);
+        found = make_kh2_collision(app.settings, p.r.kh2, &file, &why);
     }
     if (found && import_model(file, &p.raw_collision, &why)) {
         p.collision_source = file;
@@ -1325,7 +1342,7 @@ void kh2_take(App& app, const Item& item) {
         }
         kh2.out.clear();
         for (const auto& name : kh2.maps)
-            kh2.out[name] = kh2_map_taken_out(app.settings.root, name);
+            kh2.out[name] = kh2_map_taken_out(app.settings, name);
     }
     if (!made)
         return;
@@ -1374,10 +1391,22 @@ void kh2_start(App& app, const std::string& map, const std::string& world) {
         std::vector<std::string> found;
         std::string why;
         Kh2Made outcome;
-        const fs::path model = map.empty() ? fs::path() : kh2_made_model(settings.root, map);
-        const bool ok = map.empty() ? kh2_world_maps(settings, world, &found, &why)
-                                    : take_out_kh2_map(settings, map, &why) &&
-                                          make_kh2_room(kh2_folder(settings.root), map, model, &outcome, &why);
+        const fs::path model = map.empty() ? fs::path() : kh2_made_model(settings, map);
+        bool ok = false;
+        if (map.empty()) {
+            ok = kh2_world_maps(settings, world, &found, &why);
+        } else {
+            // the model made already when this studio made it (Take out every map)
+            CollectionMap one;
+            one.name = map;
+            CollectionMade made;
+            ok = collection_room(settings, *collection_game("kh2"), one, &made, &why);
+            outcome.triangles = made.triangles;
+            outcome.pictures = made.pictures;
+            outcome.pieces = made.pieces;
+            outcome.animations = made.animations;
+            outcome.report = made.report;
+        }
         std::lock_guard lock(kh2.mutex);
         kh2.failed = ok ? std::string() : why;
         if (map.empty()) {
@@ -1428,12 +1457,26 @@ void draw_kh2_picker(App& app) {
         }
     }
     ImGui::BeginDisabled(kh2.busy);
-    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
-    if (ImGui::Combo(tr(lang, S::map_kh2_world), &kh2.world, kKh2Worlds, kKh2WorldCount))
+    static const std::vector<std::string> kh2_labels = [] {
+        std::vector<std::string> out;
+        for (const char* w : kKh2Worlds)
+            out.push_back(collection_world_label(CollectionGame::kh2, w));
+        return out;
+    }();
+    std::vector<const char*> kh2_worlds;
+    for (const auto& w : kh2_labels)
+        kh2_worlds.push_back(w.c_str());
+    ImGui::SetNextItemWidth(combo_width(kh2_labels));
+    if (ImGui::Combo(tr(lang, S::map_kh2_world), &kh2.world, kh2_worlds.data(), kKh2WorldCount))
         kh2.maps.clear();
-    ImGui::SameLine();
+    same_line_if_room(button_width(tr(lang, S::map_kh2_list)));
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         kh2_start(app, {}, kKh2Worlds[kh2.world]);
+    same_line_if_room(button_width(tr(lang, S::take_out_this_game)));
+    if (ImGui::Button(tr(lang, S::take_out_this_game))) {
+        app.take_out_asked = true;
+        app.take_out_game = "kh2";
+    }
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::InputText(tr(lang, S::map_kh2_by_name), &kh2.typed);
     ImGui::SameLine();
@@ -1455,7 +1498,7 @@ void draw_kh2_picker(App& app) {
         auto radar = kh2.radars.find(name);
         if (radar == kh2.radars.end() && kh2.out[name]) {
             assets::DecodedTexture picture;
-            kh2_radar(app.settings.root, name, &picture);
+            kh2_radar(app.settings, name, &picture);
             radar = kh2.radars.emplace(name, std::move(picture)).first;
         }
         if (radar != kh2.radars.end() && !radar->second.rgba.empty()) {
@@ -1520,7 +1563,7 @@ void other_take(App& app, const Item& item) {
         for (const auto& mp : other.maps) {
             if (other.worlds.empty() || other.worlds.back() != mp.world)
                 other.worlds.push_back(mp.world);
-            other.out[mp.name] = collection_map_taken_out(app.settings.root, *game, mp);
+            other.out[mp.name] = collection_map_taken_out(app.settings, *game, mp);
         }
     }
     if (!made)
@@ -1569,13 +1612,13 @@ void other_start(App& app, const CollectionGameInfo* game, const CollectionMap* 
         std::vector<CollectionMap> found;
         std::string why;
         CollectionMade outcome;
-        const bool ok = make ? make_collection_room(settings, *game, chosen, &outcome, &why)
+        const bool ok = make ? collection_room(settings, *game, chosen, &outcome, &why)
                              : collection_maps(settings, *game, &found, &why);
         std::lock_guard lock(other.mutex);
         other.failed = ok ? std::string() : why;
         if (make) {
             other.done_source = std::string(game->code) + ":" + chosen.name;
-            other.model = collection_made_model(settings.root, *game, chosen.name);
+            other.model = collection_made_model(settings, *game, chosen.name);
             other.outcome = std::move(outcome);
             other.made = true;
         } else {
@@ -1621,6 +1664,11 @@ void draw_other_picker(App& app) {
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         other_start(app, game, nullptr);
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::take_out_this_game))) {
+        app.take_out_asked = true;
+        app.take_out_game = game->code;
+    }
     if (other.busy) {
         ImGui::TextDisabled("%s", other.working.empty() ? tr(lang, S::map_kh2_list)
                                                         : fmt(lang, S::map_kh2_working, {other.working}).c_str());
@@ -1634,10 +1682,14 @@ void draw_other_picker(App& app) {
         ImGui::Unindent();
         return;
     }
-    std::vector<const char*> worlds;
+    // each world by its name, its code after it
+    std::vector<std::string> labels;
     for (const auto& w : other.worlds)
+        labels.push_back(collection_world_label(game->game, w));
+    std::vector<const char*> worlds;
+    for (const auto& w : labels)
         worlds.push_back(w.c_str());
-    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(combo_width(labels));
     ImGui::Combo(tr(lang, S::map_other_world), &other.world, worlds.data(), static_cast<int>(worlds.size()));
     const std::string& world = other.worlds[static_cast<std::size_t>(other.world)];
     for (const auto& mp : other.maps) {
@@ -1757,13 +1809,21 @@ void draw_replace(App& app, const Item& item) {
     same_line_if_room(button_width(tr(lang, S::map_kh2_source)));
     if (ImGui::Button(tr(lang, S::map_kh2_source)))
         kh2.shown = !kh2.shown;
-    if (kh2.shown)
+    // each list in its own ids: both show buttons of the same words (its rooms, take out this game's maps), and two
+    // buttons of one id answer neither click but the first's
+    if (kh2.shown) {
+        ImGui::PushID("kh2");
         draw_kh2_picker(app);
+        ImGui::PopID();
+    }
     same_line_if_room(button_width(tr(lang, S::map_other_source)));
     if (ImGui::Button(tr(lang, S::map_other_source)))
         other.shown = !other.shown;
-    if (other.shown)
+    if (other.shown) {
+        ImGui::PushID("other");
         draw_other_picker(app);
+        ImGui::PopID();
+    }
     if (mod == nullptr) {
         ImGui::TextColored(warn, "%s", tr(lang, S::choose_mod_first));
         return;
@@ -2085,6 +2145,12 @@ void draw_map_view(App& app, const Item& item) {
     ImGui::TextDisabled("%s", tr(lang, S::map_controls));
     ImGui::BeginChild("##room_controls", ImVec2(0, 0), ImGuiChildFlags_None);
     draw_replace(app, item);
+    if (ImGui::CollapsingHeader(tr(lang, S::room_music))) {  // the music the mod plays in this room
+        if (const Mod* mod = app.current_mod())
+            draw_room_music(app, game_room_music(mod->dir, m.world.code, m.room->index), "map_music");
+        else
+            ImGui::TextDisabled("%s", tr(lang, S::choose_mod_first));
+    }
     draw_details(app);
     draw_lists(app);
     ImGui::EndChild();

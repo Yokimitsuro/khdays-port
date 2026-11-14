@@ -383,6 +383,12 @@ In `port/tools` (Python 3.11+ unless said):
   the parser; the type pass models what the game's C uses and stops, naming
   the file and line, on anything it cannot type (`TypeFailure`): nothing is
   rewritten by a guess. `references_test.py` checks each form it handles.
+  `prepare.py` itself stops at once when nothing it reads changed since its last
+  complete run into the same `--out` (the sizes and modification times of the
+  decomp, `port/tools`, `port/abi`, `port/compat`, `port/hal` and every header of
+  the port, kept in `prepare_inputs.json` with those of what it wrote); `--force`
+  prepares anyway. Neither this nor the references cache follows Visual Studio's
+  preprocessor: after changing Visual Studio, delete `--out` (`build/port/gen-x64`).
 - `build_shaders.py [name ...]`: compiles `port/shaders/<name>.hlsl`'s stages
   (`vs_main`, `ps_main`, `cs_main`) to DXIL (`dxc -T <stage>_6_0`), SPIR-V
   (`dxc -spirv`) and MSL (`spirv-cross --msl`), written as C arrays to

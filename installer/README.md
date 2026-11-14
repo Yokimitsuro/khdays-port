@@ -72,13 +72,19 @@ import) or whose files went missing, with any tool that wrote one of the same fi
 others' files. The videos
 already installed are linked into the tools' folder, not copied, so an installer whose scene map
 or video tool differs makes only the missing videos, and the subtitles and music again. Either folder may be left empty: a choice whose collection is not given cannot be
-ticked. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
+ticked. Each collection is checked for what the chosen pieces read of it (`hd_inputs.txt` lists each
+piece's entries apart, traced tool by tool): the menus ask for every archive their tools and the
+port's own mods read, and for KH2's executable; the videos alone ask the 1.5+2.5 only for the
+theater's archive (`Image/Mare`) and the movies, so a collection whose other archives differ (the
+Japanese one keeps KH2's fonts under `msg/jp`) still gives them; 2.8 is asked for by the menus alone. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
 launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), else in the Xbox app's
 game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names; a game in
 `<library>/<game>/Content`), and each store's copy is read: Steam's keeps its language's archives in
 `Image/dt` and Days's videos in `STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in
 `Image/en` and the videos in `EPIC/Mare/MOVIE/Days/en`, the Xbox app's its videos under `MSSTORE`
-(any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
+(any `*/Mare/MOVIE/Days/*` holding them is taken). An Xbox app game's own folder, as a player
+browses to it (`C:\XboxGames\<game>`), is taken as its `Content`, where those are; the studio's
+collection settings take it the same way. (The page is a text
 page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
 fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
 others are made all the same: the installer says which, keeps what each said whole in

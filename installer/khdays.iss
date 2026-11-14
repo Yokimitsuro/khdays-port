@@ -323,9 +323,17 @@ begin
     HdPage.Values[TNewButton(Sender).Tag] := Folder;
 end;
 
+{ Whether a folder still holds a collection: its Image, or the Xbox app's game folder's Content\Image (the
+  helper takes that Content, setup_steps.py collection_path) }
+function HoldsCollection(Folder: String): Boolean;
+begin
+  Folder := RemoveBackslashUnlessRoot(Trim(Folder));
+  Result := (Folder <> '') and (DirExists(Folder + '\Image') or DirExists(Folder + '\Content\Image'));
+end;
+
 procedure CreateHdPage;
 var
-  Json, F1525, F28, Wanted: String;
+  Json, F1525, F28, Found, Wanted: String;
   I: Integer;
   Browse: TNewButton;
 begin
@@ -374,18 +382,21 @@ begin
   HdStatus.WordWrap := True;
   HdStatus.Height := ScaleY(48);
   HdStatus.Caption := '';
-  { given on the command line, else last time's, else what Steam has }
+  { given on the command line, else last time's while it still holds the collection, else the one Steam, the
+    Epic Games Store or the Xbox app has: found whole or not, so the player has nothing to choose }
   F1525 := ExpandConstant('{param:HD1525|}');
   F28 := ExpandConstant('{param:HD28|}');
   if (F1525 = '') and (F28 = '') then begin
     F1525 := GetPreviousData('Hd1525', '');
     F28 := GetPreviousData('Hd28', '');
+    if not HoldsCollection(F1525) then F1525 := '';
+    if not HoldsCollection(F28) then F28 := '';
   end;
-  if (F1525 = '') and (F28 = '') and (RunHelper('find-collections', Json) = 0) then begin
-    F1525 := JsonValue(Json, 'folder_1525');
-    F28 := JsonValue(Json, 'folder_28');
-    if F1525 = 'null' then F1525 := '';
-    if F28 = 'null' then F28 := '';
+  if ((F1525 = '') or (F28 = '')) and (RunHelper('find-collections', Json) = 0) then begin
+    Found := JsonValue(Json, 'folder_1525');
+    if (F1525 = '') and (Found <> 'null') then F1525 := Found;
+    Found := JsonValue(Json, 'folder_28');
+    if (F28 = '') and (Found <> 'null') then F28 := Found;
   end;
   HdPage.Values[0] := F1525;
   HdPage.Values[1] := F28;
@@ -401,19 +412,27 @@ end;
 
 function CheckHd: Boolean;
 var
-  Json: String;
+  Json, Pieces: String;
 begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
   WizardForm.Refresh;
-  if (HdFolder(0) <> '') and (HdMenus.Checked or HdKh2.Checked or HdVideos.Checked) then
-    if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '"', Json) <> 0 then begin
+  { each collection checked for what the chosen pieces read of it: the videos alone ask the 1.5+2.5 only
+    for the theater's archive and the movies }
+  Pieces := '';
+  if HdMenus.Checked then Pieces := 'menus';
+  if HdVideos.Checked then begin
+    if Pieces <> '' then Pieces := Pieces + ',';
+    Pieces := Pieces + 'videos';
+  end;
+  if (HdFolder(0) <> '') and (Pieces <> '') then
+    if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '" --pieces ' + Pieces, Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
       Exit;
     end;
   if (HdFolder(1) <> '') and HdMenus.Checked then
-    if RunHelper('check-collection 2.8 "' + HdFolder(1) + '"', Json) <> 0 then begin
+    if RunHelper('check-collection 2.8 "' + HdFolder(1) + '" --pieces menus', Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
       Exit;

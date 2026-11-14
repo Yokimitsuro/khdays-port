@@ -55,7 +55,10 @@ is chosen). It changes at once and is kept in the settings.
 1. **The catalog.** The left side lists every texture, 2D tile sheet, model,
    sound, text file and movie of the game. Graphics and sounds come from the
    port's dumps (`khdays-native --dump-graphics`, `--dump-sounds`); without
-   them the tool offers to make them with the port. Search by name, filter by
+   them, or with a graphics dump that has no models (the game's own "Dump
+   graphics" setting writes only the textures and sheets it draws, into the
+   same folder), the tool offers to make them with the port, and the settings
+   make either again whenever wanted. Search by name, filter by
    kind. "Folders" shows them as a tree -- each kind, then the folders of the
    game's files, each with how many it holds -- opened as you search and to
    whatever another view selects; "List" shows them one under the other. The
@@ -413,20 +416,6 @@ is chosen). It changes at once and is kept in the settings.
     (`unlock`): from the start, after one of the game's missions (chosen by
     its number and name), or after another of the mod's.
 
-14. **Prizes.** "Prizes" (top right) shows the chosen mod's prizes and chests
-    (docs/KH2_SEQUENCES.md, "Field prizes"), each beside Days's own: a prize's
-    effect playing as the port draws it, beside the game's picture; a prize's
-    model turning at its pace, beside the picture; a chest beside the game's
-    chest (from the graphics dump). A prize model's **Size** and **Turn** and a
-    chest's **Scale** are changed there and written by **Save** (the rest of
-    their files kept). **Make from my 1.5+2.5 copy** makes the KH2 prizes mod
-    -- KH2's HP orb, munny and Coliseum coin, its chests and its prize boxes,
-    and Re:CoM's crystal coloured as Days's two -- into the
-    chosen mod as the installer makes it into the HD PACK: the entries it
-    needs taken out of the copy (the settings' 1.5+2.5 folder) into
-    `saves/collection`, then `tools/mods/kh2_prizes.py` run with the port's
-    executable. What is made holds Square Enix's work: it stays the player's.
-
 Sound loops and old-format mods come next.
 
 ## Native plugins' examples
@@ -550,8 +539,8 @@ player's own KINGDOM HEARTS HD 1.5+2.5 ReMIX copy into a model to replace a
 room with: its background, skies and pieces (placed, moving as in KH2), its
 remastered pictures as PNG beside it, scrolling and changing textures; from
 `<folder>/original/map/<map>.map` and `<folder>/remastered/map/<map>.map/`
-as the collection's archives give them (`saves/collection/kh2` when not
-given). What it makes is Square Enix's work from the player's copy: theirs to
+as the collection's archives give them (the collections folder's `kh2`
+when not given). What it makes is Square Enix's work from the player's copy: theirs to
 play with, not to share. The window's Maps view does the same from the room's
 Replace panel ("A KH2 room": the world's maps of the copy with their radar
 pictures, or one by its name); the collection's folder is in the settings
@@ -559,6 +548,24 @@ pictures, or one by its name); the collection's folder is in the settings
 `--kh2-maps` lists the maps of the player's copy of the worlds Days shares (or
 one), each with the Days rooms made from it (`studio/data/kh2_rooms.txt`) and,
 once taken out, its pieces and moving textures.
+
+```powershell
+.\build\studio\release\khdays-studio.exe --collection-take-all ddd|kh1|kh2|recom|bbs|all [<folder>]
+.\build\studio\release\khdays-studio.exe --collection-space ddd|kh1|kh2|recom|bbs|all [<folder>]
+```
+
+takes out every map of a game of the player's collections (or of every game
+whose copy is found) and makes each into its model, so that using one later
+is quick: into `<folder>` for this run, else the collections' folder (the
+setting `collections`, `saves/collection` when empty). It first says how many
+maps the copy holds, how many are ready and about the space the rest take;
+at the end, the maps that could not be made. `--collection-space` says only
+that first part, nothing taken out. The window does the same from
+**Take out every map** (Settings, a mission's room list) or a game's map list
+(**Take out this game's maps**: that game alone chosen), the folder asked there
+and the drive's free space shown; each game's row takes that game alone out
+with **Take out only this one**. Taken out and made on
+Steam's copies, all five games take about 52 GB.
 
 ```powershell
 .\build\studio\release\khdays-studio.exe --check-missions

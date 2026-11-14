@@ -50,6 +50,7 @@ int khdays_host_frame_scale(void);
 #define KHDAYS_HOST_MOVIES_DS 0x4   /* [video] movies = ds: the DS's own pictures */
 #define KHDAYS_HOST_MOVIES_HD 0x8   /* [video] movies = hd: the player's HD videos */
 #define KHDAYS_HOST_ONE_SCREEN 0x10 /* [video] screens = one */
+#define KHDAYS_HOST_NO_CULLING 0x20 /* [video] culling = off: a mod's models drawn whole */
 int khdays_host_graphics_flags(void);
 
 /* The package the game thread fills next (NULL without a window). It belongs
@@ -84,6 +85,7 @@ enum {
     KHDAYS_ENH_CHASE_FREE = 1 << 5,       /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
     KHDAYS_ENH_KH2_CAMERA = 1 << 6,       /* the field camera moves as KH2's (runtime/camera/kh2_camera.c) */
     KHDAYS_ENH_KH2_FIRST_PERSON = 1 << 7, /* with it, Select is KH2's first person view */
+    KHDAYS_ENH_AUTO_LOCK = 1 << 8,        /* a lock lost but by letting it go locks on again */
 };
 
 /* Everything the game needs to know about the player's input at one moment.

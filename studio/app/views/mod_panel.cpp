@@ -404,6 +404,25 @@ void draw_settings(App& app, bool* open) {
     }
     paths |= ImGui::InputText(tr(app.language, S::graphics_dump), &app.settings.graphics_dump);
     paths |= ImGui::InputText(tr(app.language, S::sounds_dump), &app.settings.sounds_dump);
+    // the port's dumps made into those folders, whenever wanted (the catalog offers them only when one is missing)
+    ImGui::BeginDisabled(!can_make_dump(app));
+    if (ImGui::Button(tr(app.language, S::make_graphics_dump)))
+        start_dump(app, "graphics");
+    {
+        // beside it when it fits, else under it
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float width = ImGui::CalcTextSize(tr(app.language, S::make_sounds_dump)).x + 2 * style.FramePadding.x;
+        const float edge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        if (ImGui::GetItemRectMax().x + style.ItemSpacing.x + width <= edge)
+            ImGui::SameLine();
+    }
+    if (ImGui::Button(tr(app.language, S::make_sounds_dump)))
+        start_dump(app, "sounds");
+    ImGui::EndDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", tr(app.language, S::make_dumps_note));
+    ImGui::PopStyleColor();
+    draw_dump_job(app);
     changed |= ImGui::InputText(tr(app.language, S::ffmpeg), &app.settings.ffmpeg);
     // the collections' rooms: each collection's folder, typed or chosen; empty, the install's
     struct CollectionField {
@@ -445,6 +464,9 @@ void draw_settings(App& app, bool* open) {
     };
     collection_field(field_1525, &app.settings.collection_1525, S::collection_1525, "kh2", "1525");
     collection_field(field_28, &app.settings.collection_28, S::collection_28, "ddd", "28");
+    changed |= collections_folder_field(app);
+    if (ImGui::Button(tr(app.language, S::take_out_all)))
+        app.take_out_asked = true;
     if (ImGui::InputInt(tr(app.language, S::cache), &app.settings.cache_mb)) {
         if (app.settings.cache_mb < 1)
             app.settings.cache_mb = 1;

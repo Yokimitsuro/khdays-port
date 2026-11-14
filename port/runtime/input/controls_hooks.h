@@ -11,6 +11,7 @@
 typedef struct KhdaysGameControls {
     int lock_active;          /* a target is locked on (Ov022_ReadSelectionInput) */
     int lockon_scheme;        /* the game's Config option 0 (0x37c4) */
+    int lock_candidate;       /* the game has a target it would lock on to (its selected one, -1 none) */
     u32 selection_frame;      /* when those were read */
     u32 selection_live_frame; /* the last frame the lock-on logic went on with the buttons (not a tutorial's pages) */
     int r_repeat;             /* the lock-on's R counter then (repeatAny: 0 at an R press, +0x1000 a frame) */

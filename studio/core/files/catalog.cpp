@@ -134,8 +134,10 @@ Catalog build_catalog(const CatalogSources& sources, std::atomic<int>* progress,
                 c.items.push_back(make(Kind::texture, key, group, path));
             else if (folder == "chr" && ext == ".png")
                 c.items.push_back(make(Kind::sheet, key, group, path));
-            else if (folder == "mdl" && ext == ".gltf")
+            else if (folder == "mdl" && ext == ".gltf") {
                 c.items.push_back(make(Kind::model, key, group, path));
+                c.graphics_dump_models = true;
+            }
         });
     }
 

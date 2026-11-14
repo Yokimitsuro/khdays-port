@@ -96,12 +96,19 @@ std::array<float, 3> apply(const M4& m, const std::array<float, 3>& p) {
 std::vector<PictureEntry> picture_list(const std::uint8_t* data, std::size_t size) {
     const Reader r(data, size);
     std::vector<PictureEntry> out;
+    // the offset first, then the name (24 bytes); or, in 14 of the 627 rooms (MP020201's al01_zka08...), the name first
+    // (16 bytes), the offset at +0x10 and the picture's size at +0x1c: the first picture's offset is the list's length
+    // either way, a whole number of entries
     const auto first = r.get<std::uint32_t>(0);
-    for (std::size_t at = 0; at + kListEntry <= first; at += kListEntry) {
-        std::string name = r.name(at + 4, 24);
+    const bool names_first = first == 0 || first % kListEntry != 0 || first > size;
+    const std::size_t offset_at = names_first ? 0x10 : 0;
+    const std::size_t name_at = names_first ? 0 : 4, name_size = names_first ? 16 : 24;
+    const auto length = r.get<std::uint32_t>(offset_at);
+    for (std::size_t at = 0; at + kListEntry <= length; at += kListEntry) {
+        std::string name = r.name(at + name_at, name_size);
         if (name.size() > 4 && name.compare(name.size() - 4, 4, ".tm2") == 0)
             name.resize(name.size() - 4);
-        out.push_back({name, r.get<std::uint32_t>(at)});
+        out.push_back({name, r.get<std::uint32_t>(at + offset_at)});
     }
     return out;
 }
@@ -215,7 +222,9 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
                         std::min<std::uint32_t>(255, r.get<std::uint32_t>(q + 32 + 4 * i) * 2));
                 const float w = r.get<float>(q + 0x38);
                 const float div = w != 0 ? w : 1.0F;
-                pt.uv = {r.get<float>(q + 0x30) / div, r.get<float>(q + 0x34) / div};
+                // t from the picture's foot as the pictures are written: glTF's v from the top (on walls the
+                // picture's foot was up in 82 to 100% of faces, against 2 to 18% in KH1's, KH2's and BbS's rooms)
+                pt.uv = {r.get<float>(q + 0x30) / div, 1.0F - r.get<float>(q + 0x34) / div};
                 pt.texture = r.get<std::uint32_t>(q + 0x3c);
                 pt.kind = r.get<std::uint32_t>(q);
                 strip.push_back(pt);

@@ -301,51 +301,69 @@ void draw_browser(App& app) {
     ImGui::EndTable();
 }
 
+bool can_make_dump(const App& app) {
+    const fs::path exe = port_exe(app.settings);
+    std::error_code ec;
+    return !app.job && !app.settings.port.empty() && fs::is_regular_file(exe, ec);
+}
+
+void start_dump(App& app, const char* kind) {
+    if (!can_make_dump(app))
+        return;
+    const std::string& folder = std::string(kind) == "sounds" ? app.settings.sounds_dump : app.settings.graphics_dump;
+    app.job = start_port_dump(port_exe(app.settings), app.settings.root, kind, resolve(app.settings, folder));
+    app.job_kind = kind;
+}
+
+void draw_dump_job(App& app) {
+    if (!app.job)
+        return;
+    const std::string last = app.job->last_line();
+    if (!app.job->done()) {
+        ImGui::TextUnformatted(tr(app.language, S::dump_running));
+    } else if (app.job->exit_code() == 0) {
+        ImGui::TextUnformatted(tr(app.language, S::dump_done));
+    } else {
+        ImGui::TextUnformatted(fmt(app.language, S::dump_failed, {std::to_string(app.job->exit_code())}).c_str());
+        if (!app.job->error().empty())
+            ImGui::TextWrapped("%s", app.job->error().c_str());
+    }
+    if (!last.empty())
+        ImGui::TextDisabled("%s", last.c_str());
+    if (app.job->done()) {
+        if (ImGui::Button(tr(app.language, S::reload))) {
+            app.job.reset();
+            app.start_catalog();
+        }
+    }
+}
+
 void draw_dump_panel(App& app) {
-    auto offer_dump = [&](const char* kind, S missing, const std::string& setting) {
-        ImGui::TextWrapped("%s", fmt(app.language, missing, {setting}).c_str());
+    auto offer_dump = [&](const char* kind, const std::string& why) {
+        ImGui::TextWrapped("%s", why.c_str());
         if (app.job)
             return;
-        const fs::path exe = port_exe(app.settings);
-        std::error_code ec;
-        if (app.settings.port.empty() || !fs::is_regular_file(exe, ec)) {
+        if (!can_make_dump(app)) {
             ImGui::TextWrapped("%s", tr(app.language, S::no_port));
             return;
         }
         ImGui::PushID(kind);
-        if (ImGui::Button(tr(app.language, S::make_dump))) {
-            app.job = start_port_dump(exe, app.settings.root, kind, resolve(app.settings, setting));
-            app.job_kind = kind;
-        }
+        if (ImGui::Button(tr(app.language, S::make_dump)))
+            start_dump(app, kind);
         ImGui::PopID();
     };
     if (!app.catalog.game_files_found)
         ImGui::TextWrapped("%s", tr(app.language, S::no_game_files));
     if (!app.catalog.graphics_dump_found)
-        offer_dump("graphics", S::no_graphics_dump, app.settings.graphics_dump);
+        offer_dump("graphics", fmt(app.language, S::no_graphics_dump, {app.settings.graphics_dump}));
+    else if (!app.catalog.graphics_dump_models)  // the game's own setting's dump: its pictures, no models
+        offer_dump("graphics", fmt(app.language, S::graphics_dump_no_models, {app.settings.graphics_dump}));
     if (!app.catalog.sounds_dump_found)
-        offer_dump("sounds", S::no_sounds_dump, app.settings.sounds_dump);
+        offer_dump("sounds", fmt(app.language, S::no_sounds_dump, {app.settings.sounds_dump}));
     draw_bulk_export(app);
 
     if (app.job) {
-        const std::string last = app.job->last_line();
-        if (!app.job->done()) {
-            ImGui::TextUnformatted(tr(app.language, S::dump_running));
-        } else if (app.job->exit_code() == 0) {
-            ImGui::TextUnformatted(tr(app.language, S::dump_done));
-        } else {
-            ImGui::TextUnformatted(fmt(app.language, S::dump_failed, {std::to_string(app.job->exit_code())}).c_str());
-            if (!app.job->error().empty())
-                ImGui::TextWrapped("%s", app.job->error().c_str());
-        }
-        if (!last.empty())
-            ImGui::TextDisabled("%s", last.c_str());
-        if (app.job->done()) {
-            if (ImGui::Button(tr(app.language, S::reload))) {
-                app.job.reset();
-                app.start_catalog();
-            }
-        }
+        draw_dump_job(app);
         ImGui::Separator();
     }
 }

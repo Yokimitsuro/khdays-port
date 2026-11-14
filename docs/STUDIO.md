@@ -110,10 +110,10 @@ pieces from (`setup/state.json`) -- by the installer's own reader
 (`installer/collection_archive.py`, run with the install's Python,
 `setup/python`, or the system's in the repository's tree), asking kh2_first,
 kh2_fifth and kh2_sixth in the collection's language folder (`Image/dt`,
-Steam's; `Image/en`, the Epic Games Store's) into
-`saves/collection/kh2/original/map/<map>.map` and
-`remastered/map/<map>.map/-N.dds`; `--has` lists the maps a copy holds. The
-map is made into `saves/collection/kh2/made/<map>/<map>.gltf` (assets'
+Steam's; `Image/en`, the Epic Games Store's) into the collections' folder
+(`saves/collection` unless the setting `collections` names another), as
+`kh2/original/map/<map>.map` and `kh2/remastered/map/<map>.map/-N.dds`; `--has`
+lists the maps a copy holds. The map is made into `kh2/made/<map>/<map>.gltf` there (assets'
 `kh2_room`: its background, skies and placed pieces with their motion, its HD
 pictures as PNG, docs/RENDERING.md "Mods' graphics" for its extras), and the
 change names it (`kh2 <map>`). Its first place: where Days put the map when the
@@ -151,9 +151,10 @@ each file by the MD5 of its path, so each game's name pattern (KH2's `map/<w><nn
 `map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`, Birth by
 Sleep's `arc/map/<w><nn>.arc`) is tried for
 every world code and number and asked for (a game's maps listed in about a second, no list of the games' files
-kept). A map is taken out by the installer's reader with the game's own executable into
-`saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
-with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
+kept). A map is taken out by the installer's reader with the game's own executable into the collections' folder
+(the setting `collections`, `saves/collection` when empty), `<game>/original/` and `<game>/remastered/`, and made into
+`<game>/made/<map>/<map>.gltf` there with its pictures, what the making did kept beside it (`<map>.made.txt`: its
+triangles, pictures and pieces, whether it has its own collision, what was left out), its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
 `.bcd`, Birth by Sleep's from the `.bcd` in its archive, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of
 Memories' from its `.mcd`: docs/FORMATS.md, "Dream Drop Distance's rooms", "Birth by Sleep's rooms", "KINGDOM HEARTS
 FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
@@ -164,16 +165,40 @@ centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres at 1), its lowest
 holding a quarter of the floor area the most held one does) at the room's ground, then moved across until most of the
 room's places -- its markers and its origin, where missions put the player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
 them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
-another game" lists a game's worlds and maps (taken out or not). A room with no collision of its own (a Dive
+another game" lists a game's worlds and maps (taken out or not). A world is listed by the name its game gives it,
+its code after it ("Twilight Town (tt)", "Castle Oblivion (MAP13)": `collection_world_name()`), in those lists, a
+room's adding and the command line's. A room with no collision of its own (a Dive
 stage) is given one made from its model (`own-collision` then says so). A room's sky is drawn only with **Its sky**
-ticked (from outside, a sky's dome hides the room); **Frame the room** puts the view back over its floors, and the
-picture's lower edge is dragged to make it taller (a double click: big or half).
+ticked, and then as the game draws it: about the viewer, out of reach (fifteen times the camera's distance from what
+it turns around, the room in front of it), never in its own place, where its dome (Dream Drop Distance's are a few
+metres about the origin: rg_06's 20 wide and 10 high) is a ball in the room; **Frame the room** puts the view back
+over its floors, and the picture's lower edge is dragged to make it taller (a double click: big or half).
+
+A map this build of the studio made already (its model and record written after the studio's executable was) is
+used as it is when a list's **Use** or a room added asks for it; one made by an earlier studio is made again (a later
+one may read the map better). **Take out every map** (Settings, the map lists, a mission's room list) takes out and
+makes every map of the games chosen at once: it asks where (the setting `collections`, its own folder chooser), says
+for each game how many maps its copy holds, how many are ready, the space its folder takes and about what the rest
+would add -- the space all of the game's maps took out of Steam's copy and made (2026-11-11: KINGDOM HEARTS FINAL MIX
+6.8 GB, KH2 18.1 GB, Re:CoM 4.0 GB, Dream Drop Distance 18.9 GB, Birth by Sleep 4.5 GB; all five about 52 GB) less
+what the folder holds already; a game's first maps are no measure of its others (twelve of Birth by Sleep's took 13 MB
+each, all of them 23) -- against the drive's free space, and takes the games chosen out on a thread of its own: a
+package's maps eight at a time in a run of the reader, then each made (the textures its model names taken out then),
+the maps that could not be made named at the end (KH1's Atlantica lm00_14 to 17: the copy holds no HD model of them;
+KH2's tr02 and tr07: its map reader reads past their end). A game's row has its own **Take out only this one**, and a
+game's map list asks for that game alone (**Take out this game's maps**, the others not chosen). **Stop** stops after
+the step under way; what was taken out stays.
 
 ```
 khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections (kh1, kh2,
                                                      recom, ddd, bbs)
 khdays-studio --collection-take ddd:eh_01            its files taken out
 khdays-studio --collection-room ddd:eh_01            made into a model (and its own collision)
+khdays-studio --collection-take-all ddd|all [<folder>]
+                                                     every map of a game (or of every game found) taken out
+                                                     and made, into <folder> for this run or the setting's;
+                                                     its space said first, the maps not made named at the end
+khdays-studio --collection-space ddd|all [<folder>]  what that would take, nothing taken out
 khdays-studio --render-model <model> <png> [<collision model>]
                                                      drawn as the previews draw it, from two sides (its sky
                                                      left out; framed by the collision's floors when given)
@@ -270,6 +295,16 @@ all (`name = ...`); English where one is missing.
 
     khdays-studio --add-world <Mod> <key> <code> [<language>=<name> | <name>]...
 
+**A room's music** (`core/rooms/room_music.h`). A room plays the mod's music in place of the game's while the player
+is in it (docs/SOUND.md, "A room's music"): one file for its field and one for its battles and bosses -- without the
+battle's, the field's goes on through the fights. WAV, FLAC or Ogg Vorbis; a file with no loop points of its own plays
+whole, over and over. A game room's are the mod's `sounds/rooms/<world>/<room>.<ext>` and `<room>_battle.<ext>` (in a
+world the mod adds, its game world's rooms), a room the mod adds keeps its own in its folder, `music.<ext>` and
+`music_battle.<ext>`. They are chosen in the map view's **Music** (a game room) or with **Music...** beside a mission's
+room (any room, the mod's own too); choosing another replaces the one there, of whatever extension.
+
+    khdays-studio --room-music <Mod> <world> <room | key> field|battle <file> | none
+
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's
@@ -335,11 +370,16 @@ the choice is saved with the places (first, so the mission is built on the room
 shown) or with **Save to the mod**. It shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces
 it (the mod's world file and its model of the room), or the mod's added room
-(its model and floors), with the players' start (its
-facing drawn), each spawner (its wave and how many enemies), each chest, each
+(its model and floors), with the players' start and each chest (an arrow the way
+it faces), each spawner (its wave and how many enemies), each
 emblem, each Organization emblem and the place to reach (its radius drawn) on it.
-A place is dragged over the floor (it stands on the floor under the
-pointer, the collision's grounds); one is added by choosing what (**Players'
+A heading turns the game's way: 0 degrees faces -z, -90 +x (seen in the game:
+a start facing 0 had Roxas look along -z, -90 along +x; a chest's heading is the
+same turn). The game gives spawners no facing (2.32 has none: its enemies turn
+to the player themselves) and the emblems none. A place is dragged over the
+floor (it stands on the floor under the pointer, the collision's grounds; a
+click without a drag only chooses it); an arrow's tip is dragged round its place
+to turn it (Shift: in steps of 15 degrees); one is added by choosing what (**Players'
 start**, **Enemies**, **Chest**, **Emblem**, **Organization emblem**, **Place to
 reach**) and clicking the floor; the one
 clicked is changed beside the picture: where it is, onto the floor, its facing, a
@@ -436,3 +476,13 @@ its `StoreGlobalArrayEntry` calls), and `studio/tools/enemy_names.py` writes
 `core/missions/enemy_names.cpp` (each enemy id's overlay's name, its variant
 number left out). Both are committed; a table the decompilation does not have is
 left out.
+
+## Driving the window from a script
+
+What only the window shows (a window's layout, its buttons' effect) is checked by driving it: with the environment
+variable `KHDAYS_STUDIO_INPUT` naming a file, the studio reads the lines appended to it, one a frame, as a person's
+mouse and keys (`studio/app/scripted_input.h`: `move X Y`, `click X Y`, `wheel N`, `key NAME`, `text WORDS`,
+`wait FRAMES`, `quit`; X and Y in the window's pixels), after the backend's own events so that the person's mouse
+does not move it. The window opens without taking the focus. A script appends steps, captures that window alone
+(Windows: `PrintWindow` with its client area and full content) and appends more; `--port <folder>` keeps its
+settings (`saves/studio.ini`) and anything taken out in a folder of its own.

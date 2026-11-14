@@ -27,6 +27,21 @@ void khdays_sound_mods_trace(int on);
  * gives; -1 none, or a key that is no setting's (told). */
 int khdays_sound_mods_switch(const char *text, const char *identifier);
 
+/* A room's music (docs/SOUND.md, "A room's music"): mods/<Mod>/sounds/rooms/<world>/<room>.<wav|flac|ogg> in
+ * place of the game's field track while the player is in that room (its index in the world's room table, as the
+ * studio numbers them), `<room>_battle` in place of its battle and boss tracks (else the field's goes on); a room a
+ * mod adds has its own in its folder, music and music_battle. A file that gives no loop plays whole, round and round.
+ * Whether any mod that is on has sounds/rooms or adds rooms (looked at once). */
+int khdays_sound_mods_rooms_present(void);
+
+/* The game's music tracks' kinds (data_02042124: 1 a field's, 2 a battle's), `count` of them from track 0. */
+void khdays_sound_mods_music_kinds(const unsigned char *kinds, int count);
+
+/* The game's thread, each VBlank: the player's world and room (-1 outside the field), and the folder of a room a
+ * mod adds ("" for the game's). A field, battle or boss track playing takes the room's file (or the mods' own for the
+ * track, or the game's) once it is decoded, faded in over the one before. */
+void khdays_sound_mods_room(const char *world, int room, const char *folder);
+
 /* The game's thread: a sequence (KHDAYS_SOUND_SEQUENCE: `number`) or a
  * sequence archive's entry (KHDAYS_SOUND_SEQUENCE_ARCHIVE_ENTRY: `number`,
  * `entry`) starts on ARM7 player `arm7_player`, prepared by the command

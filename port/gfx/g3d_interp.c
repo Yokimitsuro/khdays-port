@@ -98,6 +98,18 @@ static int view_place(const KhdaysG3dPreVertex *v, int32_t flags, double *x, dou
     return 1;
 }
 
+/* Whether a polygon's first vertex (clip_place's `c`) counts toward its drawing's place: a mod's
+ * within the margin its pieces are left out past (KHDAYS_G3D_CULL_MARGIN), the same with or without
+ * the pieces left out, so that one coming or going does not move the drawing; the game's always. */
+static int near_view(const double c[4], int32_t flags, int32_t widen)
+{
+    const double kx = KHDAYS_G3D_CULL_MARGIN * (double)widen / 4096.0, ky = KHDAYS_G3D_CULL_MARGIN;
+    if ((flags & KHDAYS_G3D_MOD) == 0) {
+        return 1;
+    }
+    return fabs(c[0]) <= kx * c[3] && fabs(c[1]) <= ky * c[3];
+}
+
 /* How far two places on the view are, squared; and the distance past which a model or polygon is not drawn
  * between two lists (an eighth of the view's width, which is 2). */
 static double apart(double ax, double ay, double bx, double by)
@@ -211,7 +223,8 @@ static int32_t match_drawings(KhdaysG3dInterp *work, const KhdaysG3dList *older,
             if (list == 1) {
                 work->group_of[i] = g;
             }
-            if (clip_place(&l->pre_verts[l->pre[i].first], l->pre[i].flags, c)) {
+            if (clip_place(&l->pre_verts[l->pre[i].first], l->pre[i].flags, c) &&
+                near_view(c, l->pre[i].flags, info->widen)) {
                 work->groups[g].x += c[0];
                 work->groups[g].y += c[1];
                 work->groups[g].w += c[3];

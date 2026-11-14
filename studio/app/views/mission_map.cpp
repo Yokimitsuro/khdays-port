@@ -70,6 +70,7 @@ struct MapState {
     std::string read_error;
     int chosen = -1;   // the place shown beside the picture
     int dragged = -1;  // the place being dragged
+    int turning = -1;  // the place being turned (its arrow's tip dragged)
     int placing = -1;  // what a click on the floor adds (Kind), -1 nothing
     float yaw = 30.0f, pitch = 60.0f, distance = 40.0f;
     std::array<float, 3> target{0, 0, 0};
@@ -288,6 +289,39 @@ bool pointer_on_floor(const std::array<float, 3>& eye, const std::array<float, 3
     return true;
 }
 
+// The way a heading points along the floor, as the game turns one into a facing: 0 degrees -z, -90 +x (seen
+// 2026-11-13 at a new mission's start: facing 0 had Roxas look along -z, -90 along +x; a room's markers' facings
+// go into the same field, Ov002_WriteSessionMarker).
+std::array<double, 2> facing_way(int degrees) {
+    const double a = degrees * 3.14159265358979 / 180.0;
+    return {-std::sin(a), -std::cos(a)};
+}
+
+// The heading of a way along the floor (facing_way's), in whole degrees, -179 to 180.
+int heading_of(double dx, double dz) {
+    return static_cast<int>(std::lround(std::atan2(-dx, -dz) * 180.0 / 3.14159265358979));
+}
+
+// Whether a place faces a way the game uses: where the players start, a chest.
+bool faces(const MissionSpot& sp) {
+    return sp.kind == Spot::start || sp.kind == Spot::chest;
+}
+
+// An arrow from `from` to `tip`, its head a third of its length; `handle`: a ring at its tip to drag it by.
+void draw_arrow(ImDrawList* list, ImVec2 from, ImVec2 tip, ImU32 colour, float ring) {
+    const float dx = tip.x - from.x, dy = tip.y - from.y, len = std::hypot(dx, dy);
+    if (len < 1.0f)
+        return;
+    const ImVec2 u(dx / len, dy / len), n(-u.y, u.x);
+    const float head = len * 0.35f;
+    const ImVec2 base(tip.x - u.x * head, tip.y - u.y * head);
+    list->AddLine(from, base, colour, 3.0f);
+    list->AddTriangleFilled(tip, ImVec2(base.x + n.x * head * 0.55f, base.y + n.y * head * 0.55f),
+                            ImVec2(base.x - n.x * head * 0.55f, base.y - n.y * head * 0.55f), colour);
+    if (ring > 0.0f)
+        list->AddCircle(tip, ring, IM_COL32(255, 255, 255, 255), 0, 2.0f);
+}
+
 ImU32 spot_colour(const MissionSpot& p) {
     static const ImU32 waves[] = {IM_COL32(255, 80, 80, 255), IM_COL32(255, 150, 60, 255), IM_COL32(220, 90, 255, 255),
                                   IM_COL32(255, 60, 150, 255)};
@@ -364,6 +398,15 @@ void draw_room(App& app, ImVec2 size) {
             }
         }
         if (s.mod_room) {
+            std::vector<std::array<float, 3>> sky_points;
+            for (const auto& mesh : s.mod_model.model.meshes)
+                for (const auto& v : mesh.vertices)
+                    if (mesh.sky && s.show_sky)
+                        sky_points.push_back(v.position);
+            const Sky sky(sky_points);
+            const auto eye_dir = orbit_eye_direction(s.yaw, s.pitch);
+            const std::array<float, 3> eye{s.target[0] + eye_dir[0] * s.distance, s.target[1] + eye_dir[1] * s.distance,
+                                           s.target[2] + eye_dir[2] * s.distance};
             for (const auto& mesh : s.mod_model.model.meshes) {
                 if (mesh.sky && !s.show_sky)
                     continue;  // from outside, its sky hides it
@@ -378,7 +421,7 @@ void draw_room(App& app, ImVec2 size) {
                 const float th = t != nullptr ? static_cast<float>(t->height) : 1.0f;
                 auto vertex = [&](const assets::NeutralVertex& v) {
                     PreviewVertex o;
-                    o.position = v.position;
+                    o.position = mesh.sky ? sky.at(v.position, eye, s.distance) : v.position;  // as the game draws it
                     o.normal = v.normal;
                     o.uv = {v.texcoord[0] / tw, v.texcoord[1] / th};
                     o.colour = {v.color[0] / 255.0f, v.color[1] / 255.0f, v.color[2] / 255.0f, v.color[3] / 255.0f};
@@ -429,7 +472,12 @@ void draw_room(App& app, ImVec2 size) {
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     int near = -1;
     float best = 14.0f * ImGui::GetStyle().FontScaleDpi;
+    const float r = 8.0f * ImGui::GetStyle().FontScaleDpi;
     std::vector<ImVec2> shown(s.spots.size(), ImVec2(-1e9f, -1e9f));
+    // the tip of the arrow of a place that faces a way, the same length on the picture however near it is
+    std::vector<ImVec2> tips(s.spots.size(), ImVec2(-1e9f, -1e9f));
+    int near_tip = -1;
+    float best_tip = 1.3f * r;
     for (std::size_t i = 0; i < s.spots.size(); ++i) {
         const MissionSpot& sp = s.spots[i];
         float x, y;
@@ -442,8 +490,24 @@ void draw_room(App& app, ImVec2 size) {
             best = d;
             near = static_cast<int>(i);
         }
+        if (!faces(sp))
+            continue;
+        const auto way = facing_way(sp.heading);
+        float fx, fy;
+        if (!p.project({static_cast<float>(sp.at[0] + way[0] * 0.5), static_cast<float>(sp.at[1]),
+                        static_cast<float>(sp.at[2] + way[1] * 0.5)},
+                       &fx, &fy))
+            continue;
+        const float dx = at.x + fx - shown[i].x, dy = at.y + fy - shown[i].y, len = std::hypot(dx, dy);
+        if (len < 0.5f)
+            continue;  // seen end on: no arrow to draw or drag
+        tips[i] = ImVec2(shown[i].x + dx / len * 4.0f * r, shown[i].y + dy / len * 4.0f * r);
+        const float dt = std::hypot(tips[i].x - mouse.x, tips[i].y - mouse.y);
+        if (hovered && dt < best_tip) {
+            best_tip = dt;
+            near_tip = static_cast<int>(i);
+        }
     }
-    const float r = 8.0f * ImGui::GetStyle().FontScaleDpi;
     for (std::size_t i = 0; i < s.spots.size(); ++i) {
         const MissionSpot& sp = s.spots[i];
         const ImVec2 c = shown[i];
@@ -453,18 +517,13 @@ void draw_room(App& app, ImVec2 size) {
         const bool chosen = static_cast<int>(i) == s.chosen;
         double floor_y = 0.0;
         const bool on_floor = floor_under(sp.at, &floor_y) && std::fabs(floor_y - sp.at[1]) < 0.6;
-        switch (sp.kind) {
-        case Spot::start: {
-            list->AddCircleFilled(c, r, colour);
-            // which way it faces: 0 degrees along +z, turning to +x
-            const double a = sp.heading * 3.14159265358979 / 180.0;
-            float x, y;
-            if (p.project({static_cast<float>(sp.at[0] + std::sin(a) * 1.0), static_cast<float>(sp.at[1]),
-                           static_cast<float>(sp.at[2] + std::cos(a) * 1.0)},
-                          &x, &y))
-                list->AddLine(c, ImVec2(at.x + x, at.y + y), colour, 3.0f);
-            break;
+        // which way it faces (facing_way), dragged round by its tip
+        if (tips[i].x > -1e8f) {
+            const bool ring = chosen || static_cast<int>(i) == near_tip || static_cast<int>(i) == s.turning;
+            draw_arrow(list, c, tips[i], colour, ring ? 0.6f * r : 0.0f);
         }
+        switch (sp.kind) {
+        case Spot::start: list->AddCircleFilled(c, r, colour); break;
         case Spot::spawner:
             list->AddTriangleFilled(ImVec2(c.x, c.y - r * 1.2f), ImVec2(c.x - r, c.y + r * 0.8f),
                                     ImVec2(c.x + r, c.y + r * 0.8f), colour);
@@ -570,18 +629,41 @@ void draw_room(App& app, ImVec2 size) {
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))
             s.placing = -1;
+    } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && near_tip >= 0 &&
+               (near < 0 || best_tip <= best)) {
+        s.chosen = near_tip;  // its arrow's tip: turned round its place
+        s.turning = near_tip;
     } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && near >= 0) {
         s.chosen = near;
         s.dragged = near;
     } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         s.dragged = -1;
     }
-    if (s.dragged >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    // (a click alone, the mouse not dragged, chooses without moving or turning)
+    if (s.turning >= 0 && s.turning < static_cast<int>(s.spots.size()) && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        // the way from the place to where the pointer meets the floor at its height
+        MissionSpot& sp = s.spots[static_cast<std::size_t>(s.turning)];
+        std::array<double, 3> where;
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) &&
+            pointer_on_floor(eye, ray, static_cast<float>(sp.at[1]), &where)) {
+            const double dx = where[0] - sp.at[0], dz = where[2] - sp.at[2];
+            if (dx * dx + dz * dz > 1e-6) {
+                int heading = heading_of(dx, dz);
+                if (ImGui::GetIO().KeyShift)
+                    heading = static_cast<int>(std::lround(heading / 15.0)) * 15;
+                sp.heading = heading > 180 ? heading - 360 : heading;
+            }
+        }
+        ImGui::SetTooltip("%s: %d", tr(app.language, S::mmap_facing), sp.heading);
+    } else if (s.dragged >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        s.turning = -1;
         MissionSpot& sp = s.spots[static_cast<std::size_t>(s.dragged)];
         std::array<double, 3> where;
-        if (pointer_on_floor(eye, ray, static_cast<float>(sp.at[1]), &where))
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) &&
+            pointer_on_floor(eye, ray, static_cast<float>(sp.at[1]), &where))
             sp.at = where;
     } else {
+        s.turning = -1;
         s.dragged = -1;
         if (hovered && s.placing < 0 && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             const ImVec2 d = ImGui::GetIO().MouseDelta;
@@ -592,7 +674,9 @@ void draw_room(App& app, ImVec2 size) {
     orbit_move(s.target, s.yaw, s.pitch, s.distance, static_cast<float>(h), hovered);
     if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
         s.distance *= std::pow(0.9f, ImGui::GetIO().MouseWheel);
-    if (near >= 0 && s.dragged < 0 && s.placing < 0)
+    if (near_tip >= 0 && s.dragged < 0 && s.turning < 0 && s.placing < 0 && (near < 0 || best_tip <= best))
+        ImGui::SetTooltip("%s", tr(app.language, S::mmap_turn_hint));
+    else if (near >= 0 && s.dragged < 0 && s.turning < 0 && s.placing < 0)
         ImGui::SetTooltip("%s", spot_label(app, s.spots[static_cast<std::size_t>(near)]).c_str());
 }
 
@@ -744,12 +828,12 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", s.error.c_str());
         return false;
     }
-    // what to add, then click the floor
+    // what to add, then click the floor; a row that wraps where the window ends (French's words are longer)
     ImGui::TextUnformatted(tr(lang, S::mmap_add));
     const S adds[] = {S::mmap_start,  S::mmap_spawner, S::mmap_chest,
                       S::mmap_emblem, S::mmap_collect, S::mmap_reach};  // in MissionSpot::Kind's order
     for (int i = 0; i < static_cast<int>(std::size(adds)); ++i) {
-        ImGui::SameLine();
+        same_line_if_room(button_width(tr(lang, adds[i])));
         const bool on = s.placing == i;
         if (on)
             ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -758,18 +842,18 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
         if (on)
             ImGui::PopStyleColor();
     }
-    ImGui::SameLine();
+    same_line_if_room(check_width(tr(lang, S::mmap_show_room)));
     ImGui::Checkbox(tr(lang, S::mmap_show_room), &s.show_room);
-    ImGui::SameLine();
+    same_line_if_room(check_width(tr(lang, S::mmap_show_floor)));
     ImGui::Checkbox(tr(lang, S::mmap_show_floor), &s.show_floor);
     s.has_sky = false;
     for (const auto& mesh : s.mod_model.model.meshes)
         s.has_sky = s.has_sky || (s.mod_room && mesh.sky);
     if (s.has_sky) {
-        ImGui::SameLine();
+        same_line_if_room(check_width(tr(lang, S::map_sky)));
         ImGui::Checkbox(tr(lang, S::map_sky), &s.show_sky);
     }
-    ImGui::SameLine();
+    same_line_if_room(button_width(tr(lang, S::map_frame)));
     if (ImGui::Button(tr(lang, S::map_frame)))
         look_at_floor();
     // saving: all at once, when it reads and builds

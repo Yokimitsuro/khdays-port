@@ -34,6 +34,9 @@ typedef struct Entry {
     u64 used;  /* when it was last given to one */
     struct Entry *next;
     int setting; /* the setting its mod's sounds/switches.txt ties it to (hud_settings.h), -1 none */
+    /* a field's music file: where it was when its track ended (output samples), in music_generation */
+    u64 place;
+    u32 place_generation;
 } Entry;
 
 static Entry *entries;
@@ -155,12 +158,78 @@ static int any_mod_has(const char *sub)
     return 0;
 }
 
-/* mods/<Mod>/sounds in a mod that is on, or a mod's character's [sounds]. */
+/* mods/<Mod>/sounds in a mod that is on, or a mod's character's [sounds], or a room a mod adds with music of its
+ * own. */
 static int mods_sounds(void);
+static int added_room_music(void);
 
 int khdays_sound_mods_present(void)
 {
-    return mods_sounds() || khdays_characters_have_sounds();
+    return mods_sounds() || khdays_characters_have_sounds() || added_room_music();
+}
+
+/* Whether a file `name`.<wav|flac|ogg> is in `folder`. */
+static int has_music_file(const char *folder, const char *name)
+{
+    static const char *const extensions[] = {".wav", ".flac", ".ogg"};
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
+        char path[600];
+        DWORD attributes;
+        snprintf(path, sizeof(path), "%s\\%s%s", folder, name, extensions[i]);
+        attributes = GetFileAttributesA(path);
+        if (attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Whether a mod that is on adds a room with music of its own (rooms/<world>/<key>/music or music_battle), looked at
+ * once. */
+static int added_room_music(void)
+{
+    static int found = -1;
+    if (found >= 0) {
+        return found;
+    }
+    found = 0;
+    for (int i = 0; i < khdays_mods_started_count() && !found; ++i) {
+        const char *path = khdays_mods_started_path(i);
+        char pattern[600];
+        WIN32_FIND_DATAA world;
+        HANDLE worlds;
+        if (path == NULL) {
+            continue;
+        }
+        snprintf(pattern, sizeof(pattern), "%s\\rooms\\*", path);
+        worlds = FindFirstFileA(pattern, &world);
+        if (worlds == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        do {
+            WIN32_FIND_DATAA room;
+            HANDLE rooms;
+            if (!(world.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || world.cFileName[0] == '.') {
+                continue;
+            }
+            snprintf(pattern, sizeof(pattern), "%s\\rooms\\%s\\*", path, world.cFileName);
+            rooms = FindFirstFileA(pattern, &room);
+            if (rooms == INVALID_HANDLE_VALUE) {
+                continue;
+            }
+            do {
+                char folder[600];
+                if (!(room.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || room.cFileName[0] == '.') {
+                    continue;
+                }
+                snprintf(folder, sizeof(folder), "%s\\rooms\\%s\\%s", path, world.cFileName, room.cFileName);
+                found = has_music_file(folder, "music") || has_music_file(folder, "music_battle");
+            } while (!found && FindNextFileA(rooms, &room));
+            FindClose(rooms);
+        } while (!found && FindNextFileA(worlds, &world));
+        FindClose(worlds);
+    }
+    return found;
 }
 
 static int mods_sounds(void)
@@ -712,7 +781,36 @@ static struct {
     u64 played; /* output samples since it started, its pauses not counted */
     u32 stops;  /* the ARM9's stops of its player when it began (KhdaysSnd7Driver.player_stops) */
     u32 waited; /* output samples its start has waited, silent, for its file (START_WAIT_SECONDS) */
+    /* a room's music (rooms/): the game's kind of its track (data_02042124: 1 a field's, 2 a battle's, else 0)
+     * and its own identifier (seq/<name>); the file a change of room took it from, fading out (output samples) */
+    int music;
+    char identifier[160];
+    Entry *fading;
+    u64 fading_played;
+    u32 fade_left, fade_length;
 } sequence[16];
+
+/* A field's music file goes on where it was when the field's track comes back after a battle's (or a boss's), as
+ * the game takes its field track up again (SoundMgr_Update: the track's variable 0 read as the battle's starts,
+ * written back as the field's starts again): its place (Entry.place) holds while no other music came between -- a
+ * track of kind 0 (an event's, the results', a menu's) starts a new generation. Kept in the file, not by ARM7
+ * player: one is taken for each start (RUNTIME_MAP.md, "Music, effects and voices"). */
+static u32 music_generation = 1;
+
+/* A room's music: the place the player is in (khdays_sound_mods_room) and the game's tracks' kinds. */
+static char room_world[16];
+static int room_index = -1;
+static unsigned char *music_kinds;
+static int music_kind_count;
+
+/* How long a change of room fades one room's music into another's: the game's own between its field and
+ * battle tracks (Ov002_TickGameplayState's fade, 0x1e frames). */
+#define ROOM_FADE_SECONDS 0.5
+
+/* What a field or battle track plays when neither its room nor a mod gives a file, while a room's may come:
+ * the original, heard (never READY, so its player is not replaced), kept so that a room's file can take its
+ * place later. Never let go (it is not among the entries). */
+static Entry original_heard = {"original", "", {0}, NO_FILE, {0, 0, 0, NULL, 0, 0, 0}, 0, 0, NULL, -1};
 
 /* How long a piece of music's start waits, silent, for its file to be decoded: it begins from its first
  * note rather than as a moment of the original and then the file where the original got to (the field's
@@ -721,11 +819,12 @@ static struct {
 #define START_WAIT_SECONDS 3
 static uint32_t last_rate = 48000; /* the output rate the files last played at */
 
-/* Whether sequence `p`'s start waits for its file: a piece of music's (seq/), not yet decoded. */
+/* Whether sequence `p`'s start waits for its file: a piece of music's (seq/, or a room's), not yet decoded. */
 static int start_waits(int p)
 {
     const Entry *e = sequence[p].entry;
-    return e != NULL && (e->state == QUEUED || e->state == LET_GO) && strncmp(e->identifier, "seq/", 4) == 0 &&
+    return e != NULL && (e->state == QUEUED || e->state == LET_GO) &&
+           (strncmp(e->identifier, "seq/", 4) == 0 || strncmp(e->identifier, "rooms/", 6) == 0) &&
            sequence[p].played == 0 && sequence[p].waited < START_WAIT_SECONDS * last_rate;
 }
 
@@ -753,25 +852,218 @@ static void set_entry(Entry **slot, Entry *e)
     keep_within_budget();
 }
 
+int khdays_sound_mods_rooms_present(void)
+{
+    static int found = -1;
+    if (found < 0) {
+        found = any_mod_has("sounds/rooms") || added_room_music();
+        if (found) {
+            fprintf(stderr, "sound: mods with rooms' music found: a room's files play in place of its world's\n");
+        }
+    }
+    return found;
+}
+
+void khdays_sound_mods_music_kinds(const unsigned char *kinds, int count)
+{
+    unsigned char *copy = count > 0 ? (unsigned char *)malloc((size_t)count) : NULL;
+    if (copy == NULL) {
+        return;
+    }
+    memcpy(copy, kinds, (size_t)count);
+    free(music_kinds);
+    music_kinds = copy;
+    music_kind_count = count;
+}
+
+/* The game's kind of sequence `number`: 1 a field's track, 2 a battle's, else 0. */
+static int music_kind(int number)
+{
+    return number >= 0 && number < music_kind_count ? music_kinds[number] : 0;
+}
+
+/* Whether the game's kind of a track is one a room's music takes: a field's (1), a battle's (2), a boss's (3). */
+static int room_kind(int music)
+{
+    return music == 1 || music == 2 || music == 3;
+}
+
+/* The place's files (find_room_files): its field's and its battle's, NULL none. */
+static Entry *room_field, *room_battle;
+
+/* An added room's file `name`.<wav|flac|ogg> in its `folder`, known by `identifier`; NULL none. */
+static Entry *folder_file(const char *folder, const char *name, const char *identifier)
+{
+    static const char *const extensions[] = {".wav", ".flac", ".ogg"};
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
+        char path[520];
+        DWORD attributes;
+        snprintf(path, sizeof(path), "%s/%s%s", folder, name, extensions[i]);
+        attributes = GetFileAttributesA(path);
+        if (attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            Entry *e = entry_of_file(path, identifier);
+            if (e != NULL) {
+                khdays_log("sound: %s played from %s", identifier, path);
+            }
+            return e;
+        }
+    }
+    return NULL;
+}
+
+/* The files of the place the player is in: an added room's own (music and music_battle in its `folder`), else the
+ * mods' sounds/rooms/<world>/<room> and <room>_battle. */
+static void find_room_files(const char *folder)
+{
+    char field[160], battle[160];
+    room_field = room_battle = NULL;
+    if (room_index < 0 || room_world[0] == '\0') {
+        return;
+    }
+    snprintf(field, sizeof(field), "rooms/%s/%d", room_world, room_index);
+    snprintf(battle, sizeof(battle), "rooms/%s/%d_battle", room_world, room_index);
+    if (folder != NULL && folder[0] != '\0') {
+        room_field = folder_file(folder, "music", field);
+        room_battle = folder_file(folder, "music_battle", battle);
+    } else {
+        room_field = entry_find(field);
+        room_battle = entry_find(battle);
+    }
+}
+
+/* The room's file for a track of kind `music` where the player is: its field's for a field's track, its battle's
+ * for a battle's or a boss's (else its field's, going on), decoded if it was not, round and round when it gives no
+ * loop; NULL none. */
+static Entry *room_file(int music)
+{
+    static const KhdaysOriginalLoop whole = KHDAYS_WHOLE_FILE_LOOP;
+    Entry *e = NULL;
+    if (!room_kind(music) || !khdays_sound_mods_rooms_present()) {
+        return NULL;
+    }
+    if (music != 1) {
+        e = entry_want(room_battle, &whole);
+    }
+    return e != NULL ? e : entry_want(room_field, &whole);
+}
+
+/* Whether `e` is a field's music: a field track's file, or a room's own (not its `_battle`) that a battle's or a
+ * boss's track went on with. */
+static int field_music(const Entry *e, int music)
+{
+    static const char battle[] = "_battle";
+    const size_t n = strlen(e->identifier), b = sizeof(battle) - 1;
+    return music == 1 ||
+           (strncmp(e->identifier, "rooms/", 6) == 0 && (n < b || strcmp(e->identifier + n - b, battle) != 0));
+}
+
+/* Player `p`'s field music, as its track ends or another start takes its player: its place kept, for when the
+ * field's track comes back (khdays_sound_mods_sequence). */
+static void keep_field(int p)
+{
+    Entry *e = sequence[p].entry;
+    if (room_kind(sequence[p].music) && e != NULL && e != &original_heard && e != &silence && sequence[p].played > 0 &&
+        field_music(e, sequence[p].music)) {
+        e->place = sequence[p].played;
+        e->place_generation = music_generation;
+    }
+}
+
+/* What a field or battle track of player `p` plays where the player is now: its room's file, else a mod's own
+ * for the track, else the original heard. */
+static Entry *music_now(int p)
+{
+    Entry *e = room_file(sequence[p].music);
+    if (e == NULL) {
+        e = entry_for(sequence[p].identifier, NULL);
+    }
+    return e != NULL ? e : &original_heard;
+}
+
 void khdays_sound_mods_sequence(const KhdaysSoundArchive *archive, int arm7_player, int kind, int number, int entry,
                                 u32 command_tag)
 {
     char identifier[160], path[520], name[160];
-    int own;
+    int own, music;
+    Entry *e;
+    u64 from = 0;
     if (!khdays_sound_mods_present() || archive == NULL || arm7_player < 0 || arm7_player > 15 ||
         !khdays_sound_archive_identifier(archive, kind, number, entry, identifier, sizeof(identifier))) {
         return;
     }
     decode_entries_ahead(archive);
+    /* a field track's file this start takes the player from before its end was seen: kept with its place */
+    if (sequence[arm7_player].state != IDLE) {
+        keep_field(arm7_player);
+    }
     /* a new character's actor's sound: its own file, or silence (characters.h) */
     own = khdays_characters_speaker_sound(identifier, path, sizeof(path), name, sizeof(name));
-    set_entry(&sequence[arm7_player].entry, own < 0   ? &silence
-                                            : own > 0 ? entry_want(entry_of_file(path, name), NULL)
-                                                      : entry_for(identifier, NULL));
+    music = kind == KHDAYS_SOUND_SEQUENCE && own == 0 ? music_kind(number) : 0;
+    snprintf(sequence[arm7_player].identifier, sizeof(sequence[arm7_player].identifier), "%s", identifier);
+    sequence[arm7_player].music = music;
+    if (own < 0) {
+        e = &silence;
+    } else if (own > 0) {
+        e = entry_want(entry_of_file(path, name), NULL);
+    } else if (room_kind(music) && khdays_sound_mods_rooms_present()) {
+        e = music_now(arm7_player); /* followed while it plays: the player may change rooms */
+    } else {
+        e = entry_for(identifier, NULL);
+    }
+    /* a field's music back after a battle's (or going on under one): where it was, as the game takes its field
+     * track up again; any other music starts a new generation */
+    if (kind == KHDAYS_SOUND_SEQUENCE && own == 0) {
+        if (!room_kind(music)) {
+            ++music_generation;
+        } else if (e != NULL && e != &original_heard && e != &silence && e->place_generation == music_generation &&
+                   field_music(e, music)) {
+            from = e->place;
+        }
+    }
+    set_entry(&sequence[arm7_player].fading, NULL);
+    sequence[arm7_player].fade_left = 0;
+    set_entry(&sequence[arm7_player].entry, e);
     sequence[arm7_player].state = sequence[arm7_player].entry != NULL ? ARMED : IDLE;
     sequence[arm7_player].tag = command_tag;
-    sequence[arm7_player].played = 0;
+    sequence[arm7_player].played = from;
     sequence[arm7_player].waited = 0;
+    if (from > 0 && trace) {
+        fprintf(stderr, "sound: %s takes up %s again after %llu output samples\n", identifier, e->identifier,
+                (unsigned long long)from);
+    }
+}
+
+void khdays_sound_mods_room(const char *world, int room, const char *folder)
+{
+    if (!khdays_sound_mods_rooms_present()) {
+        return;
+    }
+    if (room != room_index || strcmp(world, room_world) != 0) {
+        snprintf(room_world, sizeof(room_world), "%s", world);
+        room_index = room;
+        find_room_files(folder);
+        (void)room_file(1); /* both decoded ahead */
+        (void)room_file(2);
+    }
+    for (int p = 0; p < 16; ++p) {
+        Entry *want;
+        if (sequence[p].state == IDLE || !room_kind(sequence[p].music)) {
+            continue;
+        }
+        want = music_now(p);
+        /* a file not decoded yet: the music goes on as it is until it is */
+        if (want == sequence[p].entry || (want != &original_heard && want->state != READY)) {
+            continue;
+        }
+        khdays_log("sound: %s room %d: %s plays %s", room_world, room_index, sequence[p].identifier,
+                   want == &original_heard ? "as the game has it" : want->path);
+        set_entry(&sequence[p].fading, sequence[p].entry);
+        sequence[p].fading_played = sequence[p].played;
+        sequence[p].fade_length = sequence[p].fade_left = (u32)((double)last_rate * ROOM_FADE_SECONDS);
+        set_entry(&sequence[p].entry, want);
+        sequence[p].played = 0;
+        sequence[p].waited = START_WAIT_SECONDS * last_rate; /* ready: nothing to wait for */
+    }
 }
 
 void khdays_sound_mods_stream(const KhdaysSoundArchive *archive, int stream_player, int number, uint32_t start,
@@ -866,7 +1158,10 @@ static int sequence_step(int p, const uint8_t *record, const KhdaysSnd7Driver *d
         sequence[p].state = IDLE; /* the game stopped it */
     }
     if (sequence[p].state == IDLE) {
+        keep_field(p);
         set_entry(&sequence[p].entry, NULL);
+        set_entry(&sequence[p].fading, NULL);
+        sequence[p].fade_left = 0;
     }
     return sequence[p].state == PLAYING || sequence[p].state == PLAYING_ON;
 }
@@ -888,17 +1183,36 @@ static void mix_sequences(const KhdaysSnd7Driver *driver, uint32_t rate, uint32_
         } else if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
             ++sequence[p].played;
         }
+        const int16_t decibels = (int16_t)(record[6] | record[7] << 8);
+        const float gain = decibels <= -723 ? 0.0f : powf(10.0f, (float)decibels / 200.0f);
+        float g = gain * player_gain[p] * master;
+        /* a change of room: the file it played before fading out under the new one, which fades in */
+        if (sequence[p].fade_left > 0) {
+            const Entry *f = sequence[p].fading;
+            const float share = (float)sequence[p].fade_left / (float)sequence[p].fade_length;
+            if (f != NULL && f->state == READY) {
+                const double fat = (double)sequence[p].fading_played * (double)f->file.rate / (double)rate;
+                out[0] += khdays_replacement_sample(&f->file, fat, 0) * g * share;
+                out[1] += khdays_replacement_sample(&f->file, fat, 1) * g * share;
+            }
+            if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
+                ++sequence[p].fading_played;
+            }
+            if (--sequence[p].fade_left == 0) {
+                set_entry(&sequence[p].fading, NULL);
+            }
+            g *= 1.0f - share;
+        }
         if (sequence[p].entry->state != READY) {
             continue;
         }
         const KhdaysReplacement *r = &sequence[p].entry->file;
-        const int16_t decibels = (int16_t)(record[6] | record[7] << 8);
-        const float gain = decibels <= -723 ? 0.0f : powf(10.0f, (float)decibels / 200.0f);
         const double at = (double)sequence[p].played * (double)r->rate / (double)rate;
-        const float g = gain * player_gain[p] * master;
         if (sequence[p].state == PLAYING_ON && !plays_on(sequence[p].entry, at)) {
             sequence[p].state = IDLE;
             set_entry(&sequence[p].entry, NULL);
+            set_entry(&sequence[p].fading, NULL);
+            sequence[p].fade_left = 0;
             continue;
         }
         out[0] += khdays_replacement_sample(r, at, 0) * g;

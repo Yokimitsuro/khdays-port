@@ -111,10 +111,10 @@ To build the port from source instead:
    The data goes to `data/extracted/<hash>/`, which is never committed.
 
 2. Build (Windows, Visual Studio 2026 with the C++ workload, CMake, Ninja,
-   and for the preparation Python's `pycparser`):
+   and for the preparation Python's `pycparser` 3 or newer):
 
    ```powershell
-   py -m pip install pycparser
+   py -m pip install "pycparser>=3"
    py .\port\build.py --config Release
    ```
 
@@ -251,6 +251,12 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Auto lock-on:** when the lock is lost without you letting go -- the
+  target defeated, or out of reach -- the game's lock-on is pressed again (R
+  twice) as soon as it has another target, so the next enemy is locked on to
+  by itself. Letting go yourself
+  (the lock-on button, R twice, Select) stays let go. As any R, it can reset
+  the camera. Off by default.
 - **Chase Camera: Free:** on the camp's Config page drawn on one screen,
   Chase Camera has a third value after the game's Auto and Manual. Free is
   the game's Manual, except that walking no longer pulls the camera's tilt
@@ -369,6 +375,7 @@ two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth
 texture_smoothing = off   # off (the DS's) or on
 hd_graphics = on          # the mods' replacements
+culling = on              # a mod's models skip what is out of view (big maps faster); off draws all
 dump_graphics = off       # write what is drawn to saves/dump/graphics
 movies = hd               # hd (your HD videos, the rest pc), pc (full colour) or ds (the DS's)
 picture_pace = smooth     # smooth (the monitor's rate) or ds
@@ -686,8 +693,19 @@ mods/<Mod>/sounds/
 ├── seq/<sequence>.<ext>              # a whole sequence (music)
 ├── seqarc/<archive>/<entry>.<ext>    # one effect or voice of a sequence archive
 ├── wave/<wave archive>/<index>.<ext> # one wave an instrument plays
-└── strm/<stream>.<ext>               # a stream (music, voices)
+├── strm/<stream>.<ext>               # a stream (music, voices)
+└── rooms/<world>/<room>.<ext>        # a room's own music (and <room>_battle.<ext>)
 ```
+
+**A room's music.** A room can play its own music instead of the game's
+while the player is in it: `sounds/rooms/<world>/<room>.<ext>` for the field
+and `<room>_battle.<ext>` for its fights and bosses (without one, the
+field's goes on through them); a room the mod adds keeps them in its own
+folder as `music.<ext>` and `music_battle.<ext>`. Going into another room
+fades one into the other; the field's file goes on where it was after a
+fight. A room's file with no loop points of its own plays whole, over and
+over. The studio's map view (**Music**) and its Missions window
+(**Music...** beside a mission's room) choose them.
 
 The loop is a WAV's `smpl` loop, else the Vorbis comments `LOOPSTART` and
 `LOOPLENGTH`, else the original's. The original keeps running unheard, so

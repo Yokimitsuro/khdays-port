@@ -5,7 +5,15 @@ typedef's name alone (`VecFx32;`) declares nothing (MSVC and mwcc warn)."""
 
 from __future__ import annotations
 
+import pycparser
 from pycparser import c_ast, c_parser
+
+# GameCParser overrides pycparser 3's own parser; an older one parses the C without them and fails much later
+if int(pycparser.__version__.split(".")[0]) < 3:
+    raise ImportError(
+        f"pycparser {pycparser.__version__} is installed; the game's C needs pycparser 3 or newer: "
+        'py -m pip install -U "pycparser>=3"'
+    )
 
 
 class GameCParser(c_parser.CParser):

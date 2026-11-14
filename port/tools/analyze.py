@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,14 +28,11 @@ def main() -> int:
     if not (args.tree / "build.ninja").exists():
         sys.exit(f"{args.tree} is not a configured build tree (port/build.py)")
     env = build.msvc_env()
-    # every object again: a finding is said only when its file is compiled
-    subprocess.run(
-        ["cmake", "--build", str(args.tree), "--", "-t", "clean", "khdays-analyze"],
-        env=env,
-        capture_output=True,
-        text=True,
-        errors="replace",
-    )
+    # every object of the analysis again (a finding is said only when its file is compiled), and only
+    # those: ninja's clean of the khdays-analyze target also deletes everything it depends on (the
+    # libraries the port links, SDL's), so the next build compiled and linked those all again
+    for objects in sorted((args.tree / "CMakeFiles").glob("khdays-analyze-*.dir")):
+        shutil.rmtree(objects)
     run = subprocess.run(
         ["cmake", "--build", str(args.tree), "--target", "khdays-analyze", "--", "-k", "0"],
         env=env,

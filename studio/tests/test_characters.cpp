@@ -220,3 +220,36 @@ TEST(character_posed_by_its_own_clip) {
     character_span(model, &lo, &hi);
     CHECK(std::fabs(hi[1] - lo[1] - 1.0f) < 1e-4f);
 }
+
+TEST(character_weapon_held_as_the_port_holds_it) {
+    const Mat identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    auto near = [](const std::array<float, 3>& p, float x, float y, float z) {
+        return std::fabs(p[0] - x) < 1e-4f && std::fabs(p[1] - y) < 1e-4f && std::fabs(p[2] - z) < 1e-4f;
+    };
+    // its bone now at (1, 2, 3), the model drawn twice its size, its weapon_turn a quarter about z: the weapon's
+    // (1, 0, 0) turned onto y on the bone, at the weapon's own size, then the bone's place at the model's
+    Mat bone = identity;
+    bone[12] = 1;
+    bone[13] = 2;
+    bone[14] = 3;
+    const std::array<float, 3> quarter{0, 0, 90};
+    Mat held = held_weapon({identity, bone}, {identity, identity}, 1, 2.0f, &quarter, identity, 1.0f);
+    CHECK(near(mat_point(held, {1, 0, 0}), 2, 5, 6));
+    // without a turn: as the base holds it, turned as the base's hand node is from the bone at rest (its place and
+    // size left out); weapon_scale sizes the weapon
+    Mat hand = identity;
+    hand[0] = 0;
+    hand[1] = 3;  // x onto y, at three times
+    hand[4] = -3;
+    hand[5] = 0;  // y onto -x
+    hand[10] = 3;
+    hand[12] = 5;
+    hand[13] = 5;
+    hand[14] = 5;
+    held = held_weapon({identity}, {identity}, 0, 1.0f, nullptr, hand, 2.0f);
+    CHECK(near(mat_point(held, {1, 0, 0}), 0, 2, 0));
+    CHECK(near(mat_point(held, {0, 0, 1}), 0, 0, 2));
+    // a bone it has not: left where it was
+    held = held_weapon({identity}, {identity}, 3, 1.0f, nullptr, hand, 1.0f);
+    CHECK(near(mat_point(held, {1, 2, 3}), 1, 2, 3));
+}

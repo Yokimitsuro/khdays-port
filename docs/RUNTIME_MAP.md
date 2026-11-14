@@ -4416,7 +4416,13 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   `Ov002_ResolveNamedPlacement`); `Ov002_WriteSessionMarker` files it for the player, a point spread
   by player (`Ov002_ScatterPlaceByIndex`) unless state flag 0x20e7. Mission 0010's first area puts
   slots 0-3 near (0, 0.049, 0) facing -90 degrees in room 0 of `tt`; the play walk's player was traced
-  there at (0.00, 0.01, 0.00).
+  there at (0.00, 0.01, 0.00). **Which way a heading faces**: 0 degrees along -z, -90 along +x -- the
+  way `(-sin h, -cos h)` on the floor (seen 2026-11-13, a mod's new mission in `eh` room 2, its Shadow at
+  (4, -3) and two chests at (-2.5, +-1.2): with the start facing -90 the camera behind Roxas looked along
+  +x, the Shadow far ahead and the chests near; facing 0, along -z, the Shadow ahead on the right and the
+  chests on the left). A marker's facing (65536ths of a turn) goes into the same field
+  (`Ov002_ResolveNamedPlacement`'s owner word), and a chest's heading (its `trbox` row, degrees) turns the
+  same way: with 90 and -90 its long sides faced +-x. A spawner (2.32) has no facing.
 - **The groups' tables while the field runs** (`StoreGlobalArrayEntry`'s callers): 0 the main
   program's `data_02042640`; 2 and 4 ov002's (`data_ov002_0207f134`, `0207f484`); 3 ov012's five
   (the scenes played in a mission); n + 5 the table of panel n (`Ov002_SwitchPanelOverlay`, rows
@@ -5094,6 +5100,23 @@ N`).
 - **A mod's track** (`music.play`) is asked for the game's way (`SoundMgr_SwitchBgm`); meanwhile the
   four routines keep the game's requests back (prepare.py's joins, `khdays_link_music_request`), and
   the last of them is made as the mod's track ends.
+- **The tracks' kinds** (`data_02042124`, 48 bytes of main's .rodata): 1 a world's field track (TwilightR_F,
+  Alice_F, Herc_F, Halloween_F, Alasin_F, Existence_F, Beast_F, Neverland_F), 2 its battle's (the `_B`s), 3 a
+  boss's (DestinysForce, MissionBoss1, DisneyBoss1, ShorodingDark, Boss3, Boss4), 0 the rest (Result,
+  Resultsingle, Entrymulti, the characters' and events' themes); all on `PLAYER_BGM` but StrangeWhispers,
+  MissingYou, XIIItheme2 and Icetime (`PLAYER_BGM_EVENT`). The new missions the studio builds on 1354's file play
+  DisneyBoss1 throughout.
+- **The field's track taken up again** (`SoundMgr_Update`, request 5): going from a field's track to a battle's, the
+  manager reads the field track's sequence variable 0 into `+0xb46fa` and keeps its number at `+0xb46f8`; coming
+  back to that same field track it starts it again and writes the variable back (`NNS_SndPlayerWriteVariable(0,
+  +0xb46fa)`), the sequence going on from there; any other request clears `+0xb46f8`. Each start takes a free ARM7
+  player, so the field's and the battle's are often on different ones (seen: TwilightR_F on 0, TwilightR_B on 2, the
+  field's again on 5).
+- **Where the player is** (a room's music, docs/SOUND.md): the field's link context (`data_ov002_0207fa10`,
+  `Ov002LinkCtx`) holds the player's slot at `+0xd` and each of the four slots' room at `+0x2f` -- the room's index
+  in the world's room table at `+4` (`Ov002_StepPeerObjectLoading`), the studio's room number -- and that table was
+  read from the world's archive, `mi/wd/wd_<code>`, which names the world. Seen on the play walk: tt room 0 from frame
+  4165, room 1 from 5399, room 0 again from 6207; a mod's added room as its own index past the world's (eh 23).
 
 ## 28. The magic
 

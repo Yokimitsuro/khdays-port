@@ -5,6 +5,7 @@
 
 #include "core/rooms/room_change.h"
 #include "core/rooms/room_collision.h"
+#include "core/rooms/room_music.h"
 #include "core/rooms/worlds.h"
 
 #include "khdays/assets/gltf_export.h"
@@ -616,4 +617,36 @@ TEST(a_model_made_from_the_room_lines_up_with_it_again) {
     far.vertices.push_back(v);
     other.model.meshes.push_back(far);
     CHECK(align_with_room(room, other).verdict == RoomAlignment::unrelated);
+}
+
+// A room's music: a game room's in sounds/rooms/<world>/, an added room's in its folder; one file a field (or battle),
+// the one of another extension taken away when another is chosen; only WAV, FLAC and Ogg taken.
+TEST(room_music_kept_in_the_mod) {
+    namespace fs = std::filesystem;
+    const fs::path dir = studio_test::scratch("room_music");
+    const fs::path mod = dir / "mod";
+    std::error_code ec;
+    fs::remove_all(mod, ec);
+    const auto write = [&](const char* name) {
+        std::ofstream(dir / name, std::ios::binary) << "RIFF";
+        return dir / name;
+    };
+    const RoomMusicPlace game = game_room_music(mod, "tt", 3);
+    CHECK(game.folder == mod / "sounds" / "rooms" / "tt" && game.field == "3" && game.battle == "3_battle");
+    CHECK(room_music_file(game, false).empty());
+    std::string why;
+    CHECK(room_music_set(game, false, write("song.WAV"), &why));
+    CHECK(room_music_file(game, false) == game.folder / "3.wav");
+    CHECK(room_music_file(game, true).empty());
+    CHECK(room_music_set(game, false, write("song.ogg"), &why));
+    CHECK(room_music_file(game, false) == game.folder / "3.ogg" && !fs::exists(game.folder / "3.wav"));
+    CHECK(!room_music_set(game, true, write("song.mp3"), &why) && !why.empty());
+    CHECK(room_music_set(game, true, write("fight.flac"), &why));
+    CHECK(room_music_file(game, true) == game.folder / "3_battle.flac");
+    CHECK(room_music_remove(game, false, &why) && room_music_file(game, false).empty());
+    CHECK(room_music_file(game, true) == game.folder / "3_battle.flac");
+    const RoomMusicPlace added = added_room_music(mod / "rooms" / "tt" / "street");
+    CHECK(room_music_set(added, false, write("song.wav"), &why));
+    CHECK(room_music_file(added, false) == mod / "rooms" / "tt" / "street" / "music.wav");
+    CHECK(room_music_remove(added, true, &why));  // none there: no failure
 }

@@ -80,6 +80,9 @@ fs::path package_base(const fs::path& copy, const std::string& package) {
 
 }  // namespace
 
+// The space every map of a game took out of Steam's copy and made (2026-11-11, --collection-take-all): KINGDOM HEARTS
+// FINAL MIX's 130 (4 not made: the copy holds no HD model of Atlantica's lm00_14 to 17), KH2's 278 (tr02 and tr07 not
+// read), Re:CoM's 627, Dream Drop Distance's 160, Birth by Sleep's 202.
 const std::vector<CollectionGameInfo>& collection_games() {
     static const std::vector<CollectionGameInfo> games = {
         {CollectionGame::kh1,
@@ -88,35 +91,45 @@ const std::vector<CollectionGameInfo>& collection_games() {
          "1.5+2.5",
          "KINGDOM HEARTS FINAL MIX.exe",
          {"kh1_first", "kh1_second", "kh1_third"},
-         0.01F},
+         0.01F,
+         7328898367,
+         130},
         {CollectionGame::kh2,
          "kh2",
          "KINGDOM HEARTS II FINAL MIX",
          "1.5+2.5",
          "KINGDOM HEARTS II FINAL MIX.exe",
          {"kh2_first", "kh2_fifth", "kh2_sixth"},
-         0.01F},
+         0.01F,
+         19485876278,
+         278},
         {CollectionGame::recom,
          "recom",
          "KINGDOM HEARTS Re:Chain of Memories",
          "1.5+2.5",
          "KINGDOM HEARTS Re_Chain of Memories.exe",
          {"Recom"},
-         1.0F},
+         1.0F,
+         4297158446,
+         627},
         {CollectionGame::ddd,
          "ddd",
          "KINGDOM HEARTS Dream Drop Distance",
          "2.8",
          "KINGDOM HEARTS Dream Drop Distance.exe",
          {"kh3d_first", "kh3d_third"},
-         1.0F},
+         1.0F,
+         20289182091,
+         160},
         {CollectionGame::bbs,
          "bbs",
          "KINGDOM HEARTS Birth by Sleep FINAL MIX",
          "1.5+2.5",
          "KINGDOM HEARTS Birth by Sleep FINAL MIX.exe",
          {"bbs_first", "bbs_second", "bbs_third", "bbs_fourth"},
-         1.0F},
+         1.0F,
+         4779309745,
+         202},
     };
     return games;
 }
@@ -126,6 +139,105 @@ const CollectionGameInfo* collection_game(const std::string& code) {
         if (code == g.code)
             return &g;
     return nullptr;
+}
+
+std::string collection_world_name(CollectionGame game, const std::string& world) {
+    struct Named {
+        CollectionGame game;
+        const char* code;
+        const char* name;
+    };
+    using G = CollectionGame;
+    static const Named names[] = {
+        {G::kh1, "al", "Agrabah"},
+        {G::kh1, "aw", "Wonderland"},
+        {G::kh1, "dc", "Disney Castle"},
+        {G::kh1, "dh", "Dive to the Heart"},
+        {G::kh1, "di", "Destiny Islands"},
+        {G::kh1, "ew", "End of the World"},
+        {G::kh1, "he", "Olympus Coliseum"},
+        {G::kh1, "lm", "Atlantica"},
+        {G::kh1, "nm", "Halloween Town"},
+        {G::kh1, "pc", "Hollow Bastion"},
+        {G::kh1, "pi", "Monstro"},
+        {G::kh1, "po", "100 Acre Wood"},
+        {G::kh1, "pp", "Neverland"},
+        {G::kh1, "tw", "Traverse Town"},
+        {G::kh1, "tz", "Deep Jungle"},
+        {G::recom, "MAP00", "Castle Oblivion Hallways & Castle Oblivion Boss Arenas"},
+        {G::recom, "MAP01", "Traverse Town"},
+        {G::recom, "MAP02", "Agrabah"},
+        {G::recom, "MAP03", "Olympus Coliseum"},
+        {G::recom, "MAP04", "Wonderland"},
+        {G::recom, "MAP05", "Monstro"},
+        {G::recom, "MAP06", "Halloween Town"},
+        {G::recom, "MAP07", "Atlantica"},
+        {G::recom, "MAP08", "Neverland"},
+        {G::recom, "MAP09", "Hollow Bastion"},
+        {G::recom, "MAP10", "100 Acre Wood"},
+        {G::recom, "MAP11", "Twilight Town"},
+        {G::recom, "MAP12", "Destiny Islands"},
+        {G::recom, "MAP13", "Castle Oblivion"},
+        {G::recom, "MAP20", "Battle Arenas & Boss Arenas"},
+        {G::recom, "MAP21", "Test Rooms"},
+        {G::recom, "MAP22", "Test Rooms"},
+        {G::recom, "MAP30", "Test Rooms"},
+        {G::kh2, "al", "Agrabah"},
+        {G::kh2, "bb", "Beast's Castle"},
+        {G::kh2, "ca", "Port Royal"},
+        {G::kh2, "dc", "Disney Castle"},
+        {G::kh2, "di", "Destiny Islands"},
+        {G::kh2, "eh", "The World That Never Was"},
+        {G::kh2, "es", "Realm of Darkness"},
+        {G::kh2, "hb", "Radiant Garden"},
+        {G::kh2, "he", "Olympus Coliseum"},
+        {G::kh2, "lk", "The Pride Lands"},
+        {G::kh2, "lm", "Atlantica"},
+        {G::kh2, "mu", "The Land of Dragons"},
+        {G::kh2, "nm", "Halloween Town"},
+        {G::kh2, "po", "100 Acre Wood"},
+        {G::kh2, "tr", "Space Paranoids"},
+        {G::kh2, "tt", "Twilight Town"},
+        {G::kh2, "wi", "Timeless River"},
+        {G::kh2, "wm", "World Map"},
+        {G::bbs, "bd", "Command Board"},
+        {G::bbs, "cd", "Castle of Dreams"},
+        {G::bbs, "dc", "Disney Town"},
+        {G::bbs, "di", "Destiny Islands"},
+        {G::bbs, "dp", "Land of Departure"},
+        {G::bbs, "he", "Olympus Coliseum"},
+        {G::bbs, "jb", "Realm of Darkness"},
+        {G::bbs, "kg", "Keyblade Graveyard"},
+        {G::bbs, "ls", "Deep Space"},
+        {G::bbs, "pp", "Neverland"},
+        {G::bbs, "rg", "Radiant Garden"},
+        {G::bbs, "sb", "Enchanted Dominion"},
+        {G::bbs, "sw", "Dwarf Woodlands"},
+        {G::bbs, "vs", "Mirage Arena"},
+        {G::bbs, "wm", "World Map"},
+        {G::bbs, "yt", "Mysterious Tower"},
+        {G::ddd, "de", "Flick Rush"},
+        {G::ddd, "di", "Destiny Islands"},
+        {G::ddd, "eh", "The World That Never Was"},
+        {G::ddd, "fa", "Symphony of Sorcery"},
+        {G::ddd, "nd", "La Cité des Cloches"},
+        {G::ddd, "pi", "Prankster's Paradise"},
+        {G::ddd, "rg", "Radiant Garden"},
+        {G::ddd, "tl", "The Grid"},
+        {G::ddd, "tm", "Country of the Musketeers"},
+        {G::ddd, "tw", "Traverse Town"},
+        {G::ddd, "wm", "World Map"},
+        {G::ddd, "yt", "Mysterious Tower"},
+    };
+    for (const auto& n : names)
+        if (n.game == game && world == n.code)
+            return n.name;
+    return {};
+}
+
+std::string collection_world_label(CollectionGame game, const std::string& world) {
+    const std::string name = collection_world_name(game, world);
+    return name.empty() ? world : name + " (" + world + ")";
 }
 
 std::unordered_set<std::string> package_keys(const std::vector<std::uint8_t>& hed) {
@@ -213,11 +325,18 @@ std::vector<fs::path> recorded_collections(const fs::path& root, const std::stri
     return out;
 }
 
+fs::path collection_root(const fs::path& folder) {
+    std::error_code ec;
+    if (!fs::is_directory(folder / "Image", ec) && fs::is_directory(folder / "Content" / "Image", ec))
+        return folder / "Content";
+    return folder;
+}
+
 fs::path collection_copy(const Settings& settings, const CollectionGameInfo& game) {
     std::error_code ec;
     const std::string& set = std::string(game.collection) == "2.8" ? settings.collection_28 : settings.collection_1525;
     if (!set.empty()) {
-        const fs::path folder = resolve(settings, set);
+        const fs::path folder = collection_root(resolve(settings, set));
         return fs::is_directory(folder, ec) ? folder : fs::path();
     }
     for (const auto& folder : recorded_collections(settings.root, game.collection))
@@ -226,8 +345,12 @@ fs::path collection_copy(const Settings& settings, const CollectionGameInfo& gam
     return {};
 }
 
-fs::path collection_folder(const fs::path& root, const CollectionGameInfo& game) {
-    return root / "saves" / "collection" / path_u8(game.code);
+fs::path collections_folder(const Settings& settings) {
+    return resolve(settings, settings.collections.empty() ? std::string("saves/collection") : settings.collections);
+}
+
+fs::path collection_folder(const Settings& settings, const CollectionGameInfo& game) {
+    return collections_folder(settings) / path_u8(game.code);
 }
 
 bool collection_maps(const Settings& settings, const CollectionGameInfo& game, std::vector<CollectionMap>* maps,
@@ -260,15 +383,15 @@ bool collection_maps(const Settings& settings, const CollectionGameInfo& game, s
     return true;
 }
 
-bool collection_map_taken_out(const fs::path& root, const CollectionGameInfo& game, const CollectionMap& map) {
+bool collection_map_taken_out(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map) {
     std::error_code ec;
     return !map.paths.empty() &&
-           fs::is_regular_file(collection_folder(root, game) / "original" / path_u8(map.paths.front()), ec);
+           fs::is_regular_file(collection_folder(settings, game) / "original" / path_u8(map.paths.front()), ec);
 }
 
 bool take_out_collection_map(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                              std::string* why, const std::vector<std::string>& extra) {
-    if (extra.empty() && collection_map_taken_out(settings.root, game, map))
+    if (extra.empty() && collection_map_taken_out(settings, game, map))
         return true;
     const fs::path copy = collection_copy(settings, game);
     std::error_code ec;
@@ -282,8 +405,7 @@ bool take_out_collection_map(const Settings& settings, const CollectionGameInfo&
         *why = "no package " + map.package + " in " + u8(copy / "Image");
         return false;
     }
-    std::vector<std::string> args{u8(base), u8(collection_folder(settings.root, game)),
-                                  u8(copy / path_u8(game.executable))};
+    std::vector<std::string> args{u8(base), u8(collection_folder(settings, game)), u8(copy / path_u8(game.executable))};
     args.insert(args.end(), map.paths.begin(), map.paths.end());
     args.insert(args.end(), extra.begin(), extra.end());
     std::vector<std::string> lines;
@@ -304,12 +426,12 @@ bool collection_map_falling(const CollectionGameInfo& game, const CollectionMap&
     return true;
 }
 
-fs::path collection_made_model(const fs::path& root, const CollectionGameInfo& game, const std::string& map) {
-    return collection_folder(root, game) / "made" / path_u8(map) / path_u8(map + ".gltf");
+fs::path collection_made_model(const Settings& settings, const CollectionGameInfo& game, const std::string& map) {
+    return collection_folder(settings, game) / "made" / path_u8(map) / path_u8(map + ".gltf");
 }
 
-fs::path collection_made_collision(const fs::path& root, const CollectionGameInfo& game, const std::string& map) {
-    return collection_folder(root, game) / "made" / path_u8(map) / path_u8(map + "_collision.gltf");
+fs::path collection_made_collision(const Settings& settings, const CollectionGameInfo& game, const std::string& map) {
+    return collection_folder(settings, game) / "made" / path_u8(map) / path_u8(map + "_collision.gltf");
 }
 
 namespace {
@@ -332,7 +454,7 @@ bool write_pmp_room(const Settings& settings, const CollectionGameInfo& game, co
     if (bcd_size > 0) {
         try {
             const auto scene = khdays::assets::ddd::collision_scene(bcd, bcd_size, map.name);
-            std::ofstream file(collection_made_collision(settings.root, game, map.name), std::ios::binary);
+            std::ofstream file(collection_made_collision(settings, game, map.name), std::ios::binary);
             file << khdays::assets::scene_to_gltf(scene);
             made->collision = static_cast<bool>(file);
             if (!made->collision)
@@ -353,7 +475,7 @@ bool write_pmp_room(const Settings& settings, const CollectionGameInfo& game, co
 // its .txa animates shown frame by frame.
 bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                    const fs::path& out, CollectionMade* made, std::string* why) {
-    const fs::path folder = collection_folder(settings.root, game);
+    const fs::path folder = collection_folder(settings, game);
     const std::string pmp_path = map.paths.front();
     const auto data = read_all(folder / "original" / path_u8(pmp_path));
     if (data.empty()) {
@@ -438,7 +560,7 @@ bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, con
 // the archive's own assets (<...>_arc<n>.dds: the PMP's n-th texture).
 bool make_bbs_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                    const fs::path& out, CollectionMade* made, std::string* why) {
-    const fs::path folder = collection_folder(settings.root, game);
+    const fs::path folder = collection_folder(settings, game);
     std::string arc_path = map.paths.front();
     auto arc = read_all(folder / "original" / path_u8(arc_path));
     if (arc.empty()) {
@@ -545,7 +667,7 @@ bool make_bbs_room(const Settings& settings, const CollectionGameInfo& game, con
 // .img's HD pictures, its skies the .bin's .gvbl assets.
 bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                    const fs::path& out, CollectionMade* made, std::string* why) {
-    const fs::path folder = collection_folder(settings.root, game);
+    const fs::path folder = collection_folder(settings, game);
     const std::string bin = map.name + ".bin", img = map.name + ".img";
     const auto img_data = read_all(folder / "original" / path_u8(img));
     if (img_data.empty()) {
@@ -623,7 +745,7 @@ bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, con
     const auto bin_data = read_all(folder / "original" / path_u8(bin));
     try {
         const auto scene = khdays::assets::kh1::collision_scene(bin_data.data(), bin_data.size(), map.name);
-        std::ofstream file(collection_made_collision(settings.root, game, map.name), std::ios::binary);
+        std::ofstream file(collection_made_collision(settings, game, map.name), std::ios::binary);
         file << khdays::assets::scene_to_gltf(scene);
         made->collision = static_cast<bool>(file);
         if (!made->collision)
@@ -638,7 +760,7 @@ bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, con
 // pictures, the .RTM's HD ones where the copy has them (<name>_tm2.dds, its remastered assets).
 bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                      const fs::path& out, CollectionMade* made, std::string* why) {
-    const fs::path folder = collection_folder(settings.root, game);
+    const fs::path folder = collection_folder(settings, game);
     const std::string base = map.paths.front().substr(0, map.paths.front().size() - 4);  // MAP01/0001/MP010001
     const auto azf = read_all(folder / "original" / path_u8(base + ".AZF"));
     if (azf.empty()) {
@@ -724,7 +846,7 @@ bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, c
         if (mcd.empty())
             throw std::runtime_error("not taken out");
         const auto scene = khdays::assets::recom::collision_scene(mcd.data(), mcd.size(), map.name);
-        std::ofstream file(collection_made_collision(settings.root, game, map.name), std::ios::binary);
+        std::ofstream file(collection_made_collision(settings, game, map.name), std::ios::binary);
         file << khdays::assets::scene_to_gltf(scene);
         made->collision = static_cast<bool>(file);
         if (!made->collision)
@@ -737,27 +859,31 @@ bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, c
 
 }  // namespace
 
-bool make_collection_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
-                          CollectionMade* made, std::string* why) {
+namespace {
+
+bool make_room_now(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
+                   CollectionMade* made, std::string* why) {
     if (game.game == CollectionGame::kh2) {
         if (!take_out_kh2_map(settings, map.name, why))
             return false;
         Kh2Made kh2;
-        if (!make_kh2_room(kh2_folder(settings.root), map.name, kh2_made_model(settings.root, map.name), &kh2, why))
+        if (!make_kh2_room(kh2_folder(settings), map.name, kh2_made_model(settings, map.name), &kh2, why))
             return false;
         made->triangles = kh2.triangles;
         made->pictures = kh2.pictures;
+        made->pieces = kh2.pieces;
+        made->animations = kh2.animations;
         made->report = kh2.report;
         fs::path collision;
         std::string no_collision;
-        made->collision = make_kh2_collision(settings.root, map.name, &collision, &no_collision);
+        made->collision = make_kh2_collision(settings, map.name, &collision, &no_collision);
         if (!made->collision)
             made->report.push_back(no_collision);
         return true;
     }
     if (!take_out_collection_map(settings, game, map, why))
         return false;
-    const fs::path out = collection_made_model(settings.root, game, map.name);
+    const fs::path out = collection_made_model(settings, game, map.name);
     switch (game.game) {
     case CollectionGame::ddd: return make_ddd_room(settings, game, map, out, made, why);
     case CollectionGame::kh1: return make_kh1_room(settings, game, map, out, made, why);
@@ -769,10 +895,227 @@ bool make_collection_room(const Settings& settings, const CollectionGameInfo& ga
     return false;
 }
 
+// What making a map's model did, kept beside it.
+fs::path made_record(const Settings& settings, const CollectionGameInfo& game, const std::string& map) {
+    return collection_made_model(settings, game, map).parent_path() / path_u8(map + ".made.txt");
+}
+
+bool write_made_record(const fs::path& file, const CollectionMade& made) {
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out << "# what khdays-studio made of this map\n"
+        << "triangles = " << made.triangles << "\n"
+        << "pictures = " << made.pictures << "\n"
+        << "pieces = " << made.pieces << "\n"
+        << "animations = " << made.animations << "\n"
+        << "collision = " << (made.collision ? 1 : 0) << "\n";
+    for (const auto& line : made.report) {
+        std::string one = line;
+        std::replace(one.begin(), one.end(), '\n', ' ');
+        out << "report = " << one << "\n";
+    }
+    return static_cast<bool>(out);
+}
+
+bool read_made_record(const fs::path& file, CollectionMade* made) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in)
+        return false;
+    *made = {};
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        const auto eq = line.find(" = ");
+        if (line.empty() || line[0] == '#' || eq == std::string::npos)
+            continue;
+        const std::string key = line.substr(0, eq), value = line.substr(eq + 3);
+        const auto count = [&] { return static_cast<std::size_t>(std::strtoull(value.c_str(), nullptr, 10)); };
+        if (key == "triangles")
+            made->triangles = count();
+        else if (key == "pictures")
+            made->pictures = count();
+        else if (key == "pieces")
+            made->pieces = count();
+        else if (key == "animations")
+            made->animations = count();
+        else if (key == "collision")
+            made->collision = value == "1";
+        else if (key == "report")
+            made->report.push_back(value);
+    }
+    return true;
+}
+
+// When the studio's executable was written: a model made before it is made again (none known: every model is).
+fs::file_time_type studio_written() {
+    static const fs::file_time_type at = [] {
+        const char* base = SDL_GetBasePath();
+#ifdef _WIN32
+        const char* exe = "khdays-studio.exe";
+#else
+        const char* exe = "khdays-studio";
+#endif
+        std::error_code ec;
+        const fs::file_time_type written =
+            base != nullptr ? fs::last_write_time(path_u8(base) / exe, ec) : fs::file_time_type::max();
+        return base == nullptr || ec ? fs::file_time_type::max() : written;
+    }();
+    return at;
+}
+
+// The bytes the files under `folder` take.
+std::uintmax_t folder_bytes(const fs::path& folder) {
+    std::uintmax_t bytes = 0;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        std::error_code size_ec;
+        if (it->is_regular_file(size_ec)) {
+            const auto size = it->file_size(size_ec);
+            bytes += size_ec ? 0 : size;
+        }
+    }
+    return bytes;
+}
+
+// How many maps a run of the reader takes out: few enough for a stop asked to be heard soon, and for the command line.
+constexpr std::size_t kMapsPerRun = 8;
+
+}  // namespace
+
+bool make_collection_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
+                          CollectionMade* made, std::string* why) {
+    // the record of an earlier making gone first: a model left half made is never taken as ready
+    std::error_code ec;
+    const fs::path record = made_record(settings, game, map.name);
+    fs::remove(record, ec);
+    if (!make_room_now(settings, game, map, made, why))
+        return false;
+    write_made_record(record, *made);  // (none written: the map made again when next used)
+    return true;
+}
+
+bool collection_room_ready(const Settings& settings, const CollectionGameInfo& game, const std::string& map) {
+    std::error_code ec, model_ec;
+    const fs::file_time_type record = fs::last_write_time(made_record(settings, game, map), ec);
+    const fs::file_time_type model = fs::last_write_time(collection_made_model(settings, game, map), model_ec);
+    const fs::file_time_type studio = studio_written();
+    return !ec && !model_ec && studio != fs::file_time_type::max() && record >= studio && model >= studio;
+}
+
+bool collection_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
+                     CollectionMade* made, std::string* why) {
+    if (collection_room_ready(settings, game, map.name) &&
+        read_made_record(made_record(settings, game, map.name), made))
+        return true;
+    return make_collection_room(settings, game, map, made, why);
+}
+
+std::string space_text(std::uintmax_t bytes) {
+    char text[32];
+    if (bytes >= (std::uintmax_t{1} << 30))
+        std::snprintf(text, sizeof(text), "%.1f GB", static_cast<double>(bytes) / (1 << 30));
+    else
+        std::snprintf(text, sizeof(text), "%.0f MB", static_cast<double>(bytes) / (1 << 20));
+    return text;
+}
+
+CollectionPlan collection_plan(const Settings& settings, const CollectionGameInfo& game) {
+    CollectionPlan plan;
+    plan.game = &game;
+    if (!collection_maps(settings, game, &plan.maps, &plan.why))
+        plan.maps.clear();
+    for (const auto& m : plan.maps)
+        plan.ready += collection_room_ready(settings, game, m.name) ? 1 : 0;
+    plan.used = folder_bytes(collection_folder(settings, game));
+    const std::uintmax_t all = game.all_maps > 0 ? game.all_bytes / game.all_maps * plan.maps.size() : 0;
+    plan.more = all > plan.used ? all - plan.used : 0;
+    return plan;
+}
+
+namespace {
+
+// The installer's reader of a collection's packages, in the port's folder.
+fs::path collection_reader(const fs::path& root) {
+    return root / "installer" / "collection_archive.py";
+}
+
+}  // namespace
+
+bool take_out_every_map(const Settings& settings, const CollectionPlan& plan, const CollectionStep& step,
+                        std::vector<std::string>* failed, std::string* why) {
+    const CollectionGameInfo& game = *plan.game;
+    std::vector<const CollectionMap*> todo;
+    for (const auto& m : plan.maps)
+        if (!collection_room_ready(settings, game, m.name))
+            todo.push_back(&m);
+    if (todo.empty())
+        return true;
+    const fs::path copy = collection_copy(settings, game);
+    std::error_code ec;
+    if (copy.empty() || !fs::is_regular_file(copy / path_u8(game.executable), ec)) {
+        *why =
+            std::string("no ") + game.executable + " in the collection's folder (its packages are read with its table)";
+        return false;
+    }
+    // without the reader, or Python, no map can be: said once, not for each
+    if (!fs::is_regular_file(collection_reader(settings.root), ec)) {
+        *why = "the installer's reader of the collection is not in " + u8(settings.root / "installer");
+        return false;
+    }
+    // each package's maps not taken out yet, a few a run of the reader (one that fails leaves its maps to be taken out
+    // one by one as they are made, and named there when that fails too)
+    std::map<std::string, std::vector<const CollectionMap*>> by_package;
+    for (const CollectionMap* m : todo)
+        if (!collection_map_taken_out(settings, game, *m))
+            by_package[m->package].push_back(m);
+    std::size_t runs = 0;
+    for (const auto& [package, maps] : by_package)
+        runs += (maps.size() + kMapsPerRun - 1) / kMapsPerRun;
+    const std::size_t total = runs + todo.size();
+    std::size_t done = 0;
+    for (const auto& [package, maps] : by_package) {
+        const fs::path base = package_base(copy, package);
+        for (std::size_t first = 0; first < maps.size(); first += kMapsPerRun, ++done) {
+            const std::size_t last = std::min(maps.size(), first + kMapsPerRun);
+            if (!step(package + ": " + maps[first]->name + (last - first > 1 ? " - " + maps[last - 1]->name : ""), done,
+                      total)) {
+                *why = "stopped";
+                return false;
+            }
+            if (base.empty())
+                continue;
+            std::vector<std::string> args{u8(base), u8(collection_folder(settings, game)),
+                                          u8(copy / path_u8(game.executable))};
+            for (std::size_t k = first; k < last; ++k)
+                args.insert(args.end(), maps[k]->paths.begin(), maps[k]->paths.end());
+            std::vector<std::string> lines;
+            std::string not_read;
+            if (run_collection_reader(settings.root, args, &lines, &not_read) < 0) {
+                *why = not_read;
+                return false;
+            }
+        }
+    }
+    // each made, what its model names taken out then
+    for (const CollectionMap* m : todo) {
+        if (!step(m->name, done, total)) {
+            *why = "stopped";
+            return false;
+        }
+        CollectionMade made;
+        std::string not_made;
+        if (!make_collection_room(settings, game, *m, &made, &not_made))
+            failed->push_back(m->name + ": " + not_made);
+        ++done;
+    }
+    step({}, total, total);
+    return true;
+}
+
 int run_collection_reader(const fs::path& root, const std::vector<std::string>& args, std::vector<std::string>* lines,
                           std::string* why) {
     const fs::path own = root / "setup" / "python" / "python.exe";
-    const fs::path script = root / "installer" / "collection_archive.py";
+    const fs::path script = collection_reader(root);
     std::error_code ec;
     if (!fs::is_regular_file(script, ec)) {
         *why = "the installer's reader of the collection is not in " + u8(root / "installer");

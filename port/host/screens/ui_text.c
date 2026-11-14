@@ -386,6 +386,13 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Erfassen und Zielwechsel auf eigenen Tasten (das Erfassen des Spiels: zweimal R).",
                               "Punta e cambio bersaglio su tasti propri (la punta del gioco: R due volte).",
                               "Fijar y cambiar de objetivo con botones propios (el fijado del juego: R dos veces)."},
+    [TXT_ENH_AUTO_LOCK] = {"Auto lock-on", "Lock-on automatique", "Automatisches Erfassen", "Puntamento automatico",
+                           "Fijado automático"},
+    [TXT_ENH_AUTO_LOCK_NOTE] = {"When your target is defeated, lock on to the next enemy automatically.",
+                                "Quand votre cible est vaincue, verrouille automatiquement l'ennemi suivant.",
+                                "Ist dein Ziel besiegt, wird automatisch der nächste Gegner erfasst.",
+                                "Quando il bersaglio è sconfitto, punta automaticamente il nemico successivo.",
+                                "Al vencer a tu objetivo, fija automáticamente al siguiente enemigo."},
     [TXT_ENH_MENU] = {"Command menu on the D-pad", "Commandes sur la croix", "Befehlsmenü auf dem Steuerkreuz",
                       "Menu comandi sulla croce", "Menú de comandos en la cruceta"},
     [TXT_ENH_REACTION_BUTTON] = {"Reaction button for reaction commands only",
@@ -655,7 +662,22 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "Der DS zeichnet Texturen ohne Glättung.", "Il DS disegna le texture senza filtro.",
                                  "La DS dibuja las texturas sin suavizado."},
     [TXT_VIDEO_HD] = {"HD graphics", "Graphismes HD", "HD-Grafiken", "Grafica HD", "Gráficos HD"},
-    [TXT_VIDEO_DUMP] = {"Dump graphics", "Extraire les graphismes", "Grafiken ausgeben", "Esporta grafica",
+    [TXT_VIDEO_CULLING] = {"Skip what's out of view", "Ignorer ce qui est hors champ", "Unsichtbares auslassen",
+                           "Salta ciò che è fuori vista", "Omitir lo que no se ve"},
+    [TXT_VIDEO_CULLING_NOTE] =
+        {"Culling: what of a mod's models (its rooms, its characters) lies outside the view is left out before it is "
+         "drawn, so big maps run much faster. Off draws all of it, for comparing.",
+         "Culling : ce qui des modèles d'un mod (ses salles, ses personnages) est hors de la vue est écarté avant "
+         "d'être dessiné, les grandes cartes tournent donc bien plus vite. Désactivé dessine tout, pour comparer.",
+         "Culling: Was von den Modellen eines Mods (seinen Räumen, seinen Figuren) außerhalb der Sicht liegt, wird vor "
+         "dem Zeichnen weggelassen, so laufen große Karten viel schneller. Aus zeichnet alles, zum Vergleichen.",
+         "Culling: ciò che dei modelli di una mod (le sue stanze, i suoi personaggi) è fuori dalla vista viene "
+         "scartato prima di essere disegnato, così le mappe grandi vanno molto più veloci. Disattivato disegna tutto, "
+         "per confrontare.",
+         "Culling: lo que de los modelos de un mod (sus salas, sus personajes) queda fuera de la vista se descarta "
+         "antes de dibujarlo, así los mapas grandes van mucho más rápido. Desactivado lo dibuja todo, para "
+         "comparar."},
+    [TXT_VIDEO_DUMP] ={"Dump graphics", "Extraire les graphismes", "Grafiken ausgeben", "Esporta grafica",
                         "Volcar gráficos"},
     [TXT_VIDEO_DUMP_NOTE] = {"Writes every texture and graphic shown to saves/dump, and the colours each 2D sheet is "
                              "drawn with, to make replacements.",

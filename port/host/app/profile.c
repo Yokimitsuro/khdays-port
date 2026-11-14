@@ -264,6 +264,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->show_fps = 0;
     v->backend = KHDAYS_BACKEND_AUTO;
     v->hd_graphics = 1;
+    v->culling = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->two_screens = KHDAYS_TWO_STACKED;
@@ -883,6 +884,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"mouse_camera", offsetof(KhdaysEnhancements, mouse_camera), 0, 0},
         {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
+        {"auto_lock", offsetof(KhdaysEnhancements, auto_lock), 0, 0},
         {"dpad_command_menu", offsetof(KhdaysEnhancements, dpad_command_menu), 0, 0},
         {"reaction_button_only", offsetof(KhdaysEnhancements, reaction_button_only), 0, 0},
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
@@ -1094,6 +1096,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } switches[] = {
             {"texture_smoothing", offsetof(KhdaysVideo, texture_smoothing)},
             {"hd_graphics", offsetof(KhdaysVideo, hd_graphics)},
+            {"culling", offsetof(KhdaysVideo, culling)},
             {"dump_graphics", offsetof(KhdaysVideo, dump_graphics)},
         };
         for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); ++i) {
@@ -1543,6 +1546,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         e->camera_invert_y ? "on" : "off");
     add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);
     add(&t, "separate_lock_on = %s\n", e->separate_lock_on ? "on" : "off");
+    add(&t, "auto_lock = %s\n", e->auto_lock ? "on" : "off");
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "reaction_button_only = %s\n", e->reaction_button_only ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
@@ -1595,6 +1599,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
             "texture_smoothing = %s\nhd_graphics = %s\n"
+            "# culling: on or off -- what of a mod's models lies wholly past the view is left out before it\n"
+            "# is drawn (a big room mod runs faster); off draws all of it\n"
+            "culling = %s\n"
             "dump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
@@ -1613,7 +1620,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
-            v->dump_graphics ? "on" : "off",
+            v->culling ? "on" : "off", v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS   ? "ds"
             : v->movies == KHDAYS_MOVIES_PC ? "pc"
                                             : "hd",

@@ -206,4 +206,63 @@ void character_span(const assets::ImportedModel& model, std::array<float, 3>* lo
     }
 }
 
+int character_node(const assets::ImportedModel& model, const std::string& name) {
+    for (std::size_t i = 0; i < model.nodes.size(); ++i)
+        if (model.nodes[i].name == name)
+            return static_cast<int>(i);
+    return -1;
+}
+
+namespace {
+
+// model_bones.cpp turn_of: about x, then y, then z
+Mat turn_of(const std::array<float, 3>& degrees) {
+    Mat turn = kIdentity;
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        const float r = degrees[axis] * 0.0174532925f, c = std::cos(r), s = std::sin(r);
+        const std::size_t u = (axis + 1) % 3, w = (axis + 2) % 3;
+        Mat one = kIdentity;
+        one[u * 4 + u] = c;
+        one[w * 4 + w] = c;
+        one[u * 4 + w] = s;
+        one[w * 4 + u] = -s;
+        turn = mat_mul(one, turn);
+    }
+    return turn;
+}
+
+// model_parts.h axes_of: a frame's axes made unit, no translation
+Mat axes_of(const Mat& m) {
+    Mat r = kIdentity;
+    for (std::size_t c = 0; c < 3; ++c) {
+        const std::size_t i = c * 4;
+        const float length = std::sqrt(m[i] * m[i] + m[i + 1] * m[i + 1] + m[i + 2] * m[i + 2]);
+        const float l = length > 1e-12f ? 1.0f / length : 0.0f;
+        r[i] = m[i] * l;
+        r[i + 1] = m[i + 1] * l;
+        r[i + 2] = m[i + 2] * l;
+    }
+    return r;
+}
+
+}  // namespace
+
+Mat held_weapon(const std::vector<Mat>& node_worlds, const std::vector<Mat>& rest_worlds, int bone, float scale,
+                const std::array<float, 3>* turn, const Mat& base_hand_rest, float weapon_scale) {
+    const auto b = static_cast<std::size_t>(bone);
+    if (bone < 0 || b >= node_worlds.size() || b >= rest_worlds.size() || scale <= 0.0f)
+        return kIdentity;
+    const Mat s{scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, 1};
+    const Mat unscaled{1 / scale, 0, 0, 0, 0, 1 / scale, 0, 0, 0, 0, 1 / scale, 0, 0, 0, 0, 1};
+    // model_load.cpp: the fix, its weapon_turn on the bone's axes, else the base node's axes from the bone's at rest
+    const Mat fix = mat_mul(unscaled, turn != nullptr
+                                          ? turn_of(*turn)
+                                          : axes_of(mat_mul(mat_inverse(rest_worlds[b]), base_hand_rest)));
+    // models.cpp: the bone now, at the model's size, the fix; its weapons at weapon_scale
+    Mat hand = mat_mul(s, mat_mul(node_worlds[b], fix));
+    for (std::size_t c = 0; c < 11; ++c)
+        hand[c] *= weapon_scale;
+    return hand;
+}
+
 }  // namespace studio
