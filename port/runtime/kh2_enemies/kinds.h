@@ -47,13 +47,15 @@ struct Kind final {
     // the first argument its KH2 battle spawn gives it (YS::OBJ's UnitArg[1], 1:39(self, 1)): Oogie Boogie fights only at
     // 1, idles at 0; 0 for an enemy
     int unit_arg = 0;
+    // the mod whose list (kh2_enemies.txt) gives it: its own files (kh2/obj, kh2/fx, kh2/voice) are read there
+    std::string folder;
 };
 
 std::vector<Kind> read_kinds(const std::string &text);
 // A kind by name, case aside; null when the list has none.
 const Kind *find_kind(const std::vector<Kind> &kinds, const std::string &name);
-// The list in `folder` (kh2_enemies.txt), each kind kept only when its object is there (kh2/obj/<name>.mdlx; its .mset
-// when it has motions);
+// The list in `folder` (kh2_enemies.txt: the installer's "Days - KH2 Enemies" or any mod's own), each kind kept only
+// when its object is there (kh2/obj/<name>.mdlx; its .mset when it has motions), its `folder` that one;
 // `why` told once for each one left out and for a missing list.
 std::vector<Kind> load_kinds(const std::string &folder, const std::function<void(const std::string &)> &why);
 

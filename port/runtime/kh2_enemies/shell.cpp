@@ -51,6 +51,7 @@ extern "C" {
 }
 #include "../../ui/reaction_command.h"
 #include "../mods/kh2_fx_draw.h"
+#include "../mods/list.h" // the mods taken at the start: each one's KH2 enemies list
 #include "../mods/models.h"
 
 namespace {
@@ -107,6 +108,35 @@ std::vector<std::uint8_t> read_file(const fs::path &p)
 fs::path u8(const std::string &s)
 {
     return fs::path(std::u8string(s.begin(), s.end()));
+}
+
+// A file of KINGDOM HEARTS II's in a mod's kh2/ folder (`rel` under it): in `first` (a kind's own mod) when it is
+// there, else in the first mod in load order that has it -- the installer's "Days - KH2 Enemies" or any mod that
+// carries its own; empty when none has it
+fs::path kh2_file(const std::string &rel, const std::string &first = {})
+{
+    std::error_code ec;
+    if (!first.empty() && fs::is_regular_file(u8(first) / "kh2" / u8(rel), ec))
+        return u8(first) / "kh2" / u8(rel);
+    char path[1024];
+    if (khdays_mods_find(("kh2/" + rel).c_str(), path, int(sizeof(path))))
+        return u8(path);
+    return {};
+}
+
+// The mod folder holding kh2/`rel` as kh2_file finds it, "" none
+std::string kh2_mod_of(const std::string &rel, const std::string &first = {})
+{
+    const fs::path p = kh2_file(rel, first);
+    if (p.empty())
+        return {};
+    fs::path mod = p;
+    for (const auto &part : u8(rel)) {
+        (void)part;
+        mod = mod.parent_path();
+    }
+    const std::u8string m8 = mod.parent_path().u8string();
+    return {m8.begin(), m8.end()};
 }
 
 // ------------------------------------------------------------------------------------------------- the mod's files
@@ -180,6 +210,7 @@ struct Element final {
 // An enemy kind's files, read once: its script (the .mdlx's AI, BAR entry 3), its motions and skeleton, its shapes.
 struct KindFiles final {
     std::string name, mdlx;
+    std::string folder; // the mod whose list gives it (Kind::folder): its own files there first
     std::shared_ptr<const ai::Script> script;
     std::shared_ptr<const kh2::MotionSet> set;
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
@@ -289,7 +320,7 @@ int trigger_sound(const kh2::MotionAttributes::Trigger &t)
 
 // The kind's sounds (its motions' triggers 8 -- those it makes the player play too, his body's and his weapon's: the
 // keyblade's bank 500 -- and its elements'), each the mod's kh2/se/<id>.wav, decoded once
-void read_sounds(KindFiles &k, const fs::path &folder)
+void read_sounds(KindFiles &k, const std::string &folder)
 {
     std::set<int> ids;
     const auto add = [&ids](const kh2::MotionAttributes *attr) {
@@ -307,7 +338,10 @@ void read_sounds(KindFiles &k, const fs::path &folder)
         if (el.sound > 0)
             ids.insert(el.sound);
     for (const int id : ids) {
-        const std::u8string p8 = (folder / "kh2" / "se" / (std::to_string(id) + ".wav")).u8string();
+        const fs::path wav = kh2_file("se/" + std::to_string(id) + ".wav", folder);
+        if (wav.empty())
+            continue;
+        const std::u8string p8 = wav.u8string();
         const int file = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
         if (file >= 0)
             k.sounds[id] = file;
@@ -332,9 +366,9 @@ std::vector<std::uint8_t> bar_entry(const std::vector<std::uint8_t> &bar, std::u
     return {};
 }
 
-void read_effects(KindFiles &k, const fs::path &folder)
+void read_effects(KindFiles &k, const std::string &folder)
 {
-    const auto pax = bar_entry(read_file(folder / "kh2" / "obj" / (k.name + ".a.us")), 0x12);
+    const auto pax = bar_entry(read_file(kh2_file("obj/" + k.name + ".a.us", folder)), 0x12);
     if (pax.empty()) {
         khdays_log("kh2 enemies: %s has no effects (kh2/obj/%s.a.us)", k.name.c_str(), k.name.c_str());
         return;
@@ -343,7 +377,7 @@ void read_effects(KindFiles &k, const fs::path &folder)
         for (auto &b : kh2::read_effect(pax.data(), pax.size()))
             k.fx.push_back(std::make_shared<const kh2::EffectBlock>(std::move(b)));
         k.fx_elements = pax_elements(pax);
-        const auto common = read_file(folder / "kh2" / "effect" / "texcommon.dpd");
+        const auto common = read_file(kh2_file("effect/texcommon.dpd", folder));
         if (!common.empty())
             k.common = kh2::read_effect_block(common.data(), common.size(), 0);
         // each block its own pages (its pictures and the resident ones), its HD pictures numbered on from the last
@@ -369,9 +403,9 @@ void read_effects(KindFiles &k, const fs::path &folder)
 // Its model's own effects (the .mdlx's PAX: BAR entry 0x12, Hades's "hade", his hair's flame) read as its .a.us's,
 // their HD pictures in the model's own folder after its textures' (a model file's pictures run through its entries
 // in BAR order: its texture container's, then its PAX's)
-void read_model_effects(KindFiles &k, const fs::path &folder)
+void read_model_effects(KindFiles &k, const std::string &folder)
 {
-    const std::vector<std::uint8_t> mdlx = read_file(folder / "kh2" / "obj" / (k.name + ".mdlx"));
+    const std::vector<std::uint8_t> mdlx = read_file(kh2_file("obj/" + k.name + ".mdlx", folder));
     const std::vector<std::uint8_t> pax = bar_entry(mdlx, 0x12);
     if (pax.empty())
         return;
@@ -401,9 +435,9 @@ void read_model_effects(KindFiles &k, const fs::path &folder)
 
 // Its event sequences: every entry of type 0x16 in its .a.us, keyed by its name (docs/KH2_ENEMIES.md, "Event
 // sequences")
-void read_events(KindFiles &k, const fs::path &folder)
+void read_events(KindFiles &k, const std::string &folder)
 {
-    const auto bar = read_file(folder / "kh2" / "obj" / (k.name + ".a.us"));
+    const auto bar = read_file(kh2_file("obj/" + k.name + ".a.us", folder));
     const auto u32 = [&](std::size_t o) {
         return std::uint32_t(bar[o] | (bar[o + 1] << 8) | (bar[o + 2] << 16) | (std::uint32_t(bar[o + 3]) << 24));
     };
@@ -492,6 +526,9 @@ private:
     mutable int hook_ = -1; // the hooked slot (1:75), -1 none
 };
 
+// The KINGDOM HEARTS II enemies the mods hold: each mod's list (kh2_enemies.txt) in load order -- the installer's
+// "Days - KH2 Enemies", or any mod carrying the enemies its missions use, its files under its own kh2/ -- a kind in two
+// lists the first one's; `folder` the first such mod (the log's), "" none
 struct Mod final {
     bool looked = false;
     std::string folder; // empty: none
@@ -509,23 +546,33 @@ Mod &mod()
     if (m.looked)
         return m;
     m.looked = true;
-    char path[1024];
-    if (!khdays_mods_find("kh2_enemies.txt", path, int(sizeof(path)))) {
-        khdays_log("kh2 enemies: no mod holds kh2_enemies.txt (the installer's \"Days - KH2 Enemies\"): the missions' "
-                   "KH2 enemies play their stand-ins");
+    std::error_code ec;
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        const char *started = khdays_mods_started_path(i);
+        if (started == nullptr || !fs::is_regular_file(u8(started) / "kh2_enemies.txt", ec))
+            continue;
+        std::size_t added = 0;
+        for (Kind &k : load_kinds(started, [](const std::string &why) { khdays_log("%s", why.c_str()); }))
+            if (find_kind(m.kinds, k.name) == nullptr) {
+                m.kinds.push_back(std::move(k));
+                ++added;
+            }
+        khdays_log("kh2 enemies: %s's list: %zu kinds", started, added);
+        if (m.folder.empty())
+            m.folder = started;
+    }
+    if (m.folder.empty()) {
+        khdays_log("kh2 enemies: no mod holds kh2_enemies.txt (the installer's \"Days - KH2 Enemies\", or a mod's own): "
+                   "the missions' KH2 enemies play their stand-ins");
         return m;
     }
-    const fs::path folder = u8(path).parent_path();
-    const std::u8string f8 = folder.u8string();
-    m.folder.assign(f8.begin(), f8.end());
-    m.kinds = load_kinds(m.folder, [](const std::string &why) { khdays_log("%s", why.c_str()); });
-    const std::vector<std::uint8_t> shapes = read_file(folder / "kh2" / "calls.txt");
+    const std::vector<std::uint8_t> shapes = read_file(kh2_file("calls.txt"));
     const int read = khdays::kh2_enemies::read_shapes(m.calls, std::string(shapes.begin(), shapes.end()));
     if (read == 0) {
-        khdays_log("kh2 enemies: %s has no kh2/calls.txt (the calls' shapes the mod tool reads from the player's "
-                   "KINGDOM HEARTS II): the missions' KH2 enemies play their stand-ins",
-                   m.folder.c_str());
+        khdays_log("kh2 enemies: no mod has kh2/calls.txt (the calls' shapes the mod tool reads from the player's "
+                   "KINGDOM HEARTS II): the missions' KH2 enemies play their stand-ins");
         m.folder.clear();
+        m.kinds.clear();
         return m;
     }
     add_all(m.calls);
@@ -535,7 +582,7 @@ Mod &mod()
         if (tracing())
             khdays_log("kh2 enemies: %s", s.c_str());
     };
-    khdays_log("kh2 enemies: %s, %zu kinds, %d calls' shapes", m.folder.c_str(), m.kinds.size(), read);
+    khdays_log("kh2 enemies: %zu kinds, %d calls' shapes", m.kinds.size(), read);
     return m;
 }
 
@@ -549,23 +596,24 @@ KindFiles *files_of(const std::string &name)
         return it->second.get();
     std::unique_ptr<KindFiles> k;
     const Kind *kind = find_kind(m.kinds, name);
-    if (m.folder.empty() || kind == nullptr) {
-        khdays_log("kh2 enemies: %s is not in the mod's list: its stand-in plays", name.c_str());
+    if (kind == nullptr) {
+        khdays_log("kh2 enemies: %s is in no mod's list: its stand-in plays", name.c_str());
     } else if (!kind->covered) {
         khdays_log("kh2 enemies: %s's script makes calls the port does not answer yet (%s): its stand-in plays",
                    name.c_str(), kind->missing.c_str());
     } else {
         try {
-            const fs::path obj = u8(m.folder) / "kh2" / "obj";
+            const fs::path obj = u8(kind->folder) / "kh2" / "obj";
             const auto mdlx = read_file(obj / (kind->name + ".mdlx"));
             // the motion set its object entry names (Hades of the Coliseum's cups moves by B_HE030.mset); none for an
             // object with no motion set of its own (the Thresholder's Possessor: its entry names none)
-            const auto mset = read_file(obj / motion_set_name(kind->name));
+            const auto mset = read_file(kh2_file("obj/" + motion_set_name(kind->name), kind->folder));
             const auto scripts = ai::scripts_in(mdlx.data(), mdlx.size());
             if (scripts.empty())
                 throw std::runtime_error("its .mdlx holds no script");
             k = std::make_unique<KindFiles>();
             k->name = kind->name;
+            k->folder = kind->folder;
             const std::u8string p8 = (obj / (kind->name + ".mdlx")).u8string();
             k->mdlx.assign(p8.begin(), p8.end());
             k->script = std::make_shared<const ai::Script>(scripts.front().second);
@@ -578,10 +626,10 @@ KindFiles *files_of(const std::string &name)
                 model ? kh2::read_motion_skeleton(mdlx.data(), mdlx.size()) : kh2::MotionSkeleton{});
             k->shapes = read_shapes(mdlx, &k->default_groups);
             k->plays_player = kind->plays_player;
-            read_effects(*k, u8(m.folder));
-            read_model_effects(*k, u8(m.folder));
-            read_events(*k, u8(m.folder));
-            read_sounds(*k, u8(m.folder));
+            read_effects(*k, kind->folder);
+            read_model_effects(*k, kind->folder);
+            read_events(*k, kind->folder);
+            read_sounds(*k, kind->folder);
             khdays_log("kh2 enemies: %s read (%zu motions' slots, %zu bones, %zu shapes)", name.c_str(),
                        k->set->slots(), k->skeleton->joints.size(), k->shapes.size());
         } catch (const std::exception &e) {
@@ -1118,7 +1166,7 @@ int battle_health(int entry)
     if (!read) {
         read = true;
         const std::vector<std::uint8_t> file =
-            read_file(fs::path(std::u8string(mod().folder.begin(), mod().folder.end())) / "kh2" / "00battle.bin");
+            read_file(kh2_file("00battle.bin"));
         try {
             for (const kh2::BarEntry &e : kh2::bar_entries(file.data(), file.size())) {
                 if (e.name != "enmp" || e.size < 8)
@@ -2204,7 +2252,8 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
 // counter from its header, its script's main thread (trigger 3); none when it cannot be read
 void start_mission(const std::string &name)
 {
-    const std::vector<std::uint8_t> bar = read_file(u8(mod().folder) / "kh2" / "msn" / (name + ".bar"));
+    const fs::path msn = kh2_file("msn/" + name + ".bar");
+    const std::vector<std::uint8_t> bar = read_file(msn);
     const auto scripts = ai::scripts_in(bar.data(), bar.size());
     if (bar.empty() || scripts.empty()) {
         khdays_log("kh2 enemies: mission %s not read (the mod's kh2/msn/%s.bar, its script): none runs", name.c_str(),
@@ -2213,7 +2262,7 @@ void start_mission(const std::string &name)
     }
     auto m = std::make_unique<Kh2Mission>();
     m->name = name;
-    m->file = (u8(mod().folder) / "kh2" / "msn" / (name + ".bar")).string();
+    m->file = msn.string();
     const auto s32 = [&](std::size_t o) {
         std::int32_t v = 0;
         if (o + 4 <= bar.size())
@@ -2522,7 +2571,7 @@ std::uint32_t entry_record(const std::string &name)
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        const std::vector<std::uint8_t> file = read_file(kh2_file("00objentry.bin"));
         std::uint32_t count = 0;
         if (file.size() >= 8)
             std::memcpy(&count, file.data() + 4, 4);
@@ -2552,7 +2601,7 @@ std::string entry_name(std::uint32_t number)
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        const std::vector<std::uint8_t> file = read_file(kh2_file("00objentry.bin"));
         std::uint32_t count = 0;
         if (file.size() >= 8)
             std::memcpy(&count, file.data() + 4, 4);
@@ -2588,7 +2637,7 @@ std::string motion_set_name(const std::string &name)
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        const std::vector<std::uint8_t> file = read_file(kh2_file("00objentry.bin"));
         std::uint32_t count = 0;
         if (file.size() >= 8)
             std::memcpy(&count, file.data() + 4, 4);
@@ -2612,7 +2661,7 @@ const Command *command(int id)
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> sys = read_file(u8(mod().folder) / "kh2" / "03system.bin");
+        const std::vector<std::uint8_t> sys = read_file(kh2_file("03system.bin"));
         try {
             for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size()))
                 if (e.name == "cmd" && e.size >= 8) {
@@ -2651,7 +2700,7 @@ const std::vector<std::uint8_t> &system_constants()
     if (read)
         return values;
     read = true;
-    const std::vector<std::uint8_t> sys = read_file(u8(mod().folder) / "kh2" / "03system.bin");
+    const std::vector<std::uint8_t> sys = read_file(kh2_file("03system.bin"));
     try {
         for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size())) {
             if (e.name != "pref")
@@ -2690,8 +2739,7 @@ struct PlayerFiles final {
 // weapon's bone, u16 the second's: OpenKH's 03system page); his primary's bone (178), -1 when either file lacks it
 int player_hand_bone()
 {
-    const fs::path kh2 = u8(mod().folder) / "kh2";
-    const std::vector<std::uint8_t> entries = read_file(kh2 / "00objentry.bin");
+    const std::vector<std::uint8_t> entries = read_file(kh2_file("00objentry.bin"));
     std::uint32_t count = 0;
     if (entries.size() >= 8)
         std::memcpy(&count, entries.data() + 4, 4);
@@ -2704,7 +2752,7 @@ int player_hand_bone()
     }
     if (character < 0)
         return -1;
-    const std::vector<std::uint8_t> sys = read_file(kh2 / "03system.bin");
+    const std::vector<std::uint8_t> sys = read_file(kh2_file("03system.bin"));
     try {
         for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size()))
             if (e.name == "sklt" && e.size >= 8) {
@@ -2732,7 +2780,7 @@ const PlayerFiles &player_files()
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> mdlx = read_file(u8(mod().folder) / "kh2" / "obj" / "P_EX100.mdlx");
+        const std::vector<std::uint8_t> mdlx = read_file(kh2_file("obj/P_EX100.mdlx"));
         try {
             if (!mdlx.empty())
                 files.skeleton =
@@ -2746,7 +2794,7 @@ const PlayerFiles &player_files()
         for (const Shape &s : read_shapes(mdlx))
             if (s.kind == 0x302 && s.bone != kNoBone)
                 files.spheres.push_back(s);
-        const std::vector<std::uint8_t> weapon = read_file(u8(mod().folder) / "kh2" / "obj" / "W_EX010.mdlx");
+        const std::vector<std::uint8_t> weapon = read_file(kh2_file("obj/W_EX010.mdlx"));
         try {
             if (!weapon.empty())
                 files.weapon =
@@ -2757,7 +2805,7 @@ const PlayerFiles &player_files()
         files.hand = player_hand_bone();
         files.weapon_fx.name = "W_EX010";
         if (files.weapon && files.skeleton && files.hand >= 0 && std::size_t(files.hand) < files.skeleton->joints.size())
-            read_effects(files.weapon_fx, u8(mod().folder));
+            read_effects(files.weapon_fx, kh2_mod_of("obj/W_EX010.mdlx"));
         else
             khdays_log("kh2 enemies: no KH2 keyblade (the mod's kh2/obj/W_EX010.mdlx, its 00objentry.bin and "
                        "03system.bin's weapon bone: %d): a held player's swings draw no trail",
@@ -2784,7 +2832,7 @@ const AttackParam &attack_param(int atkp)
     static bool read = false;
     if (!read) {
         read = true;
-        const std::vector<std::uint8_t> battle = read_file(u8(mod().folder) / "kh2" / "00battle.bin");
+        const std::vector<std::uint8_t> battle = read_file(kh2_file("00battle.bin"));
         try {
             for (const kh2::BarEntry &e : kh2::bar_entries(battle.data(), battle.size()))
                 if (e.name == "atkp" && e.size >= 8) {
@@ -2963,7 +3011,9 @@ void Field::voice(Actor &a, int id, int priority)
     if (e.voice_shot != 0 && khdays_sound_shot_heard(e.voice_shot) && priority < e.voice_priority)
         return;
     KindFiles &k = *e.kind;
-    const fs::path folder = u8(mod().folder) / "kh2" / "voice" / k.name;
+    // its voices (kh2/voice/<name>/): its own mod's, else the first mod's that has them
+    const std::string voices = kh2_mod_of("voice/" + k.name + "/volumes.txt", k.folder);
+    const fs::path folder = u8(voices.empty() ? k.folder : voices) / "kh2" / "voice" / k.name;
     if (!k.voice_volumes_read) {
         k.voice_volumes_read = true;
         std::ifstream in(folder / "volumes.txt");
@@ -5754,8 +5804,7 @@ static std::u16string kh2_message(const char *file, const char *entry, std::uint
     auto it = read.find({file, l});
     if (it == read.end())
         it = read.emplace(std::make_pair(std::string(file), l),
-                          read_file(fs::path(std::u8string(mod().folder.begin(), mod().folder.end())) / "kh2" / "msg" /
-                                    folders[l] / file))
+                          read_file(kh2_file(std::string("msg/") + folders[l] + "/" + file)))
                  .first;
     const std::vector<std::uint8_t> &bar = it->second;
     try {
@@ -5844,7 +5893,7 @@ extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int 
 extern "C" int khdays_kh2_enemies_label(int enemy_class, unsigned short *out, int room)
 {
     char kind[128];
-    if (out == nullptr || room <= 0 || mod().folder.empty() ||
+    if (out == nullptr || room <= 0 || mod().kinds.empty() ||
         !khdays_missions_kh2_enemy_of_class(enemy_class, kind, int(sizeof(kind))))
         return 0;
     const std::u16string name = enemy_name(kind);
@@ -6228,7 +6277,7 @@ extern "C" int khdays_kh2_enemies_fits(unsigned spawner, int slot, unsigned acto
 extern "C" int khdays_kh2_enemies_ready(const char *name)
 {
     Mod &m = mod();
-    const Kind *k = m.folder.empty() ? nullptr : find_kind(m.kinds, name);
+    const Kind *k = find_kind(m.kinds, name);
     return k != nullptr && k->covered;
 }
 

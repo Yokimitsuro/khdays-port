@@ -5,7 +5,11 @@ list of kinds with which of them the port covers (every call its script makes an
 (port/runtime/kh2_enemies/shell.h).
 
     python tools/mods/kh2_enemies.py --kh2 <kh2.hed_out> --kh2-exe <KINGDOM HEARTS II FINAL MIX.exe>
-                                     [--exe <khdays-native>] [--mod "Days - KH2 Enemies"]
+                                     [--exe <khdays-native>] [--mod "Days - KH2 Enemies"] [--only NAME ...]
+
+--only makes the objects named alone, with the files every kind needs, into a mod of one's own that carries the
+enemies its missions use (the port reads every mod's kh2_enemies.txt); what they make or bring and was not named is
+told, not added.
 
 --kh2 is KH2's entries as the installer extracts them: original/obj/<name>.mdlx, .mset (the one its object entry in
 original/00objentry.bin names: Hades of the Coliseum's cups moves by B_HE030.mset) and .a.us, a boss's battle voice bank
@@ -744,9 +748,18 @@ def make_voices(kh2: Path, name: str, bank: str | None, to: Path) -> list[str]:
 
 
 def make(
-    kh2: Path, kh2_exe: Path, mod: Path, exe: Path | None = None, run: Callable[[list[str]], str] = run_exe
+    kh2: Path,
+    kh2_exe: Path,
+    mod: Path,
+    exe: Path | None = None,
+    run: Callable[[list[str]], str] = run_exe,
+    only: set[str] | None = None,
 ) -> list[str]:
-    """The calls' shapes, each kind's files and the list into mod/; what was left out, each with why."""
+    """The calls' shapes, each kind's files and the list into mod/; what was left out, each with why. `only`: those
+    objects alone (any of KH2's obj/, named or not in KINDS), exactly as asked -- a mod carrying the enemies its own
+    missions use; the objects one of them makes (1:0) or KH2 places with it that were not asked for are told, not
+    added. The files every kind needs (the calls' shapes, SHARED, the names, the command menu, the font, the
+    resident effect pictures, the keyblade's) go in whatever was asked."""
     left_out = []
     shapes = kh2_bdx.exe_calls(kh2_exe.read_bytes())
     calls_file = mod / "kh2" / "calls.txt"
@@ -802,6 +815,17 @@ def make(
             if piece not in making:
                 making[piece] = f"{piece} ({title}'s room)"
                 homes[piece] = area
+    if only is not None:
+        asked = {n.upper() for n in only}
+        making = {n: making.get(n, KINDS.get(n, n)) for n in sorted(asked)}
+        for name in making:
+            script = kh2 / "original" / "obj" / f"{name}.mdlx"
+            if not script.is_file():
+                continue
+            needs = {numbered[n][0] for n in made_numbers(script.read_bytes()) if n in numbered}
+            needs |= {c[0] for c in companions(areas, numbered, name, set(KINDS))}
+            for other in sorted(needs - set(making)):
+                left_out.append(f"{name} makes or brings {other}, not asked for (--only): its script finds none")
     for name, title in making.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         sources[1] = sources[1].with_name(motion_set_of(entries, name))
@@ -912,9 +936,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kh2-exe", type=Path, required=True, help="KINGDOM HEARTS II FINAL MIX.exe (its calls' shapes)")
     ap.add_argument("--exe", type=Path, help="khdays-native, for the calls the port answers (--kh2-ai-calls)")
     ap.add_argument("--mod", default="Days - KH2 Enemies", help="the mod folder under mods/")
+    ap.add_argument(
+        "--only",
+        nargs="+",
+        metavar="NAME",
+        help="these objects alone (KH2's obj/<NAME>.mdlx: B_EX390 W_EX010_ROXAS_LIGHT ...), into a mod of your own "
+        "that carries the enemies its missions use; what they need and were not given is told",
+    )
     args = ap.parse_args(argv)
     try:
-        left_out = make(args.kh2, args.kh2_exe, Path("mods") / args.mod, args.exe)
+        left_out = make(
+            args.kh2, args.kh2_exe, Path("mods") / args.mod, args.exe, only=set(args.only) if args.only else None
+        )
     except (OSError, RuntimeError, kh2_bdx.AiError) as e:
         print(f"kh2 enemies: {e}", file=sys.stderr)
         return 1

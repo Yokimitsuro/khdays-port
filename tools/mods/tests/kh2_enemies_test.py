@@ -238,6 +238,30 @@ class Kh2EnemiesTest(unittest.TestCase):
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
             self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-\t-\t-\t-\t-\t-\t0", kinds)
 
+    def test_only_what_is_asked(self):
+        # a mod of one's own: the objects asked for alone (any of KH2's, in KINDS or not), the shared files with them,
+        # what one makes and was not asked for told
+        with (
+            tempfile.TemporaryDirectory() as d,
+            mock.patch.object(kh2_bdx, "exe_calls", return_value=[]),
+            mock.patch.object(kh2_enemies, "entry_kinds", return_value={5: ("W_TEST", 0)}),
+            mock.patch.object(kh2_enemies, "made_numbers", return_value={5}),
+        ):
+            kh2 = Path(d) / "kh2.hed_out"
+            for name in ("M_EX010", "M_EX020", "X_NEW"):
+                self.collection(kh2, name, with_pages=False)
+            (Path(d) / "kh2.exe").write_bytes(b"MZ")
+            mod = Path(d) / "mod"
+            left = kh2_enemies.make(
+                kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n", only={"m_ex010", "X_NEW"}
+            )
+            kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()[1:]
+            self.assertEqual([k.split("\t")[:2] for k in kinds], [["M_EX010", "Soldier"], ["X_NEW", "X_NEW"]])
+            self.assertTrue((mod / "kh2" / "obj" / "X_NEW.mdlx").is_file())
+            self.assertFalse((mod / "kh2" / "obj" / "M_EX020.mdlx").exists())
+            self.assertTrue((mod / "kh2" / "calls.txt").is_file())
+            self.assertIn("M_EX010 makes or brings W_TEST, not asked for (--only): its script finds none", left)
+
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
             kh2 = Path(d) / "kh2.hed_out"

@@ -130,6 +130,7 @@ std::vector<Kind> load_kinds(const std::string &folder, const std::function<void
             why("kh2 enemies: " + k.name + "'s .mdlx is missing; left out");
             continue;
         }
+        k.folder = folder;
         kept.push_back(std::move(k));
     }
     return kept;

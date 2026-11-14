@@ -29,6 +29,22 @@ read of KH2, what the port does with it, and what is not known yet.
   Thresholder's Possessor `B_BB130`, drawn by its effects alone) needs its `.mdlx` only, its `.mset` and `.a.us` taken
   when it has them; a sound whose bank the kind's own `.a.us` lacks is taken from another object's that carries it
   (the Sorcerer's cubes `M_EX870` play bank 272, the Sorcerer's `.a.us`'s).
+- **A mod of one's own** (the maintainer, 2026-11-14: mods carry the enemies they use, as room mods carry maps; each
+  mod's author answers for what it carries): any mod may hold a `kh2_enemies.txt` and the files of its kinds under its
+  own `kh2/`, made with `--only` and the mod's folder:
+
+      python tools/mods/kh2_enemies.py --kh2 <kh2.hed_out> --exe khdays-native.exe \
+          --kh2-exe "<1.5+2.5>/KINGDOM HEARTS II FINAL MIX.exe" --mod "My mission" \
+          --only B_EX390 W_EX010_ROXAS_LIGHT W_EX010_ROXAS_DARK
+
+  `--only` makes exactly the objects named (any of KH2's `obj/`, in the tool's list or not) and the files every kind
+  needs -- the calls' shapes, `00battle.bin`, `00objentry.bin`, `03system.bin`, the names (`msg/`), the command menu
+  and marks (`field2d/`), KH2's font, the resident effect pictures, the player's skeleton and keyblade; an object one
+  of them makes (1:0) or KH2 places with it that was not named is told, not added (Roxas's keyblades for `B_EX390`).
+  The port reads every started mod's list in load order (a kind in two, the first one's; `Mod` in `shell.cpp`), each
+  kind's own files (`obj/`, `fx/`, its voices) in its own mod, and the files they share from the first mod that has
+  them (`kh2_file`: the VFS's order), the installer's "Days - KH2 Enemies" or another. Roxas with his keyblades so:
+  37 MB.
 - **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
   the mod (or with one that does not cover the kind) gets the class written after the name in its place; without a
   class the mission is left out for that player.
