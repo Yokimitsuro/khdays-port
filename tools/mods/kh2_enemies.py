@@ -140,6 +140,11 @@ KINDS = {
     "B_EX400": "Larxene",
     # FINAL MIX's Lingering Will
     "B_EX420": "Lingering Will",
+    # his Absent Silhouette and his data battle (hb34's b_80 and b_81), and what his script makes: his books (their
+    # meteors, storms, tornados, shields) and his illusion (it takes the player away: Breakout, Dispel)
+    "B_EX370": "Zexion",
+    "B_EX380": "Zexion's book",
+    "B_EX410": "Zexion's illusion",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -164,6 +169,7 @@ VOICES = {
     "B_EX160_LV99": "n_berserker",
     "B_EX390": "n_roxas",
     "B_EX400": "n_larxene",
+    "B_EX370": "n_zexion",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -658,6 +664,18 @@ def effect_sounds(a_us: bytes) -> set[int]:
     return set()
 
 
+def script_sounds(bar: bytes) -> set[int]:
+    """The sounds a BAR's scripts play themselves (1:318 trap_obj_play_se, 6:70 trap_obj_play_se_loop: the object and
+    KH2's sound id, bank x 1000 + number), pushed right before or given to a routine that passes them on: Zexion's
+    book's pages."""
+    out = set()
+    for _, s in kh2_bdx.scripts_in(bar):
+        code = kh2_bdx.walk(s)
+        for call in ((1, 318), (6, 70)):
+            out |= {v for v in kh2_bdx.argument_values(s, code, call, 2, 1) if v > 0}
+    return out
+
+
 def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
     """Each sound in `ids` into to/<id>.wav, its first track's recording at the sound's volume, from its bank: bank 0
     KH2's common one, the others the kind's own (its .a.us's remastered se/obj/se<bank>), else another object's that
@@ -764,6 +782,9 @@ def make(
     resident effect pictures, the keyblade's) go in whatever was asked."""
     left_out = []
     shapes = kh2_bdx.exe_calls(kh2_exe.read_bytes())
+    # the walks read a routine's stack past these calls (kh2_bdx.SHAPES): Zexion's book and illusion, made by a routine
+    # given their numbers after a 1:84, were not found while none was known
+    kh2_bdx.SHAPES.update({(kind, number): (count, int(back)) for kind, number, count, back in shapes})
     calls_file = mod / "kh2" / "calls.txt"
     calls_file.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# KINGDOM HEARTS II's calls: kind:number arguments gives-back (read from its executable, kh2_enemies.py)"]
@@ -817,6 +838,21 @@ def make(
             if piece not in making:
                 making[piece] = f"{piece} ({title}'s room)"
                 homes[piece] = area
+    # the objects each kind's script makes (1:0) go with it: the Lingering Will's B_EX430, Zexion's books and illusions
+    # (until 2026-11-14 only the room bosses' were taken, so the Will's second object was never in the mod)
+    todo = list(making)
+    while todo:
+        name = todo.pop()
+        script = kh2 / "original" / "obj" / f"{name}.mdlx"
+        if not script.is_file():
+            continue
+        for number in sorted(made_numbers(script.read_bytes())):
+            made = numbered.get(number, ("", -1))[0]
+            if made and made not in making:
+                making[made] = f"{made} ({making[name]}'s)"
+                if name in homes:  # bound to its maker's room
+                    homes.setdefault(made, homes[name])
+                todo.append(made)
     if only is not None:
         asked = {n.upper() for n in only}
         making = {n: making.get(n, KINDS.get(n, n)) for n in sorted(asked)}
@@ -846,8 +882,10 @@ def make(
         if model and not copy_pages(kh2 / "remastered" / "obj" / f"{name}.mdlx", obj / name):
             left_out.append(f"{name} ({title}): its model's HD pictures (its own PS2 pictures used)")
         copy_pages(kh2 / "remastered" / "obj" / f"{name}.a.us", mod / "kh2" / "fx" / name)
-        sounds = (motion_sounds(sources[1].read_bytes()) if sources[1].is_file() else set()) | (
-            effect_sounds(sources[2].read_bytes()) if sources[2].is_file() else set()
+        sounds = (
+            (motion_sounds(sources[1].read_bytes()) if sources[1].is_file() else set())
+            | (effect_sounds(sources[2].read_bytes()) if sources[2].is_file() else set())
+            | script_sounds(sources[0].read_bytes())
         )
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)

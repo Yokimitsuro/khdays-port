@@ -23,6 +23,12 @@ int khdays_sound_shot_play(int file, float volume, float pan);
 int khdays_sound_shot_heard(int id);
 void khdays_sound_shot_end(int id);
 
+/* File `file` heard over and over from its start until ended (a KH2 enemy's looping sound, 6:70): its number, 0 none. */
+int khdays_sound_shot_loop(int file, float volume, float pan);
+
+/* Sound `id` faded out over `seconds`, then ended (at once for 0 or less; 6:71). */
+void khdays_sound_shot_fade(int id, float seconds);
+
 /* Every sound heard stopped (an area left). */
 void khdays_sound_shots_stop(void);
 

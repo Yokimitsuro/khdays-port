@@ -817,10 +817,32 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   a point, measured to the shape's surface (`trap_target_searcher_search_obj`). `--only B_EX420 B_EX430` makes a mod
   of him. **Seen** (2026-11-14, the coliseum, a walk pressing X and A by turns for three minutes): his first mode
   ("SWORD & KNUCKLE") -- `atk_sword`, `atk_knuckle`, `atk_whip`, his high-speed dashes and their combos, his revenge --
-  his effects and his 96 sounds, the player struck from 359 to 169; `B_EX430` not yet made by then.
+  his effects and his 96 sounds, the player struck from 359 to 169; `B_EX430` not yet made by then. Until
+  2026-11-14 the mod tool took the objects a kind's script makes only for the bosses bound to their rooms, so the
+  installer's mod lacked `B_EX430` and his KH2 mission (`DC07_FM_NAZO`).
+- **Zexion** `B_EX370` (his Absent Silhouette and his data battle: hb34's `b_80` and `b_81`; voice bank `n_zexion`),
+  with what his script makes (1:0, through a routine given the number: the tool reads the stacks past KH2's calls
+  with their shapes from its executable, and from the routines states and threads begin at): his illusion
+  `B_EX410` ("Sora (Book)" in KH2's commands: it takes the player away, motion 255, holding him) and his nine books
+  `B_EX380` (meteors, storms, tornados, shields). Calls: 1:318 and 6:70 his own sounds (KH2's sound id; the book's
+  pages 391053, a loop 391052 faded by 6:71 -- `sound_shots` now loop and fade), 0:104 the area's background sounds
+  (none of KH2's in Days's rooms: nothing), 1:42 and 1:43 the control of a type of object taken and given back
+  (`YS::OBJ::ControlOff` / `_OVR_is_control`, type 0 the player: Days's players locked as Days's own lock locks them,
+  a join in `Ov022_TranslateCommandToAction` -- as he dies), 1:187 and 1:188 the prize drain (`YS::STATUS::IsPrizeDrain`:
+  each prize taken where it lies; a join in `Ov002_CollectNearbySpots` takes every one for the frame, homing to the
+  player), 1:272 the dead mark (+ 0x9b8 bit 2, which an enemy's end now sets too), 1:305 and 1:306 the camera's eye
+  and the point it looks at (Days's camera's last commit), 1:359 and 1:360 the command menu in his own pictures
+  (Days's deck is its own: not shown), 10:56 a friend's warp point (none in Days). **Seen** (2026-11-14, the
+  coliseum, level 99, a walk pressing X and A): his capture (`atk_capture`: the illusion takes the player,
+  `success_capture` shouted), his illusion (`start_illusion` at the illusion's trigger 10: the room's light out, his
+  voice, his loop, nine books made, the illusion ended and the player given back), his flight (`move_to_fly_height`,
+  `fly_target_round`, `fly_target_away`), his lexicon (`atk_dic_start`, then the hit of atkp 2004 opening his book:
+  the player's top commands his pages, 714 offered and taken eight times, a page each), the books' meteors. Fixed on
+  the way: 1:210 finds Days's players by KH2's player's part (1), 1:13 queues (below), 1:11 on a player gives him
+  back, class 5 has no pull, a motion's attack stands for 2:96, a script's own "dead" is counted (dead_mark).
 - **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
   `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
-  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Zexion (`B_EX370`: 22).
+  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
 
 ### Bosses bound to their rooms
 
@@ -1108,6 +1130,12 @@ Dusk's (group 5: 69, Reversal).
   build's YS::MOTION flags name the bit range 2 sets (+ 0x34 bit 4) FLAG_CANCEL, the bits of ranges 0 and 1 FLAG_IDLE
   and FLAG_CONTROL; read as "back to idle", range 2 from frame 0 had let the player go as Roxas's Reversal began -- one
   at its end lets him go at once (Cerberus's). A defeated enemy's thread takes him no more.
+- **An enemy's own next motion** (1:13 on itself, `trap_sysobj_motion_push` -> `YS::MOTION::push_queue`): KH2 keeps a
+  ring of motions with their blends at the controller's + 0x44 (its ends + 0x3c and + 0x40), and `YS::MOTION::add_time`
+  takes the first as the motion playing reaches its end (else the motion goes round its loop); a motion started empties
+  it. The port queues it (`Playing::queued`) and takes it in the tick the motion ends (its ended bit, a loop's as it
+  goes round) or blends back (range 2), as it did 2:87's idle; it played it at once until 2026-11-14 -- Zexion's
+  illusion, asking 201 and then 202, skipped 201, whose trigger 10 (frame 130) calls Zexion on to his book.
 - **Seen** (the Armored Knight alone, Roxas attacking, the HD PACK; the presses by a test switch): Rising Sun from its
   spin, then 427 four times more, each a flight and a blow of 490 (its last Days hit's 49 times 10), the knight
   defeated in the fifth.

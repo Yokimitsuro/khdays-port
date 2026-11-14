@@ -417,7 +417,7 @@ bool Actor::play(int id, float blend, float start, bool restart)
     motion.cued = motion.time;
     motion.cue_start = true;
     motion.looped = false;
-    motion.queued = -1;
+    motion.queued.clear();
     ++motion.started;
     motion.ended = false;
     set_bits(field::kStatus, bit::kMotionEnded, false);

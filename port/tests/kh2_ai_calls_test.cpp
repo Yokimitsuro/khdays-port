@@ -2302,6 +2302,76 @@ void test_data_roxas()
     CHECK(world.menu == duel && world.menu_target == &twin);
 }
 
+// A made-up field for Zexion's calls: the sounds asked, the control taken, the prize drain, the camera
+struct ZexionWorld final : kh::World {
+    std::vector<std::pair<int, bool>> sounds;
+    std::vector<std::pair<int, float>> fades;
+    std::vector<std::pair<int, bool>> controls;
+    std::vector<bool> drains;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    int sound(kh::Object &, int id, bool loop) override
+    {
+        sounds.emplace_back(id, loop);
+        return 40 + int(sounds.size());
+    }
+    void sound_fade(int handle, float ticks) override
+    {
+        fades.emplace_back(handle, ticks);
+    }
+    void control(int type, bool off) override
+    {
+        controls.emplace_back(type, off);
+    }
+    void prize_drain(bool on) override
+    {
+        drains.push_back(on);
+    }
+    bool camera_view(kh::Vec3 &eye, kh::Vec3 &at) override
+    {
+        eye = {1.0F, -200.0F, 3.0F};
+        at = {4.0F, -100.0F, 6.0F};
+        return true;
+    }
+};
+
+void test_zexion()
+{
+    Rig rig;
+    ZexionWorld world;
+    kh::Actor zexion(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "zexion");
+    zexion.world = &world;
+    const ai::Value self = ai::Value::of_address(zexion.address());
+    const auto i = ai::Value::of_int;
+    float v[4] = {};
+    // 1:318 a sound (0x60708 none), 6:70 a looping one and its handle, 6:71 its fade (none for a handle of 0)
+    call(rig, zexion, 1, 318, {self, i(391053)});
+    call(rig, zexion, 1, 318, {self, i(0x60708)});
+    const int loop = call(rig, zexion, 6, 70, {self, i(391052)}).i();
+    call(rig, zexion, 6, 71, {i(loop), i(30)});
+    call(rig, zexion, 6, 71, {i(0), i(30)});
+    CHECK(world.sounds == (std::vector<std::pair<int, bool>>{{391053, false}, {391052, true}}));
+    CHECK(loop == 42 && world.fades.size() == 1 && world.fades[0].first == 42 && world.fades[0].second == 30.0F);
+    // 1:42, 1:43 the control of a type off and on; 1:187, 1:188 the prize drain
+    call(rig, zexion, 1, 42, {i(0)});
+    call(rig, zexion, 1, 43, {i(1)});
+    call(rig, zexion, 1, 187, {});
+    call(rig, zexion, 1, 188, {});
+    CHECK(world.controls == (std::vector<std::pair<int, bool>>{{0, true}, {1, false}}));
+    CHECK(world.drains == (std::vector<bool>{true, false}));
+    // 1:272 the dead mark (+ 0x9b8 bit 2)
+    CHECK(call(rig, zexion, 1, 272, {self}).i() == 0);
+    zexion.set_bits(kh::field::kFade, kh::bit::kDeadMark, true);
+    CHECK(call(rig, zexion, 1, 272, {self}).i() == 1);
+    // 1:305, 1:306 the camera's eye and the point it looks at
+    rig.memory.read(call(rig, zexion, 1, 305, {}).bits, v, sizeof v);
+    CHECK(v[0] == 1.0F && v[1] == -200.0F && v[2] == 3.0F && v[3] == 1.0F);
+    rig.memory.read(call(rig, zexion, 1, 306, {}).bits, v, sizeof v);
+    CHECK(v[0] == 4.0F && v[1] == -100.0F && v[2] == 6.0F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -2330,6 +2400,7 @@ int main()
     test_data_saix();
     test_hit_event();
     test_data_roxas();
+    test_zexion();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

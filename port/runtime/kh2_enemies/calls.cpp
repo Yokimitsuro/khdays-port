@@ -1197,14 +1197,19 @@ void add_motions(ai::Calls &calls)
         Object *o = object_of(m, a[0]);
         a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kStatus) & bit::kOtherMotion) != 0 ? 1 : 0);
     });
-    // 1:13 a motion asked of the object's controller (FUN_1403c8310: its queue of four, taken at its next update):
-    // played at once here; a player's own (Cerberus's 0, its idle, at the end of its reaction command) gives the
-    // player back to Days
+    // 1:13 a motion asked of the object's controller to follow the one it plays (trap_sysobj_motion_push ->
+    // YS::MOTION::push_queue: its ring of motions, which add_time takes from as the motion reaches its end): queued
+    // (Playing::queued), played at once when none plays. Until 2026-11-14 it was played at once: Zexion's illusion,
+    // asking 201 and then 202, skipped 201 and never called him on to his book ("start_illusion" at 201's trigger 10).
+    // A player's own (Cerberus's 0, its idle, at the end of its reaction command) gives the player back to Days
     calls.set(1, 13, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
-        if (Actor *x = o != nullptr ? o->actor() : nullptr)
-            x->play(std::int32_t(a[1].bits), a[2].f(), 0.0F);
-        else if (is_player(o) && running(m)->world != nullptr)
+        if (Actor *x = o != nullptr ? o->actor() : nullptr) {
+            if (x->motion.id < 0)
+                x->play(std::int32_t(a[1].bits), a[2].f(), 0.0F);
+            else
+                x->motion.queued.push_back({std::int32_t(a[1].bits), a[2].f()});
+        } else if (is_player(o) && running(m)->world != nullptr)
             running(m)->world->player_own_motion(*o, std::int32_t(a[1].bits));
     });
     // 1:238 the motion its controller plays (+ 0x184, FUN_14042d3b0): Cerberus's reaction command waits for the
@@ -1215,14 +1220,27 @@ void add_motions(ai::Calls &calls)
     });
     // 1:11 a motion from its start, blended (FUN_1403c86a0 on actor + 0x158); 1:61 from a frame; 1:12 one that is not
     // already playing (FUN_1403c6dc0); 1:67 a motion's length (FUN_1403c78f0's motion)
-    calls.set(1, 11, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->play(std::int32_t(a[1].bits), a[2].f(), 0.0F);
+    // on a player (no actor of his own: Days's) his own motion started at once -- before, the call fell to the running
+    // actor, which played the player's idle itself (Zexion's illusion ending kept the player in its hands for good)
+    const auto own_motion_now = [](ai::Machine &m, const ai::Value &record, int id) {
+        Object *o = object_of(m, record);
+        if (o == nullptr || o->actor() != nullptr || !is_player(o))
+            return false;
+        if (World *w = running(m)->world)
+            w->player_own_motion_now(*o, id);
+        return true;
+    };
+    calls.set(1, 11, [own_motion_now](ai::Machine &m, std::span<ai::Value> a) {
+        if (!own_motion_now(m, a[0], std::int32_t(a[1].bits)))
+            self_of(m, a[0])->play(std::int32_t(a[1].bits), a[2].f(), 0.0F);
     });
-    calls.set(1, 61, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->play(std::int32_t(a[1].bits), a[3].f(), a[2].f());
+    calls.set(1, 61, [own_motion_now](ai::Machine &m, std::span<ai::Value> a) {
+        if (!own_motion_now(m, a[0], std::int32_t(a[1].bits)))
+            self_of(m, a[0])->play(std::int32_t(a[1].bits), a[3].f(), a[2].f());
     });
-    calls.set(1, 12, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->play(std::int32_t(a[1].bits), a[2].f(), 0.0F, false);
+    calls.set(1, 12, [own_motion_now](ai::Machine &m, std::span<ai::Value> a) {
+        if (!own_motion_now(m, a[0], std::int32_t(a[1].bits)))
+            self_of(m, a[0])->play(std::int32_t(a[1].bits), a[2].f(), 0.0F, false);
     });
     const auto length = [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -1386,7 +1404,7 @@ void add_motions(ai::Calls &calls)
         if (way.v[0] != 0.0F || way.v[2] != 0.0F)
             x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
         x->play(front ? 23 : 24, 0.0F, 0.0F);
-        x->motion.queued = 0;
+        x->motion.queued.push_back({0, 0.0F});
         slide(*x, m, a[1].bits, a[2].f());
     });
     // 2:2 a small hit (trap_enemy_exec_damage_small, FUN_140431c40 -> FUN_1403d4260): off the ground (FUN_1403ba9a0,
@@ -1410,7 +1428,7 @@ void add_motions(ai::Calls &calls)
             if (way.v[0] != 0.0F || way.v[2] != 0.0F)
                 x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
             x->play(own(front ? 14 : 15), 0.0F, 0.0F);
-            x->motion.queued = 0;
+            x->motion.queued.push_back({0, 0.0F});
             m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
             return;
         }
@@ -1418,7 +1436,7 @@ void add_motions(ai::Calls &calls)
         m.memory().read(hit + 0x24, &kind, 1);
         const bool first = kind == 0 || (kind >= 2 && kind <= 5);
         x->play(own((front ? 10 : 12) + (first ? 0 : 1)), 0.0F, 0.0F);
-        x->motion.queued = 0;
+        x->motion.queued.push_back({0, 0.0F});
         slide(*x, m, hit, a[2].f());
     });
     // 2:86 a hit's push back (trap_damage_get_hitback, FUN_1404321a0 -> FUN_1403ceab0; YS::DAMAGE::get_hitback in the
@@ -2743,11 +2761,16 @@ void add_world(ai::Calls &calls)
     // Days's deck keeps its commands: none here
     calls.set(1, 365, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:210 the first object of the field whose entry's + 0x4c is a number, into an AI handle's + 4
-    // (trap_obj_search_by_part, FUN_14042de30 -> FUN_1403b4180): Demyx's water clones find him so (4002)
+    // (trap_obj_search_by_part, FUN_14042de30 -> FUN_1403b4180): Demyx's water clones find him so (4002). Days's
+    // players are KH2's player, whose part is 1 (1:213): Zexion's illusion, told its target's part (1:218 of 1:213),
+    // finds the player so -- before, it found no one, faded out and left as it was made
     calls.set(1, 210, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *me = running(m);
         std::uint32_t found = 0;
-        if (me->world != nullptr)
+        if (me->world != nullptr && (a[1].bits & 0xffffu) == 1u) {
+            if (Object *p = me->world->player(*me))
+                found = p->address();
+        } else if (me->world != nullptr)
             for (Actor *x : me->world->objects())
                 if (const std::uint32_t record = x->u32(field::kEntry);
                     record != 0 && (m.memory().u32(record + 0x4c) & 0xffffu) == (a[1].bits & 0xffffu)) {
@@ -2800,6 +2823,85 @@ void add_world(ai::Calls &calls)
         if (x->world != nullptr)
             x->world->voice(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits));
     });
+    // 1:318 a sound of the object's (trap_obj_play_se, FUN_14042c060 -> FUN_1403dadf0: KH2's sound id, bank x 1000 +
+    // number; 0x60708 none -- the PC build leaves that one out), heard where it is: Zexion's book's pages
+    calls.set(1, 318, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        World *w = running(m)->world;
+        if (o != nullptr && w != nullptr && a[1].bits != 0x60708u)
+            w->sound(*o, std::int32_t(a[1].bits), false);
+    });
+    // 6:70 the same, looping until faded (Ts::trap_obj_play_se_loop, FUN_14053f210): its handle back (the sound's
+    // + 0x14 in KH2's list, which 6:71 looks for)
+    calls.set(6, 70, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(o != nullptr && w != nullptr ? w->sound(*o, std::int32_t(a[1].bits), true) : 0);
+    });
+    // 6:71 a sound 6:70 gave faded out over a time (Ts::trap_obj_fadeout_se, FUN_14053f290 -> FUN_1401de320; 0 at
+    // once: Zexion's the moment his loop's state ends)
+    calls.set(6, 71, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && std::int32_t(a[0].bits) > 0)
+            w->sound_fade(std::int32_t(a[0].bits), float(std::int32_t(a[1].bits)));
+    });
+    // 0:104 the area's background sounds on (> 0) or quiet (trap_sound_set_bgse_volume, FUN_14041e840: bit 3 of the
+    // sounds of kind 2, + 0x35, in KH2's list): Days's rooms play none of KH2's, so nothing
+    calls.set(0, 104, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:42, 1:43 the control of every object of a type off and on (func_obj_control_off / _on -> YS::OBJ::ControlOff,
+    // ControlOn: YS::ControlFlag's bit, type 0 the player, 1 his party, under 25): Zexion takes both away as he dies
+    calls.set(1, 42, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->control(std::int32_t(a[0].bits), true);
+    });
+    calls.set(1, 43, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->control(std::int32_t(a[0].bits), false);
+    });
+    // 1:187, 1:188 the prizes drained and no longer (trap_status_prize_drain_start / _end: DAT_142a11400 bit 3, which
+    // YS::STATUS::IsPrizeDrain reads in each prize's check_get: taken by the player where it lies); Zexion's last
+    // thread sets it for one tick
+    calls.set(1, 187, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->prize_drain(true);
+    });
+    calls.set(1, 188, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->prize_drain(false);
+    });
+    // 1:272 whether the object is counted defeated (trap_obj_is_dead, FUN_14042dd10: + 0x9b8 bit 2, 1:328's dead mark,
+    // which its end sets too): Zexion asks it of his books
+    calls.set(1, 272, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kFade) & bit::kDeadMark) != 0 ? 1 : 0);
+    });
+    // 1:305, 1:306 the camera's eye and the point it looks at (trap_camera_eye, trap_camera_at: FUN_14019ce40(1)'s
+    // FUN_14019cfb0 / FUN_14019cff0): Days's camera's last; Zexion puts his books where the player looks
+    calls.set(1, 305, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 eye{}, at{};
+        World *w = running(m)->world;
+        if (w == nullptr || !w->camera_view(eye, at))
+            eye = running(m)->place();
+        Vec v;
+        v.v[0] = eye[0], v.v[1] = eye[1], v.v[2] = eye[2], v.v[3] = 1.0F;
+        a[0] = give_vec(m, "1:305", v);
+    });
+    calls.set(1, 306, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 eye{}, at{};
+        World *w = running(m)->world;
+        if (w == nullptr || !w->camera_view(eye, at))
+            at = running(m)->place();
+        Vec v;
+        v.v[0] = at[0], v.v[1] = at[1], v.v[2] = at[2], v.v[3] = 1.0F;
+        a[0] = give_vec(m, "1:306", v);
+    });
+    // 1:359, 1:360 the command menu drawn in the object's own pictures and back (trap_obj_hook_command_image ->
+    // YS::STDOBJ::hook_command_image: its .mdlx's entries of type 0x18 and 0x19, dk::COMMAND_DRAW's special image;
+    // reset_command_image): Days's deck is its own, so nothing -- Zexion's book shows the menu his way in KH2
+    calls.set(1, 359, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 360, [](ai::Machine &, std::span<ai::Value>) {});
+    // 10:56 a friend's warp point given up (kn::trap_friend_invalidate_warp_point, FUN_1405371f0 -> FUN_1401b4f00: a
+    // point and a radius): Days's field has none of KH2's party, so nothing
+    calls.set(10, 56, [](ai::Machine &, std::span<ai::Value>) {});
     // 6:24 what the room's collision pushed it by this tick (trap_obj_get_bg_press, FUN_14053e080: + 0xa78, which
     // KH2's actor's update writes, FUN_1403b9420; the shell writes Days's push there): the Volcanic Lord's charge ends
     // on a wall so

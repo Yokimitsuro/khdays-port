@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -256,9 +257,11 @@ struct Playing final {
     float cued = 0.0F;
     bool cue_start = false, looped = false;
     unsigned started = 0; // a new number each motion started: the pose shown then is the blend's from
-    // a motion asked to follow this one (FUN_1403c8310's queue at + 0x50 .. + 0x58: 2:87's idle), -1 none: taken when
-    // this one blends back (its range 2) or ends; a motion started empties the queue (FUN_1403c86a0's + 0x50)
-    int queued = -1;
+    // the motions asked to follow this one, each with its blend (YS::MOTION::push_queue: a ring at + 0x44, its ends
+    // + 0x3c and + 0x40 -- 1:13, 2:87's idle): the first taken when this one blends back (its range 2) or reaches its
+    // end (add_time takes it there, else the motion goes round its loop); a motion started empties it
+    // (FUN_1403c86a0's + 0x50)
+    std::deque<std::pair<int, float>> queued;
     bool ended = false;
     int after = -1, landing = 5; // + 0x118 / + 0x11c: a jump's next motions (1:55's flag), -1 none
 };
@@ -405,6 +408,26 @@ public:
     // 1:262: a line of the actor's voice (YS::OBJ's voice -> YS::STDOBJ::_OVR_voice -> YS::VOICE::request: the sound
     // `id` of its voice bank, one at a time, a new one taking the place of one asked with no higher a priority)
     virtual void voice(Actor &, int /*id*/, int /*priority*/) {}
+    // 1:318, 6:70: KH2's sound `id` heard at the object (its kind's: bank x 1000 + number), looping until faded when
+    // `loop`; a number for it back (6:71's), 0 none
+    virtual int sound(Object &, int /*id*/, bool /*loop*/)
+    {
+        return 0;
+    }
+    // 6:71: a sound `sound` gave faded out over `ticks` (60 a second), ended at once for 0
+    virtual void sound_fade(int /*handle*/, float /*ticks*/) {}
+    // 1:42, 1:43: the control of every object of a type taken away or given back (YS::OBJ::ControlOff / ControlOn:
+    // YS::ControlFlag's bit of the type, which YS::OBJ::_OVR_is_control tests against the object's get_type: 0 the
+    // player, 1 his party)
+    virtual void control(int /*type*/, bool /*off*/) {}
+    // 1:187: the field's prizes all taken by the player where they lie (YS::STATUS::IsPrizeDrain, which each prize's
+    // check_get reads: PRIZEEFFECT::get on the player); 1:188 ends it
+    virtual void prize_drain(bool /*on*/) {}
+    // 1:305, 1:306: the camera's eye and the point it looks at (KH2's units); whether there is a camera
+    virtual bool camera_view(Vec3 & /*eye*/, Vec3 & /*at*/)
+    {
+        return false;
+    }
     // A segment of KH2's world against the room's collision (Days's, under the actor): where it first meets it
     // (FUN_14040c2b0's cast: 6:51, 1:141's ground under a point, 1:248's)
     virtual bool ray(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
@@ -513,6 +536,12 @@ public:
     }
     // 1:13 on a player: a motion of its own asked for (FUN_1403c8310), 0 its idle -- the script gives it back
     virtual void player_own_motion(Object & /*player*/, int /*id*/) {}
+    // 1:11, 1:12, 1:61 on a player: a motion of its own started at once (start_motion, not the queue): given back now
+    // (Zexion's illusion, ending, starts the player's idle so)
+    virtual void player_own_motion_now(Object &player, int id)
+    {
+        player_own_motion(player, id);
+    }
     // 1:148 / 1:1, 1:4, 1:79 on a player: put at a place, turned to a yaw (KH2's)
     virtual void player_place(Object & /*player*/, const Vec3 & /*place*/) {}
     virtual void player_yaw(Object & /*player*/, float /*yaw*/) {}

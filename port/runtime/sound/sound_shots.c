@@ -18,7 +18,10 @@ typedef struct Voice {
     const KhdaysReplacement *sound;
     double position; /* in the file's frames */
     float left, right;
-    int id; /* what khdays_sound_shot_play gave back */
+    int id;              /* what khdays_sound_shot_play gave back */
+    int loop;            /* heard again from its start at its end, until ended */
+    float gain;          /* 1, lowered over a fade */
+    float fade_seconds;  /* a fade out asked: its length (0 none) */
 } Voice;
 
 static SRWLOCK lock = SRWLOCK_INIT;
@@ -79,7 +82,7 @@ int khdays_sound_shot_start(int file, float volume, float pan)
     return khdays_sound_shot_play(file, volume, pan) != 0;
 }
 
-int khdays_sound_shot_play(int file, float volume, float pan)
+static int start_voice(int file, float volume, float pan, int loop)
 {
     int started = 0;
     if (pan < -1.0f)
@@ -105,12 +108,40 @@ int khdays_sound_shot_play(int file, float volume, float pan)
             if (++next_id <= 0)
                 next_id = 1;
             v->id = next_id;
+            v->loop = loop;
+            v->gain = 1.0f;
+            v->fade_seconds = 0.0f;
             started = next_id;
         }
     }
     InterlockedExchange(&heard, voice_count);
     ReleaseSRWLockExclusive(&lock);
     return started;
+}
+
+int khdays_sound_shot_play(int file, float volume, float pan)
+{
+    return start_voice(file, volume, pan, 0);
+}
+
+int khdays_sound_shot_loop(int file, float volume, float pan)
+{
+    return start_voice(file, volume, pan, 1);
+}
+
+void khdays_sound_shot_fade(int id, float seconds)
+{
+    if (!(seconds > 0.0f)) {
+        khdays_sound_shot_end(id);
+        return;
+    }
+    AcquireSRWLockExclusive(&lock);
+    for (int i = 0; i < voice_count; ++i)
+        if (voices[i].id == id) {
+            voices[i].fade_seconds = seconds;
+            break;
+        }
+    ReleaseSRWLockExclusive(&lock);
 }
 
 int khdays_sound_shot_heard(int id)
@@ -155,12 +186,16 @@ void khdays_sound_shots_mix(uint32_t rate, float gain, float out[2])
     AcquireSRWLockExclusive(&lock);
     for (int i = 0; i < voice_count;) {
         Voice *v = &voices[i];
-        if (v->position >= (double)v->sound->frames) {
+        if (v->position >= (double)v->sound->frames && v->loop)
+            v->position -= (double)v->sound->frames * (double)(long long)(v->position / (double)v->sound->frames);
+        if (v->fade_seconds > 0.0f)
+            v->gain -= 1.0f / (v->fade_seconds * (float)rate);
+        if (v->position >= (double)v->sound->frames || v->gain <= 0.0f) {
             voices[i] = voices[--voice_count];
             continue;
         }
-        out[0] += gain * v->left * khdays_replacement_sample(v->sound, v->position, 0);
-        out[1] += gain * v->right * khdays_replacement_sample(v->sound, v->position, 1);
+        out[0] += gain * v->gain * v->left * khdays_replacement_sample(v->sound, v->position, 0);
+        out[1] += gain * v->gain * v->right * khdays_replacement_sample(v->sound, v->position, 1);
         v->position += (double)v->sound->rate / (double)rate;
         ++i;
     }

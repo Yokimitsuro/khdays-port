@@ -362,7 +362,18 @@ def argument_values(s: Script, code: dict[int, Instruction], call: tuple[int, in
     place the reached code makes it: pushed there, or a routine's parameter its callers give (their stacks there, a
     few calls up)."""
     found: set[int] = set()
-    entries = sorted({c for ins in code.values() for c in ins.calls} | {e for _, e in s.triggers})
+    # where a routine begins: what the code calls, the triggers', the states' and the threads' pushed right before
+    # their start (Zexion's state that gives his book's number to the routine making it, read from the routine called
+    # before it, found nothing; his book's thread's page sound neither)
+    threads = set()
+    for thread_call, (thread_count, thread_at) in THREAD_CALLS.items():
+        threads |= _pushed_routines(s, code, thread_call, thread_count, (thread_at,))
+    entries = sorted(
+        {c for ins in code.values() for c in ins.calls}
+        | {e for _, e in s.triggers}
+        | state_routines(s, code)
+        | threads
+    )
     for pc, ins in code.items():
         if ins.syscall != call:
             continue

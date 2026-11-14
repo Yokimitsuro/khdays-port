@@ -39,4 +39,8 @@ unsigned khdays_kh2_camera_faded_node(float *fade);
  * camera's. `player`, `origin` and `eye` are DS addresses of vectors, the last two free for it to use. */
 void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye);
 
+/* The eye and the look-at Days's camera last committed (Ov002_ReaimActor; Days's units), whichever camera ran it --
+ * Days's own, the KH2 camera, an event's: whether there was one (a KH2 enemy's 1:305 and 1:306). */
+int khdays_kh2_camera_view(float eye[3], float at[3]);
+
 #endif

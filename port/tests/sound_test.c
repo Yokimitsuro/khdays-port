@@ -192,6 +192,7 @@ static void test_channels_golden(void)
  * Built here with stand-ins for what it talks to: the DS clock, the IPC
  * FIFO, the host's output, and a driver of the test's own in place of the
  * native one. */
+#include "../runtime/sound/sound_shots.h"
 #include "../runtime/sound/sound_bridge.h"
 #include "../sound/snd7.h"
 #include "../sound/snd7_native.h"
@@ -1295,6 +1296,39 @@ static void test_switches(void)
     CHECK(khdays_sound_mods_switch("", "seq/TwilightR_F") == -1);
 }
 
+/* The port's own sounds (sound_shots.h): one heard once ends at its end; one looping is heard past it until ended; a
+ * fade lowers it to nothing over its time and ends it (a KH2 enemy's 6:70 and 6:71) */
+static void test_shots(void)
+{
+    static int16_t samples[100];
+    for (int i = 0; i < 100; ++i) {
+        samples[i] = 16000;
+    }
+    CHECK(khdays_replacement_write_wav(temp_file("khdays_shot.wav"), 1000, 1, samples, 100, 0, 0, 0));
+    const int file = khdays_sound_shot_file(temp_file("khdays_shot.wav"));
+    CHECK(file >= 0);
+    const int once = khdays_sound_shot_play(file, 1.0f, 0.0f), again = khdays_sound_shot_loop(file, 1.0f, 0.0f);
+    CHECK(once != 0 && again != 0 && once != again);
+    for (int i = 0; i < 150; ++i) { /* 150 output samples at the file's rate: past the end of its 100 */
+        float out[2] = {0.0f, 0.0f};
+        khdays_sound_shots_mix(1000, 1.0f, out);
+    }
+    CHECK(!khdays_sound_shot_heard(once) && khdays_sound_shot_heard(again));
+    khdays_sound_shot_fade(again, 0.05f); /* 50 output samples */
+    float first[2] = {0.0f, 0.0f}, later[2] = {0.0f, 0.0f};
+    khdays_sound_shots_mix(1000, 1.0f, first);
+    for (int i = 0; i < 20; ++i) {
+        later[0] = later[1] = 0.0f;
+        khdays_sound_shots_mix(1000, 1.0f, later);
+    }
+    CHECK(later[0] > 0.0f && later[0] < first[0]);
+    for (int i = 0; i < 40; ++i) {
+        float out[2] = {0.0f, 0.0f};
+        khdays_sound_shots_mix(1000, 1.0f, out);
+    }
+    CHECK(!khdays_sound_shot_heard(again) && !khdays_sound_shots_playing());
+}
+
 int main(int argc, char **argv)
 {
     test_switches();
@@ -1305,6 +1339,7 @@ int main(int argc, char **argv)
     test_stream_reader();
     test_native_driver(argc > 1 ? argv[1] : NULL);
     test_loops();
+    test_shots();
     test_round_trip();
     test_render(argc > 1 ? argv[1] : NULL);
     if (failures != 0) {

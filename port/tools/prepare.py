@@ -2295,7 +2295,14 @@ HOOKS["ov002@02078bac"] = [
         "            { extern void khdays_prize_collected(int kind, int tier, unsigned row);\n"
         "              khdays_prize_collected(pRow->nKind, pRow->nTier, (unsigned)pRow); }\n"
         "            Activate(pOwner, pRow->nSpotId, pRow->nKind, pRow->nTier);\n",
-    )
+    ),
+    (  # Ov002_CollectNearbySpots: a KH2 enemy's prize drain (1:187, YS::STATUS::IsPrizeDrain: KH2's prizes all taken
+        # where they lie, Zexion's) takes every one however far, Days's way (homing to the player)
+        "        if (VEC_Distance(&pRow->vPos, &vAttractPosition) > nRadius) continue;\n",
+        "        { extern int khdays_kh2_enemies_prize_drain(void);\n"
+        "          if (!khdays_kh2_enemies_prize_drain() && VEC_Distance(&pRow->vPos, &vAttractPosition) > nRadius)\n"
+        "              continue; }\n",
+    ),
 ]
 
 # The Stop magic (runtime/battle/stop_magic.c): Days's unfinished sixth magic made whole on what the game
@@ -2597,6 +2604,13 @@ HOOKS["ov022@020a2978"] += [
     ),
 ]
 HOOKS["ov022@020a31b4"] = [
+    (  # Ov022_TranslateCommandToAction: a KH2 enemy's script took the players' control away (1:42, YS::OBJ::ControlOff
+        # of type 0: Zexion as he dies): locked as Days's own lock locks them -- no buttons, no command, no way
+        "    if (bLocked != 0) {\n        pActor->nButtons = 0;\n",
+        "    { extern int khdays_kh2_enemies_control_off(void);\n"
+        "      if (khdays_kh2_enemies_control_off()) {\n          bLocked = 1;\n      } }\n"
+        "    if (bLocked != 0) {\n        pActor->nButtons = 0;\n",
+    ),
     (  # Ov022_TranslateCommandToAction: a primary command from the reaction button only talks, examines ...; the
         # deck's while the bar has one only attacks
         "            if (Ov022_IsSlotReady(&pActor->stateBlk) != 0) {\n"

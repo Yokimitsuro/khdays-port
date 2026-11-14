@@ -36,6 +36,7 @@
 extern "C" {
 #include "../scripts/game_link.h"
 #include "../../gfx/g3d.h"
+#include "../camera/kh2_camera_hooks.h"
 #include "../battle/stop_magic.h"
 #include "../core/rom.h"
 #include "../core/session_log.h"
@@ -977,6 +978,12 @@ unsigned shouts_frame = ~0u;
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
 unsigned local_takes = 0;      // the reaction commands this game's own player took (khdays_kh2_enemies_taken)
+// the object types whose control a script took away (1:42, YS::ControlFlag): 0 the player -- Days's players locked as
+// Days's own lock locks them (khdays_kh2_enemies_control_off, Ov022_TranslateCommandToAction)
+std::set<int> controls_off;
+// a prize drain asked (1:187) for the pickups of this frame and the next: KH2 sets it for one of its ticks, two of
+// which a Days frame runs, and Days takes its prizes once a frame (khdays_kh2_enemies_prize_drain)
+int drain_frames = 0;
 // KH2's attacks of their own (2:10, YS::ATTACK_MAGIC), by their address in the scripts' memory: the enemy whose
 // script made one (its hits go through its shell), whether KH2's player owns it (its hits his blows), its atkp entry,
 // its size and growth, its place and the one before (swept between), the effect it follows, the players it hit
@@ -1509,6 +1516,11 @@ public:
     }
     bool attack_finished(std::uint32_t at) override
     {
+        // a motion's attack (the record trigger 15 gives: its range 10 lasting, KH2's YS::ATTACK of the motion) stands
+        // while it is told -- before, 2:96 said it ended and Zexion never opened his book on the hit that lands it
+        for (const auto &[days, e] : enemies)
+            if (at != 0 && e->attack_record == at)
+                return false;
         const auto o = attacks.find(at);
         return o == attacks.end() || o->second.ended || o->second.expired || o->second.landed;
     }
@@ -1637,6 +1649,36 @@ public:
             r->coloured = true, r->colour = colour;
     }
     void voice(Actor &a, int id, int priority) override;
+    int sound(Object &o, int id, bool loop) override;
+    void sound_fade(int handle, float ticks) override
+    {
+        khdays_sound_shot_fade(handle, ticks / 60.0F);
+    }
+    void control(int type, bool off) override
+    {
+        if (off)
+            controls_off.insert(type);
+        else
+            controls_off.erase(type);
+        if (tracing())
+            khdays_log("kh2 enemies: the control of the objects of type %d %s", type, off ? "taken away" : "given back");
+    }
+    void prize_drain(bool on) override
+    {
+        if (on)
+            drain_frames = 2;
+        if (on && tracing())
+            khdays_log("kh2 enemies: the field's prizes drained to the player");
+    }
+    bool camera_view(Vec3 &eye, Vec3 &at) override
+    {
+        float e[3], t[3];
+        if (!khdays_kh2_camera_view(e, t))
+            return false;
+        eye = to_kh2(e);
+        at = to_kh2(t);
+        return true;
+    }
     void camera_watch(Object &o) override
     {
         watched = o.address();
@@ -2056,6 +2098,7 @@ public:
 
     bool player_motion(Object &o, Actor &by, int slot, float blend) override;
     void player_own_motion(Object &o, int id) override;
+    void player_own_motion_now(Object &o, int id) override;
     void player_place(Object &o, const Vec3 &place) override
     {
         if (const auto h = held.find(days_object(o)); h != held.end())
@@ -3144,6 +3187,51 @@ void Field::voice(Actor &a, int id, int priority)
     if (tracing())
         khdays_log("kh2 enemies: %08x's voice %d (priority %d)%s", e.days, id, priority,
                    e.voice_shot != 0 ? "" : " (not heard: the mod has no kh2/voice file)");
+}
+
+// 1:318, 6:70: a sound its script plays (Zexion's book's pages, its loop): the enemy's kind's, the mod's
+// kh2/se/<id>.wav read when first asked (its motions' and elements' are read as it loads), heard where the enemy was
+// last drawn; looping until faded when `loop`
+int Field::sound(Object &o, int id, bool loop)
+{
+    Actor *x = o.actor();
+    const auto it = x != nullptr ? by_actor.find(x) : by_actor.end();
+    if (it == by_actor.end())
+        return 0;
+    Enemy &e = *it->second;
+    KindFiles &k = *e.kind;
+    auto file = k.sounds.find(id);
+    if (file == k.sounds.end()) {
+        int made = -1;
+        if (const fs::path wav = kh2_file("se/" + std::to_string(id) + ".wav", k.folder); !wav.empty()) {
+            const std::u8string p8 = wav.u8string();
+            made = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
+        }
+        file = k.sounds.emplace(id, made).first; // -1: none, asked once
+    }
+    if (file->second < 0) {
+        if (tracing())
+            khdays_log("kh2 enemies: %08x's sound %d (not heard: the mod has no kh2/se file)", e.days, id);
+        return 0;
+    }
+    const int handle = loop ? khdays_sound_shot_loop(file->second, 1.0F, e.pan)
+                            : khdays_sound_shot_play(file->second, 1.0F, e.pan);
+    if (tracing())
+        khdays_log("kh2 enemies: %08x's sound %d%s", e.days, id, loop ? ", looping" : "");
+    return handle;
+}
+
+// 1:11, 1:12, 1:61 on a player: his own motion started at once (start_motion, not the queue): he is given back now
+void Field::player_own_motion_now(Object &o, int id)
+{
+    const unsigned object = days_object(o);
+    o.set_u32(field::kMotion, std::uint32_t(id));
+    o.set_u32(field::kMotionNow, std::uint32_t(id));
+    if (held.count(object) != 0) {
+        char why[48];
+        std::snprintf(why, sizeof(why), "its own motion %d started", id);
+        let_go(object, why);
+    }
 }
 
 void Field::player_own_motion(Object &o, int id)
@@ -4318,10 +4406,15 @@ void motion_states(Enemy &e)
     if (e.reacting)
         on |= bit::kHeld;
     a.set_u32(field::kStatus, (a.u32(field::kStatus) & ~all) | on);
-    // a motion asked to follow (2:87's idle): taken as this one blends back (range 2, bit 4) or once it has ended
-    if (a.motion.queued >= 0 && ((on & (1u << 4)) != 0 || a.motion.ended)) {
-        const int next = a.motion.queued;
-        a.play(next, 0.0F, 0.0F);
+    // the motions asked to follow (1:13, 2:87's idle): the first taken as this one blends back (range 2, bit 4) or in a
+    // tick it reaches its end (the ended bit, Actor::step's: a loop's as it goes round), the others after it
+    if (!a.motion.queued.empty() &&
+        ((on & (1u << 4)) != 0 || (a.u32(field::kStatus) & bit::kMotionEnded) != 0)) {
+        auto rest = a.motion.queued;
+        const auto [next, blend] = rest.front();
+        rest.pop_front();
+        a.play(next, blend, 0.0F, true);
+        a.motion.queued = std::move(rest);
     }
     // its ranges 16 to 19 ("AI" ranges: special movement, its combos): bits 0 to 3 of + 0x2ac (FUN_14040d810; 1:150)
     std::uint32_t ai_ranges = 0;
@@ -4519,7 +4612,10 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
     cues(e);
     event_tick(e);
     motion_states(e);
-    const bool no_gravity = (a.u32(field::kStatus) & kNoGravity) != 0;
+    // no pull: a motion's ranges say so, or its class flies (class 5, 1:58 trap_obj_fly: its movement, FUN_140421c80,
+    // keeps its own velocity and adds none) -- Zexion hovers so; before, a hit taken in the air let him fall, land and
+    // rise again round and round, his class kept from acting each time ("leaves the ground", trigger 13)
+    const bool no_gravity = (a.u32(field::kStatus) & kNoGravity) != 0 || a.dashing;
     // a motion in the air (its range 30: + 0x18c bit 24, 1:60's "off the ground"): the ground met again lands it
     const bool motion_air = (a.u32(field::kStatus) & kMotionAir) != 0;
     if (motion_air && e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays)
@@ -5400,6 +5496,8 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     drawn_weapons.clear();
     shell_draws.clear();
     local_player = 0;
+    controls_off.clear();
+    drain_frames = 0;
     last_days_damage = 0;
     local_taken = -1;
     shouts.clear();
@@ -5480,6 +5578,8 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     // moves the turn its shout gave on before its cubes hear the order, as KH2's must
     if (const unsigned frame = khdays_link_frame(); frame != shouts_frame) {
         shouts_frame = frame;
+        if (drain_frames > 0)
+            --drain_frames;
         const int steps = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
         if (!signals.empty()) { // told to every script, then the mission's
             const std::vector<std::pair<int, int>> sent = std::move(signals);
@@ -5653,6 +5753,12 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     zone_offer(*e);
     take_command(*e);
+    // its own script entered its "dead" with health left (Zexion's illusion, its prisoner given back): KH2's end of it,
+    // counted as defeated (1:328's way: its Days enemy defeated, its script left to end it) -- before, it stood faded
+    // out for good, a wave's enemy the mission still waited on
+    if (const StateEntry *now = e->actor->states().current();
+        now != nullptr && now->name == "dead" && !e->dying && !e->dead_marked)
+        the_field().dead_mark(*e->actor);
     // KH2's "leave" (the enemy far from the player: its scripts' 1:56 distances): it fades out and waits for KH2's
     // spawner to bring it back. Days's field has none, so once it has faded out it comes back where its wave placed
     // it, its script anew, its Days HP as it is.
@@ -5738,6 +5844,9 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     Actor &a = *e->actor;
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
         e->dying = true;
+        // counted defeated (+ 0x9b8 bit 2, FUN_1403d4a40 as its death tells its group): what 1:272 reads -- Zexion
+        // asks it of his books
+        a.set_bits(field::kFade, bit::kDeadMark, true);
         // an enemy's (its entry's kind 4: the PS3 build's YS::ZAKO::_OVR__dead) tells the field: signal 75 with its
         // serial (the water clones' end counted by Demyx and his mission)
         if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0 && (mod().memory.u32(entry + 4) & 0xffu) == 4u)
@@ -5987,6 +6096,19 @@ extern "C" unsigned khdays_kh2_enemies_taken(int *held_now)
     return local_takes;
 }
 
+// Ov022_TranslateCommandToAction (prepare.py): whether a KH2 enemy's script took the players' control away (1:42 of
+// type 0, YS::OBJ::ControlOff): each player locked as Days's own lock locks them, no buttons, no command, no way
+extern "C" int khdays_kh2_enemies_control_off(void)
+{
+    return controls_off.count(0) != 0 ? 1 : 0;
+}
+
+// Ov002_CollectNearbySpots (prepare.py): whether a KH2 enemy's prize drain (1:187) takes every prize however far
+extern "C" int khdays_kh2_enemies_prize_drain(void)
+{
+    return drain_frames > 0 ? 1 : 0;
+}
+
 // KH2's text as its menus' international encoding has it (msg/<language>/sys.bar; our reading of the files): 01 a
 // space, 2e-47 A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb and d0-e4 the accented small and capital letters (a grave,
 // acute, circumflex, diaeresis ... u diaeresis, each set in that order), b5 oe, b6 sharp s, e5 and e6 the opening
@@ -6160,11 +6282,12 @@ extern "C" int khdays_kh2_enemies_label(int enemy_class, unsigned short *out, in
 }
 
 // Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): its script's FLAG_NOHIT_ATTACK and
-// FLAG_NOHIT_OBJ (+ 0x120 bits 3 and 1): no hit lands, nothing touches it (the Mole Driller under the ground)
+// FLAG_NOHIT_OBJ (+ 0x120 bits 3 and 1): no hit lands, nothing touches it (the Mole Driller under the ground) -- but
+// the hit that counts it defeated (dead_mark: Zexion's illusion ends with its hits off)
 extern "C" int khdays_kh2_enemies_untouched(void *actor)
 {
     const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
-    return e != nullptr && !e->dying && (e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0;
+    return e != nullptr && !e->dying && !e->dead_marked && (e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0;
 }
 
 extern "C" int khdays_kh2_enemies_no_contact(void *actor)

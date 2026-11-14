@@ -827,7 +827,7 @@ void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin,
  * it, the game's tick returns early (Ov002_Camera_UpdateFollow's first gates) and what shows is what was last committed:
  * Days' first place. A commit no frame of this camera came before gets one, without control. A commit can come before
  * the tick of its game frame, so a tick's frame counts for the next game frame too; a commit's only for its own. */
-void khdays_kh2_camera_commit(int camera)
+static void commit_frame(int camera)
 {
     const int *cam = KHDAYS_W(camera);
     const int player = QueryActiveStateOrDelegate();
@@ -849,4 +849,35 @@ void khdays_kh2_camera_commit(int camera)
         s.no_press = 1;
         s.committed = 1;
     }
+}
+
+/* The eye and the look-at last committed by Days's camera (its first, not the second screen's), Days's units */
+static struct {
+    int known;
+    float eye[3], at[3];
+} view;
+
+void khdays_kh2_camera_commit(int camera)
+{
+    commit_frame(camera);
+    const int *cam = KHDAYS_W(camera);
+    if (cam[WORD_STAGE] == 0) {
+        for (int k = 0; k < 3; ++k) {
+            view.eye[k] = (float)cam[WORD_EYE + k] / 4096.0f;
+            view.at[k] = (float)cam[WORD_FOCUS + k] / 4096.0f;
+        }
+        view.known = 1;
+    }
+}
+
+int khdays_kh2_camera_view(float eye[3], float at[3])
+{
+    if (!view.known) {
+        return 0;
+    }
+    for (int k = 0; k < 3; ++k) {
+        eye[k] = view.eye[k];
+        at[k] = view.at[k];
+    }
+    return 1;
 }

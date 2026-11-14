@@ -47,6 +47,14 @@ int khdays_kh2_enemies_blow(void *actor, int *amount);
  * commands stand still), put where the enemy's script and motion have it. */
 int khdays_kh2_enemies_holding(void *actor);
 
+/* Ov022_TranslateCommandToAction (prepare.py's join): whether a KH2 enemy's script took the players' control away
+ * (1:42 of type 0): every player locked as Days's own lock locks them. */
+int khdays_kh2_enemies_control_off(void);
+
+/* Ov002_CollectNearbySpots (prepare.py's join): whether a KH2 enemy's prize drain (1:187) takes every prize on the
+ * field however far, this frame. */
+int khdays_kh2_enemies_prize_drain(void);
+
 /* Days's lock-on mark's point for the enemy `actor` locked on (Ov022_UpdateSelectionMarker's): a KH2 enemy's aim point
  * (its 0x307 shape: the Soldier's chest, Cerberus's heads) in the game's memory, else `point` as it was. DS addresses. */
 unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point);
