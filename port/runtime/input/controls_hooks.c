@@ -701,3 +701,60 @@ const KhdaysInputSnapshot *khdays_input_movement_snapshot(void)
     const u32 since = khdays_input_game_frames() + 1u - sender.early;
     return sender.early != 0 && since <= 1u ? khdays_input_snapshot() : khdays_input_previous_snapshot();
 }
+
+/* ---- Turn speed (Ov022_ClampAngleTowardTarget) ---------------------------- */
+
+/* How far the actor may turn this game frame (its +0x4b0, a share of 0x10000 a turn), asked by every steer -- the
+ * run's and walk's, a jump's, a glide's, a rush's, a lock-on's -- with `apart` (0..0x8000) still to turn. The
+ * game's 0xc00 on the ground (17 degrees a frame at 30, a whole turn in 0.7 s) keeps a running player from circling
+ * any tighter than the D-pad's eighths ever needed. For the local player, by stick, keys or D-pad alike, the turn
+ * eases out instead: each frame KHDAYS_TURN_EASE percent of what is left (default 50; 100 all of it at once), never
+ * less than KHDAYS_TURN_SPEED percent of the game's (default 100, its own) -- a key's eighth or quarter turned in
+ * three or four frames, not one, and a stick turned round quickly followed half a step behind (turned fast enough, the
+ * player spins where he stands). Nor does the game's snap round past 157 degrees (khdays_controls_turn_eased): a
+ * turn about eases too. Not in a session (the others' machines steer their copy of this player with the game's) nor
+ * in the game's own order (KHDAYS_DS_CONTROL_ORDER). */
+static int percent_of(const char *name, int fallback, int least, int most)
+{
+    const char *v = getenv(name);
+    int n = v != NULL && v[0] != '\0' ? atoi(v) : fallback;
+    return n < least ? least : n > most ? most : n;
+}
+
+static int turn_ease(void)
+{
+    static int ease = -1;
+    if (ease < 0) {
+        ease = percent_of("KHDAYS_TURN_EASE", 50, 0, 100);
+    }
+    return ease;
+}
+
+static int turn_speed(void)
+{
+    static int speed = -1;
+    if (speed < 0) {
+        speed = percent_of("KHDAYS_TURN_SPEED", 100, 100, 1100);
+    }
+    return speed;
+}
+
+int khdays_controls_turn_eased(int actor)
+{
+    return (turn_ease() > 0 || turn_speed() > 100) && !ds_order() && !khdays_net_in_session() &&
+           actor == local_actor();
+}
+
+int khdays_controls_turn_limit(int actor, int limit, int apart)
+{
+    long long most;
+    if (limit <= 0 || !khdays_controls_turn_eased(actor)) {
+        return limit;
+    }
+    most = (long long)limit * turn_speed() / 100;
+    {
+        const long long eased = (long long)apart * turn_ease() / 100;
+        most = eased > most ? eased : most;
+    }
+    return most > 0x8000 ? 0x8000 : (int)most;
+}

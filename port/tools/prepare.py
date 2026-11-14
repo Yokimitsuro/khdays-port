@@ -1724,8 +1724,20 @@ HOOKS = {
         (
             "    if ((int)arg1 < 0) return 0xffffffff;\n",
             "    if ((int)arg1 < 0) return 0xffffffff;\n"
+            "    extern int khdays_controls_turn_eased(int actor);\n"
             "    { extern int khdays_kh2_camera_strafing(int actor);\n"
             "      if (khdays_kh2_camera_strafing(arg0)) return arg1; }\n",
+        ),
+        # how far it may turn a frame: faster for the local player (KHDAYS_TURN_SPEED, controls_hooks.c)
+        (
+            "    lim = *(int *)(arg0 + 0x4b0);\n",
+            "    { extern int khdays_controls_turn_limit(int actor, int limit, int apart);\n"
+            "      lim = khdays_controls_turn_limit(arg0, *(int *)(arg0 + 0x4b0), ad); }\n",
+        ),
+        # ... nor snapped round past 157 degrees: a turn about eases too
+        (
+            "    if ((*(unsigned int *)(arg0 + 0x24) & 4) != 0 &&\n",
+            "    if ((*(unsigned int *)(arg0 + 0x24) & 4) != 0 && !khdays_controls_turn_eased(arg0) &&\n",
         ),
     ],
     "ov022@020a3ccc": [  # Ov022_SteerIdleByAim

@@ -488,6 +488,19 @@ The native build prints these to stderr when the variable is set:
   an item the command menu chose is given to the local player in the frame it
   was chosen (`khdays_controls_command_early`, `runtime/input/controls_hooks.c`;
   not the Grey Area's A, which chooses none). Alone, as the directions.
+- `KHDAYS_TURN_EASE=N`, `KHDAYS_TURN_SPEED=N` -- how the local player turns:
+  each game frame N percent of the turn still left (`TURN_EASE`, default 50;
+  100 all at once, 0 the game's own turning), never less than N percent of the
+  game's speed (`TURN_SPEED`, default 100, up to 1100). A key's eighth or
+  quarter turn so eases out over three or four frames, and a stick turned
+  round quickly is followed half a step behind (fast enough, the player spins
+  where he stands); the game's snap round past 157 degrees is left out, so a
+  turn about eases too. Every steer asks
+  `Ov022_ClampAngleTowardTarget` how far it may turn a frame, at most the
+  actor's +0x4b0 (0xc00 of a turn on the ground: 17 degrees a frame, a whole
+  turn in 0.7 s), which kept a running player from circling tighter
+  (`khdays_controls_turn_limit`, `runtime/input/controls_hooks.c`). Stick, keys
+  and D-pad alike; not in a session, nor with `KHDAYS_DS_CONTROL_ORDER`.
 - `KHDAYS_PRESS_PACE=0` -- without the press pace, on by default (`runtime/input/input.c`, main's
   frame loop in `prepare.py`): at 30 game frames a second a new press (a
   button down or let go, the movement stick started or stopped, not its turns)

@@ -37,7 +37,12 @@ void khdays_controls_first_person_look(float *x, float *y);
 /* A command the menu chose this frame given at once (controls_hooks.c, after Ov022_UpdateCommandInput), and the
  * whole packet's landing in the row (MsgQueue_SendGate's hook): its pressed and held buttons. */
 void khdays_controls_command_early(void *actor);
-
 void khdays_controls_command_given(const unsigned short *packet, unsigned pressed, unsigned held);
+
+/* How far the actor may turn this game frame, `apart` still to turn: the game's `limit`, for the local player a share
+ * of what is left (KHDAYS_TURN_EASE, KHDAYS_TURN_SPEED); and whether its turns ease so (the game's snap round left
+ * out). */
+int khdays_controls_turn_limit(int actor, int limit, int apart);
+int khdays_controls_turn_eased(int actor);
 
 #endif
