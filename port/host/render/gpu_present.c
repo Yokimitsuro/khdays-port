@@ -693,6 +693,7 @@ static uint8_t logic_upper[KEPT_LISTS];
 static uint32_t logic_serial = ~0u;
 static int logic_count, logic_cut;
 static int logic_pair = -1; /* the older of the two lists the last picture was placed between (-1 none) */
+static uint64_t logic_arrival; /* the VBlank of the package that brought the newest list (smooth_unblocked) */
 /* how long the latest lists took from being made to being taken by the window, for picture_delay */
 #define LATE_KEPT 32
 static uint64_t logic_late[LATE_KEPT];
@@ -884,6 +885,7 @@ static void note_logic_frame(const KhdaysFramePackage *p)
         logic_list[--at] = oldest;
     }
     logic_serial = p->list3d_serial;
+    logic_arrival = p->time;
     if (!khdays_g3d_list_copy(&logic_list[at], &p->list3d)) {
         logic_count = 0; /* out of memory: no interpolation until there are two lists again */
         return;
@@ -978,6 +980,23 @@ static int camera_cut(const KhdaysG3dList *a, const KhdaysG3dList *b)
     return step.moved > 1.0 && !(step.pivot > 0.0 && step.drift <= 1.0 && fabs(step.depth - step.pivot) <= 1.0);
 }
 
+/* The smooth pace without VSync: while the screen's lock holds (clock.h: the game's VBlanks a few ms
+ * before the screen's refreshes, at 60, 120 or 240 Hz), each package is drawn as it comes, as at the DS's
+ * pace -- presented without waiting (MAILBOX), shown at the coming refresh -- and with more than one
+ * refresh a VBlank a picture is drawn at each refresh between packages (khdays_present_between_due_ms).
+ * With VSync the window's thread waited in each present for most of a refresh, the presses with it, and
+ * each picture was shown a refresh after it was drawn. The refreshes a VBlank, or 0 (the lock off: the
+ * screen at 75 or 144 Hz, a session, the time held; KHDAYS_SMOOTH_VSYNC=1) -- VSync then, as before. */
+static int smooth_unblocked(void)
+{
+    static int vsync = -1;
+    if (vsync < 0) {
+        const char *v = SDL_getenv("KHDAYS_SMOOTH_VSYNC");
+        vsync = v != NULL && v[0] != '\0' && v[0] != '0';
+    }
+    return vsync ? 0 : khdays_clock_screen_refreshes();
+}
+
 /* The list to draw for a picture now: one placed between the two kept game frames about the time it shows
  * (picture_delay), or NULL to draw the package's own (at the DS's pace, without two lists since a cut, or once the
  * newest is reached). */
@@ -995,6 +1014,26 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
         return NULL;
     }
     now = khdays_clock_cycles();
+    if (smooth_unblocked() > 0 && !forced) {
+        /* at the screen's refreshes (smooth_unblocked): between the two latest lists, the newer's share by
+         * the refreshes since its package came (each picture shown at the refresh after it, the same time
+         * on), a refresh's share already at the first -- at 60 Hz half, then the newer whole at the next
+         * package, evenly; with a new list each VBlank (a press's early frame), the newest at once */
+        const double refresh = (double)KHDAYS_CYCLES_PER_FRAME / smooth_unblocked();
+        const double since = (double)(now > logic_arrival ? now - logic_arrival : 0u);
+        const double period = (double)(logic_time[logic_count - 1] - logic_time[logic_count - 2]);
+        const double x = (floor(since / refresh + 0.5) + 1.0) * refresh / period;
+        if (x >= 0.999) {
+            return NULL; /* the newest reached */
+        }
+        a = logic_count - 2;
+        logic_pair = a;
+        *alpha = x;
+        if (!khdays_g3d_interpolate(&interp, &logic_list[a], &logic_list[a + 1], (float)*alpha, &between)) {
+            return NULL;
+        }
+        return &between;
+    }
     delay = picture_delay();
     at_time = forced ? logic_time[logic_count - 2] : now > delay ? now - delay : 0;
     if (at_time >= logic_time[logic_count - 1]) {
@@ -1085,6 +1124,7 @@ static struct {
     Uint64 present_ns, present_most, drawing_ns, drawing_most, presenting_ns, presenting_most;
 } perf;
 static Uint64 package_ns; /* when the latest package came */
+static int between_drawn;  /* the pictures drawn since, at the refreshes between packages (smooth_unblocked) */
 
 static void perf_tick(void)
 {
@@ -1145,6 +1185,7 @@ void khdays_present_package(const KhdaysFramePackage *p)
     note_logic_frame(p);
     latest = p;
     package_ns = SDL_GetTicksNS();
+    between_drawn = 0;
     if (perf.since != 0) {
         if (perf.packages++ == 0) {
             perf.first_frame = p->frame;
@@ -1220,11 +1261,50 @@ int khdays_present_refresh_settling(void)
     return 1;
 }
 
+/* Without VSync at the smooth pace, when the next picture between packages is due (SDL's ns), at each
+ * of the screen's refreshes a VBlank but the package's own (120 Hz: one, 240: three); 0 for none. */
+static Uint64 between_due_ns(void)
+{
+    const int refreshes = smooth_unblocked();
+    if (refreshes < 2 || between_drawn + 1 >= refreshes || !khdays_present_smooth()) {
+        return 0;
+    }
+    return package_ns + (Uint64)((double)(between_drawn + 1) * (double)KHDAYS_CYCLES_PER_FRAME / KHDAYS_CLOCK_HZ *
+                                 1e9 / refreshes);
+}
+
+int khdays_present_smooth_unblocked(void)
+{
+    return khdays_present_smooth() && smooth_unblocked() > 0;
+}
+
+int khdays_present_between_due_ms(int most)
+{
+    const Uint64 due = between_due_ns(), now = SDL_GetTicksNS();
+    if (due == 0) {
+        return most;
+    }
+    if (due <= now) {
+        return 0;
+    }
+    {
+        const Uint64 ms = (due - now + 999999u) / 1000000u;
+        return ms < (Uint64)most ? (int)ms : most;
+    }
+}
+
 int khdays_present_refresh(void)
 {
     const uint64_t now = khdays_clock_cycles();
     if (!khdays_present_smooth() || now == last_refresh) {
         return 0; /* the game's time stands still (paused): keep the same picture */
+    }
+    if (smooth_unblocked() > 0) {
+        const Uint64 due = between_due_ns();
+        if (due == 0 || SDL_GetTicksNS() < due) {
+            return 0; /* the packages draw the rest */
+        }
+        ++between_drawn;
     }
     present(latest, 0);
     return 1;

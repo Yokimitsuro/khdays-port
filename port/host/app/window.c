@@ -926,8 +926,15 @@ static int host_thread(void *unused)
         /* So is a situation still settling on a still picture (a pause opened where the 3D was
          * on both screens): it is decided again as the game's VBlanks pass. */
         const int settling = khdays_present_settling();
+        /* the smooth pace's pictures at the packages and the refreshes between, without VSync, while the
+         * screen's lock holds (khdays_present_smooth_unblocked) */
+        const int unblocked = smooth && khdays_present_smooth_unblocked();
         /* VSync only while the window draws on its own time; the game's pictures as they come without it */
-        khdays_present_wait_for_refresh(smooth || movie || backdrop || kh2_pause || settling || animating || monologue);
+        khdays_present_wait_for_refresh((smooth && !unblocked) || movie || backdrop || kh2_pause || settling ||
+                                        animating || monologue);
+        if (unblocked && khdays_present_between_due_ms(1) == 0 && khdays_present_refresh()) {
+            redraw(window, renderer); /* a refresh between packages, on time while events keep coming */
+        }
         keep_subtitles();
         keep_chase_free();
         if (!khdays_settings_is_open()) {
@@ -969,7 +976,10 @@ static int host_thread(void *unused)
              * handle it like SDL's event */
             SDL_zero(event);
             event.type = SDL_EVENT_RENDER_DEVICE_LOST;
-        } else if (!(smooth || movie || backdrop || kh2_pause ? SDL_WaitEventTimeout(&event, 1)
+        } else if (!((smooth && !unblocked) || movie || backdrop || kh2_pause ? SDL_WaitEventTimeout(&event, 1)
+                     : unblocked ? SDL_WaitEventTimeout(&event, khdays_present_between_due_ms(settling    ? 4
+                                                                                             : animating ? 50
+                                                                                                         : 100))
                      : settling  ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
                      : animating ? SDL_WaitEventTimeout(&event, 50)
                                  : SDL_WaitEvent(&event))) {

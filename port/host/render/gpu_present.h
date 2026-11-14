@@ -57,6 +57,12 @@ int khdays_present_smooth(void);
 void khdays_present_wait_for_refresh(int wait);
 int khdays_present_refresh(void);
 
+/* The smooth pace without VSync (the screen's lock holding): each package drawn as it comes, and the
+ * refreshes between packages (a screen faster than 60 Hz) drawn when due -- the ms until the next of them,
+ * at most `most` (`most` when none is to come). */
+int khdays_present_smooth_unblocked(void);
+int khdays_present_between_due_ms(int most);
+
 /* An animated backdrop (the title's) moves at the display's pace even when a still menu sends no
  * frames: whether the latest picture has one, and drawing the newest package again for it (not while the
  * game's own frames keep coming: each draws it, its motion with it). */

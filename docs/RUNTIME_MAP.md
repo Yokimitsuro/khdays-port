@@ -444,7 +444,8 @@ The native build prints these to stderr when the variable is set:
   `between`/`newest`/`cut`, those two lists' times, and the camera's translation and turn between them
   (section 7, "The picture at the monitor's rate").
 - `KHDAYS_VSYNC=always` -- VSync kept on while the window draws only the
-  game's pictures as they come (it is off then: section 35).
+  game's pictures as they come (it is off then: section 35); `KHDAYS_SMOOTH_VSYNC=1` -- the smooth pace with
+  VSync even while the screen's lock holds (without it then: section 35).
 - `KHDAYS_TRACE_UPDATES` -- each object update's change to the next.
 - `KHDAYS_TRACE_CAPTURE` -- each screen blend's frame as the window draws it:
   the bank shown from its copy, or at the DS's size and why, and the capture
@@ -5938,6 +5939,7 @@ present until the other image came off the screen:
 | the DS's pace, two frames in flight | 12.4 ms | 21.6 ms more | 53.2 ms more | 87 ms |
 | the smooth pace (VSync) | 12.7 | 21.5 | 53.5 | 88 |
 | the DS's pace, three frames in flight | 0.1 | 17.5 | 34.1 | 52 |
+| the smooth pace at the refreshes, no VSync | 0.2 | 17.0 | 34.2 | 51 |
 
 - **No VSync while only the game's pictures are drawn** (`khdays_present_wait_for_refresh`,
   `host/render/gpu_present.c`). With it, `SDL_RenderPresent` waited for a free swapchain image for most
@@ -5951,6 +5953,17 @@ present until the other image came off the screen:
   anew at each change. VSync is on while the window draws on its own time (an animated backdrop, a movie,
   the KH2 pause, a settling picture, the settings menu, a monologue), which without it would be drawn as
   fast as the card goes.
+- **The smooth pace at the screen's refreshes, without VSync** (`smooth_unblocked`,
+  `khdays_present_between_due_ms`, `host/render/gpu_present.c`; `host/app/window.c`). While the screen's
+  lock holds (PLATFORM.md: the game's VBlank 6 ms before each refresh, at 60, 120 or 240 Hz), the smooth
+  pace draws as the DS's does: each package as it comes, presented without waiting and shown at the
+  coming refresh, and on a screen faster than 60 Hz a picture at each refresh between packages, timed from
+  the package. The 3D is placed by the refreshes since the newer list's package came, one refresh's share
+  already at the first: at 60 Hz half of the step at the package that brings it, the whole at the next,
+  evenly -- the step starts on screen at the same refresh as at the DS's pace, never past the newer; a
+  game frame of one VBlank (the press pace's early start) shows its newest at once. Where the lock does not
+  hold (a screen at 75 or 144 Hz, a session, the time held) or with `KHDAYS_SMOOTH_VSYNC=1`, the smooth pace
+  keeps VSync and its steady delay (`picture_delay`, section 7).
 - **Not done: the pad read later.** The game reads the pad (`Pad_Sample`) every VBlank, 3 ms after it,
   and works 5-10 ms after the read (up to 12) before its next wait. A read held until a margin before the
   next VBlank gained 2 ms; held past it (to the game's next frame, the field's two VBlanks), the 3D's
