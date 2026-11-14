@@ -49,6 +49,7 @@ static char card_line[320]; /* the graphics API, the card and its driver, for th
 static int card_logged;     /* card_line written to it */
 
 /* The older HD path: engine A's screen at N x, and which screen it goes on. */
+static int vsync_now = 1;     /* the renderer's VSync (khdays_present_wait_for_refresh) */
 static int raster_ready;      /* gpu_raster3d.c opened on this device */
 static SDL_Texture *hd;       /* this frame's, or NULL to show the 1x picture as it is */
 static SDL_Texture *hd_movie; /* an HD video's picture, NV12 */
@@ -260,6 +261,7 @@ static int make_renderer(void)
         exit(1);
     }
     SDL_SetRenderVSync(renderer, 1);
+    vsync_now = 1; /* (khdays_present_wait_for_refresh) */
     layout();
     return make_texture();
 }
@@ -1529,6 +1531,37 @@ void khdays_present_set_video(const KhdaysVideo *v)
         SDL_SetTextureScaleMode(screens, video.smooth_scaling ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     }
     layout();
+}
+
+/* Whether a present waits for a free swapchain image (VSync) or hands its picture over at once, the newest
+ * shown at the next refresh in place of one not shown yet (SDL's renderer: MAILBOX where the card has it,
+ * no tearing). Waiting, the window's thread -- which also takes the keyboard's and the gamepads' events --
+ * sat in SDL_RenderPresent for most of a refresh at the DS's pace: a press waited 12 ms on average to reach
+ * the window, and a picture a refresh more to be presented (KHDAYS_TRACE_LATENCY, a 60 Hz screen). The
+ * window keeps VSync for what it draws on its own time (the smooth pace, a movie, a moving backdrop):
+ * without it those would be drawn as fast as the card goes. KHDAYS_VSYNC=always keeps it on throughout. */
+
+void khdays_present_wait_for_refresh(int wait)
+{
+    static int always = -1;
+    if (always < 0) {
+        const char *v = SDL_getenv("KHDAYS_VSYNC");
+        always = v != NULL && SDL_strcmp(v, "always") == 0;
+    }
+    wait = wait || always;
+    if (renderer != NULL && wait != vsync_now) {
+        /* without VSync three frames in flight, three swapchain images (SDL makes as many, two at the least):
+         * with two, where the picture goes to the screen without the compositor (a borderless window over
+         * it: Windows' independent flip), each present waited for the other image to come off the screen --
+         * 15 ms of each refresh on the window's thread, as with VSync (KHDAYS_TRACE_LATENCY: a press 87 ms
+         * to the picture, 52 with three, as in a window). SDL builds the swapchain anew at each change. */
+        if (device != NULL && !SDL_SetGPUAllowedFramesInFlight(device, wait ? 1 : 3)) {
+            fprintf(stderr, "host: frames in flight: %s\n", SDL_GetError());
+        }
+        if (SDL_SetRenderVSync(renderer, wait ? 1 : 0)) {
+            vsync_now = wait;
+        }
+    }
 }
 
 /* The logical presentation `w` x `h`, set when it changes. */

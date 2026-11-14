@@ -194,9 +194,14 @@ static void publish(const KhdaysInputSnapshot *snapshot)
     khdays_press_edges_note(&edges, input.ds_buttons, snapshot->ds_buttons);
     khdays_press_edges_note(&edges_field, input.ds_buttons_field, snapshot->ds_buttons_field);
     pause_taps |= (uint16_t)(snapshot->ds_buttons & ~input.ds_buttons);
+    const int changed = snapshot->ds_buttons != input.ds_buttons || snapshot->move_x != input.move_x ||
+                        snapshot->move_y != input.move_y;
     input = *snapshot;
     input.generation = generation;
     SDL_UnlockMutex(input_lock);
+    if (changed) {
+        khdays_clock_wake(); /* a game frame waiting out its pace may start at once (input.c's press pace) */
+    }
 }
 
 /* Reports a problem with the settings file or a controller: in the log, and
@@ -921,6 +926,8 @@ static int host_thread(void *unused)
         /* So is a situation still settling on a still picture (a pause opened where the 3D was
          * on both screens): it is decided again as the game's VBlanks pass. */
         const int settling = khdays_present_settling();
+        /* VSync only while the window draws on its own time; the game's pictures as they come without it */
+        khdays_present_wait_for_refresh(smooth || movie || backdrop || kh2_pause || settling || animating || monologue);
         keep_subtitles();
         keep_chase_free();
         if (!khdays_settings_is_open()) {
@@ -1301,6 +1308,14 @@ void khdays_host_input_take(KhdaysInputSnapshot *out)
     out->ds_buttons = khdays_press_edges_take(&edges, input.ds_buttons);
     out->ds_buttons_field = khdays_press_edges_take(&edges_field, input.ds_buttons_field);
     SDL_UnlockMutex(input_lock);
+}
+
+void khdays_host_movement(int *x, int *y)
+{
+    KhdaysInputSnapshot now;
+    khdays_host_input(&now);
+    *x = now.move_x;
+    *y = now.move_y;
 }
 
 uint16_t khdays_host_buttons(void)

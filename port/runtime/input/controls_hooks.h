@@ -34,4 +34,10 @@ void khdays_controls_camera_look(float *x, float *y);
  * tilts by the stick's up and down share of how far it is pushed (ObjCamera::subjective_control). */
 void khdays_controls_first_person_look(float *x, float *y);
 
+/* A command the menu chose this frame given at once (controls_hooks.c, after Ov022_UpdateCommandInput), and the
+ * whole packet's landing in the row (MsgQueue_SendGate's hook): its pressed and held buttons. */
+void khdays_controls_command_early(void *actor);
+
+void khdays_controls_command_given(const unsigned short *packet, unsigned pressed, unsigned held);
+
 #endif

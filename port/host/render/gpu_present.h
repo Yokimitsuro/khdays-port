@@ -50,6 +50,11 @@ void khdays_present_package(const KhdaysFramePackage *package);
  * while ago (a logic frame and the longest the latest took to reach the window). Returns 0 when there is
  * nothing new to draw. */
 int khdays_present_smooth(void);
+
+/* Whether presenting waits for the screen's refresh (VSync): on while the window draws on its own time (the
+ * smooth pace, a movie, a moving backdrop...), off while it draws only the game's pictures as they come, so
+ * that neither a press nor a picture waits in the swapchain. */
+void khdays_present_wait_for_refresh(int wait);
 int khdays_present_refresh(void);
 
 /* An animated backdrop (the title's) moves at the display's pace even when a still menu sends no

@@ -197,3 +197,17 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
     }
     return out;
 }
+
+void khdays_control_sender_reset(KhdaysControlSender *s)
+{
+    s->early = 0;
+}
+
+int khdays_control_sender_early(KhdaysControlSender *s, uint32_t frame, int allowed)
+{
+    if (!allowed || s->early == frame + 1u) {
+        return 0; /* the game's own order, or this frame's buttons put in already */
+    }
+    s->early = frame + 1u;
+    return 1;
+}

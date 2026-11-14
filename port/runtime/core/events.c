@@ -293,8 +293,21 @@ static void frame_pace(void)
 }
 
 /* The CPU halted until an interrupt (OS_Halt, SWI Halt, the RTC busy-wait): runs time forward to the
- * next event, presents finished frames, and returns once the interrupt line is up. */
+ * next event, presents finished frames, and returns once the interrupt line is up -- or, with `stop`,
+ * once it says so (another thread woke the wait: khdays_clock_wake). */
+static void wait_for_interrupt(int (*stop)(void));
+
 void khdays_runtime_wait(void)
+{
+    wait_for_interrupt(NULL);
+}
+
+void khdays_runtime_wait_or(int (*stop)(void))
+{
+    wait_for_interrupt(stop);
+}
+
+static void wait_for_interrupt(int (*stop)(void))
 {
     static u64 log_wait_end;
     const u64 enter = khdays_clock_cycles();
@@ -326,6 +339,9 @@ void khdays_runtime_wait(void)
             }
             log_wait_end = khdays_clock_cycles();
             khdays_irq_deliver();
+            return;
+        }
+        if (stop != NULL && stop()) {
             return;
         }
         khdays_clock_sleep_until_or_woken(next_event());

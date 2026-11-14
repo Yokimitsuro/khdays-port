@@ -21,6 +21,7 @@
 #include "../plugins/plugins.h"
 #include "../scripts/scripts.h"
 #include "../core/runtime.h"
+#include "../core/events.h"
 #include "sequencers.h"
 #include "../core/window.h"
 #include "../../host/app/host.h"
@@ -421,8 +422,131 @@ static void share_stick(const KhdaysInputSnapshot *s)
     khdays_net_set_stick(&stick);
 }
 
+/* ---- KHDAYS_PRESS_PACE: a game frame started by a press ------------------------------------------
+ * At 30 game frames a second main works a frame out after a VBlank, waits out the next VBlank (its
+ * pace), presents, and starts the next frame at the VBlank after: a press while it waits is read a
+ * VBlank later than a game at 60 would. With the press pace a new press (a button down or let go, the
+ * movement stick started or stopped) ends that wait at once: the frame presents and the next starts at
+ * the coming VBlank, reading the press. The game is a VBlank ahead of its pace for it; the next frame with
+ * nothing new pressed waits a VBlank more to give it back -- a wait a press ends too -- so the game keeps
+ * 30 frames a second, its animations their speed. No more than PACE_OWED_MOST are owed, the rest let go
+ * (a press every frame). Tried before: the stick's turns counted too (an eighth, every few frames while
+ * steering), and a VBlank given back only after a third or half a second of nothing new -- owing 60, a
+ * stick turned in circles and then held straight ran the game at 20 frames a second for two; owing 3,
+ * real play (attacks, running, steering) seldom left that quiet and ran it faster than 30. One
+ * player alone (a session's machines keep the same frames), the field's 30 a second (mode 0), not over
+ * the settings menu. On by default; KHDAYS_PRESS_PACE=0 keeps the game's own pace.
+ * KHDAYS_TRACE_PRESS_PACE: each early start and each VBlank given back. */
+#define PACE_QUIET 1 /* game frames with nothing new before a VBlank is given back */
+#define PACE_OWED_MOST 3
+
+static int pace_on = -1, pace_trace;
+static u16 pace_buttons;  /* the buttons at the last Pad_Sample */
+static int pace_heading;  /* the movement stick then: 0 pushed, -1 let go */
+static int pace_owed;     /* VBlanks the game is ahead of its pace */
+static int pace_quiet;    /* game frames since something new was read */
+static int pace_paying;   /* this frame's pace has a VBlank more */
+static u32 pace_early, pace_paid;
+
+static int pace_active(void)
+{
+    if (pace_on < 0) {
+        const char *v = getenv("KHDAYS_PRESS_PACE");
+        pace_on = v == NULL || v[0] != '0'; /* on unless KHDAYS_PRESS_PACE=0 */
+        pace_trace = getenv("KHDAYS_TRACE_PRESS_PACE") != NULL;
+    }
+    return pace_on && FRAME_RATE_MODE == 0 && !khdays_net_in_session() && !snapshot.ui_open;
+}
+
+/* Whether the movement stick is pushed (0) or let go (-1, within a fifth of its range): its turns are not
+ * new presses (steering would start a frame early every few frames). */
+static int heading_of(int x, int y)
+{
+    return (long long)x * x + (long long)y * y < 6500LL * 6500LL ? -1 : 0;
+}
+
+static u16 pace_buttons_now(void)
+{
+    return (u16)(script_keys | khdays_host_buttons());
+}
+
+static int pace_heading_now(void)
+{
+    int x, y;
+    khdays_host_movement(&x, &y);
+    if (script_move[0] != 0 || script_move[1] != 0) {
+        x = script_move[0];
+        y = script_move[1];
+    }
+    return heading_of(x, y);
+}
+
+/* Something new since the game's last read of the pad. */
+static int pace_new_press(void)
+{
+    return pace_buttons_now() != pace_buttons || pace_heading_now() != pace_heading;
+}
+
+/* At Pad_Sample: what the game reads now, and whether it is new. */
+static void pace_sampled(void)
+{
+    const u16 buttons = pace_buttons_now();
+    const int heading = pace_heading_now();
+    pace_quiet = buttons != pace_buttons || heading != pace_heading ? 0 : pace_quiet + 1;
+    pace_buttons = buttons;
+    pace_heading = heading;
+}
+
+unsigned khdays_press_pace_target(unsigned target)
+{
+    pace_paying = 0;
+    if (pace_active() && pace_owed > 0 && pace_quiet >= PACE_QUIET) {
+        pace_paying = 1;
+        pace_quiet = 0; /* the next, if any, PACE_QUIET frames on */
+        --pace_owed;
+        ++pace_paid;
+        if (pace_trace) {
+            fprintf(stderr, "press pace: game frame %u waits a VBlank more (%d owed, %u early, %u given back)\n",
+                    pad_samples, pace_owed, pace_early, pace_paid);
+        }
+        return target + 1;
+    }
+    return target;
+}
+
+int khdays_press_pace_wait(unsigned (*count)(void), unsigned target)
+{
+    const unsigned start = count();
+    if (!pace_active()) {
+        return 0;
+    }
+    for (;;) {
+        if (count() != start) {
+            return 1; /* the VBlank came */
+        }
+        if (pace_new_press()) {
+            const int skipped = (int)(target - count());
+            pace_owed += skipped;
+            if (pace_owed > PACE_OWED_MOST) {
+                pace_owed = PACE_OWED_MOST;
+            }
+            if (pace_paying) {
+                --pace_paid; /* (counted when it was not yet given) */
+            }
+            ++pace_early;
+            if (pace_trace) {
+                fprintf(stderr, "press pace: game frame %u starts %d VBlank(s) early (%d owed)\n", pad_samples,
+                        skipped, pace_owed);
+            }
+            return 2;
+        }
+        khdays_runtime_wait_or(pace_new_press);
+    }
+}
+
 void khdays_input_pad_sample(void)
 {
+    pace_sampled();
     khdays_autosave_frame(); /* an owed autosave, before the save list maps the game's slots */
     khdays_language_frame(); /* a language the settings menu chose */
     if (trace_pad && pad_samples > 0) {
