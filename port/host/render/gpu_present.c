@@ -1029,6 +1029,7 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
         a = logic_count - 2;
         logic_pair = a;
         *alpha = x;
+        khdays_g3d_interp_pair(&interp, logic_time[a], logic_time[a + 1]); /* else a pair named before is kept */
         if (!khdays_g3d_interpolate(&interp, &logic_list[a], &logic_list[a + 1], (float)*alpha, &between)) {
             return NULL;
         }
