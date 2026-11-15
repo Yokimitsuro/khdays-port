@@ -393,8 +393,9 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertEqual([(n, [k for k, _ in s]) for n, s in kh2_enemies.spawn_sets(ard)], [("b_40", [2, 5])])
         kinds = {"B_HE100", "N_HE020_BTL", "N_HE030_BTL", "M_EX010"}
         # Phil alone (the Soldier an enemy, Megara her script's), turned so that the player is + z: half a turn
-        ((name, x, y, z, yaw),) = kh2_enemies.companions([ard], entries, "B_HE100", kinds)
+        ((name, x, y, z, yaw, argument),) = kh2_enemies.companions([ard], entries, "B_HE100", kinds)
         self.assertEqual(name, "N_HE020_BTL")
+        self.assertEqual(argument, 0)
         self.assertAlmostEqual(x, -100.0, places=3)
         self.assertEqual(y, -500.0)
         self.assertAlmostEqual(z, -300.0, places=3)
@@ -439,8 +440,38 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertEqual(kh2_enemies.mission_of([with_btl], entries, "B_HE100"), "HE17_MS105")
         self.assertIsNone(kh2_enemies.mission_of([ard], entries, "B_HE100"))
         self.assertIsNone(kh2_enemies.mission_of([with_btl], entries, "M_EX010"))
-        line = kh2_enemies.kinds_line("B_HE100", "Hydra", {(1, 6)}, {(1, 6)}, None, [(name, x, y, z, yaw)])
+        line = kh2_enemies.kinds_line("B_HE100", "Hydra", {(1, 6)}, {(1, 6)}, None, [(name, x, y, z, yaw, 0)])
         self.assertTrue(line.endswith("\t-\tN_HE020_BTL -100.0 -500.0 -300.0 -2.642\t-\t-\t-\t-\t0"), line)
+
+
+    def test_boss_placed_twice(self):
+        # Final Xemnas's battle places two of him (eh20's b_80): the wave's is the one whose first argument is
+        # PRIMARY's (1), the other comes with it as a companion, its argument kept
+        def entry(number: int, kind: int, model: bytes) -> bytes:
+            return struct.pack("<IBBBB", number, kind, 0, 0, 0) + model.ljust(32, b"\0")
+
+        records = [entry(2506, 3, b"B_EX170_LAST_LV99"), entry(566, 0, b"PLAYER")]
+        objentry = struct.pack("<II", 3, len(records)) + b"".join(r.ljust(96, b"\0") for r in records)
+        entries = kh2_enemies.entry_kinds(objentry)
+
+        def placed(number: int, x: float, z: float, argument: int) -> bytes:
+            record = struct.pack("<I6f", number, x, 0.0, z, 0.0, 3.14159265, 0.0).ljust(0x40, b"\0")
+            return record[:0x20] + struct.pack("<i", argument) + record[0x24:]
+
+        descriptor = struct.pack("<BBh4hI", 1, 0, 1, 3, 0, 0, 0, 0).ljust(0x2C, b"\0")
+        spawn = struct.pack("<II", 2, 1) + descriptor + placed(566, -102, 1800, 0)
+        spawn += placed(2506, 150, 1400, 0) + placed(2506, 0, 1200, 1)
+        ard = bar([(0x0D, b"btl\0", bytes(4)), (0x0C, b"b_80", spawn)])
+        self.assertEqual(kh2_enemies.unit_argument([ard], entries, "B_EX170_LAST_LV99"), 1)
+        ((name, x, y, z, yaw, argument),) = kh2_enemies.companions(
+            [ard], entries, "B_EX170_LAST_LV99", {"B_EX170_LAST_LV99"}
+        )
+        self.assertEqual((name, argument), ("B_EX170_LAST_LV99", 0))
+        self.assertAlmostEqual(math.hypot(x, z), math.hypot(150, 200), places=2)
+        line = kh2_enemies.kinds_line(
+            "B_EX170_LAST_LV99", "Xemnas", {(1, 6)}, {(1, 6)}, None, [(name, x, y, z, yaw, 2)]
+        )
+        self.assertIn(" 2\t", line)
 
 
 if __name__ == "__main__":

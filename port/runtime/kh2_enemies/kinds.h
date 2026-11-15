@@ -1,10 +1,11 @@
 // The KINGDOM HEARTS II enemy kinds the player's mod holds (contracts: "Days - KH2 Enemies", kh2_enemies.txt): one a
 // line, tab-separated -- name, title, covered (yes / no), how many calls its script makes, the missing ones, "player"
 // when its script plays the player's motions, its name's text in KH2's journal messages ("-" none), the objects KH2
-// places with it ("name x y z yaw" each, apart by ";"; "-" none), the mission KH2's area runs with its battle (its msn
-// file's name, kh2/msn/<name>.bar; "-" none), the walk paths of its battle ("number x y z x y z ..." each, apart by ";";
-// "-" none), the KH2 map it is bound to ("-" none: made in any room), its room's objects there ("name x y z yaw argument"
-// each, KH2's world, apart by ";"; "-" none) and the first argument its KH2 battle spawn gives it (0 none).
+// places with it ("name x y z yaw" each and its first argument when not 0, apart by ";"; "-" none), the mission KH2's
+// area runs with its battle (its msn file's name, kh2/msn/<name>.bar; "-" none), the walk paths of its battle ("number
+// x y z x y z ..." each, apart by ";"; "-" none), the KH2 map it is bound to ("-" none: made in any room), its room's
+// objects there ("name x y z yaw argument" each, KH2's world, apart by ";"; "-" none) and the first argument its KH2
+// battle spawn gives it (0 none).
 #pragma once
 
 #include <functional>
@@ -14,7 +15,8 @@
 namespace khdays::kh2_enemies {
 
 // An object KH2 places with a boss as its battle begins (its area's spawn: the Hydra's Phil, Pegasus and Phil's urn),
-// none an enemy: where, in KH2's cm from the boss, in its frame (+ z the way from it to the player), turned by yaw
+// none an enemy but the boss's own others (Final Xemnas's hidden one): where, in KH2's cm from the boss, in its frame
+// (+ z the way from it to the player), turned by yaw
 struct Companion final {
     std::string name;
     float x = 0.0F, y = 0.0F, z = 0.0F, yaw = 0.0F;

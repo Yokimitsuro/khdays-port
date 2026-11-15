@@ -5302,6 +5302,16 @@ void EffectInstance::set_matrices(std::vector<EffectGameMatrix> matrices)
     state->matrices = std::move(matrices);
 }
 
+const std::vector<EffectPoint> &EffectInstance::points() const
+{
+    return state->points;
+}
+
+const std::vector<EffectGameMatrix> &EffectInstance::matrices() const
+{
+    return state->matrices;
+}
+
 bool EffectInstance::done() const
 {
     return state->finished;

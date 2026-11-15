@@ -56,8 +56,12 @@ std::vector<Kind> read_kinds(const std::string &text)
             while (std::getline(placed, one, ';')) {
                 std::istringstream words(one);
                 Companion c;
-                if (words >> c.name >> c.x >> c.y >> c.z >> c.yaw)
-                    k.with.push_back(Companion{upper(c.name), c.x, c.y, c.z, c.yaw});
+                if (!(words >> c.name >> c.x >> c.y >> c.z >> c.yaw))
+                    continue;
+                if (!(words >> c.argument)) // (none given: 0)
+                    c.argument = 0;
+                c.name = upper(c.name);
+                k.with.push_back(c);
             }
         }
         if (cells.size() > 8 && !cells[8].empty() && cells[8] != "-")

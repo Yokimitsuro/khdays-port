@@ -167,6 +167,10 @@ public:
     void set_points(std::vector<EffectPoint> points);
     // The matrices the game gives the effect (EffectGameMatrix), kept until given again.
     void set_matrices(std::vector<EffectGameMatrix> matrices);
+    // ... and both as the effect left them: KH2's list is the game's own memory, which its sprites write back -- a
+    // frame moved on, a finished sprite's alpha 0 (the game then takes that slot again: Final Xemnas's lasers' hits)
+    const std::vector<EffectPoint> &points() const;
+    const std::vector<EffectGameMatrix> &matrices() const;
     bool done() const;
     std::size_t objects() const;
     const EffectBlock &block() const;

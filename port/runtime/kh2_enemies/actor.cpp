@@ -212,7 +212,16 @@ bool StateMachine::queue(Actor &a, const std::string &name)
     StateEntry e;
     if (locked_ || !find(a, name, e) || queued_.size() >= kQueue)
         return false;
-    queued_.push_back(name);
+    queued_.push_back({name, false});
+    return true;
+}
+
+bool StateMachine::queue_child(Actor &a, const std::string &name)
+{
+    StateEntry e;
+    if (locked_ || !find(a, name, e) || queued_.size() >= kQueue)
+        return false;
+    queued_.push_back({name, true});
     return true;
 }
 
@@ -244,10 +253,15 @@ void StateMachine::tick(Actor &a)
     if (current_ && waiting_)
         wait_or_begin(a);
     while (!current_ && !queued_.empty()) {
-        const std::string name = queued_.front();
+        const Queued q = queued_.front();
         queued_.erase(queued_.begin());
+        if (q.child) { // (6:58's: Final Xemnas's other one enters it, this queue goes on -- YS::ACT::check_start)
+            if (Actor *other = a.world != nullptr ? a.world->xemnas(1) : nullptr)
+                other->states().enter(*other, q.name);
+            continue;
+        }
         StateEntry e;
-        if (find(a, name, e))
+        if (find(a, q.name, e))
             go(a, e);
     }
 }

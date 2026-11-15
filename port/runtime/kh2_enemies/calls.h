@@ -35,6 +35,8 @@ inline void add_all(ai::Calls &calls)
 
 // KH2's chance (0:16 to 0:18): x = x * 0x10dcd, 32 bits; its seed per session.
 void seed_chance(std::uint32_t seed);
+// Its next value (the game's own draws share it: Final Xemnas's lasers pick theirs by it)
+std::uint32_t kh2_chance();
 
 // The memory 2:21 shares among a field's objects (trap_teamwork_alloc) let go, as KH2 lets it go with its field
 // (FUN_1403f6ea0): the next field's objects make theirs anew.

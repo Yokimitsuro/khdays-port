@@ -151,6 +151,10 @@ KINDS = {
     "B_EX210": "Luxord's card",
     # his data battle (FINAL MIX's Limit Cut, _LV99): his sniping's scope and sights, his shots' reaction commands
     "B_EX140_LV99": "Xigbar (Data)",
+    # his final form's data battle (eh20's b_80): two of him are placed, the one his wave makes (PRIMARY) and a hidden
+    # one his script commands (6:59); P_EX100_LAST is the Sora his script makes (1:0) for his reaction commands
+    "B_EX170_LAST_LV99": "Xemnas (Final, Data)",
+    "P_EX100_LAST": "Sora (Final Xemnas's)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -178,7 +182,12 @@ VOICES = {
     "B_EX370": "n_zexion",
     "B_EX150_LV99": "n_gambler",
     "B_EX140_LV99": "n_sniper",
+    "B_EX170_LAST_LV99": "n_xemnas_last",
 }
+# A boss its battle places more than once: the first argument (UnitArg[1], 1:39) of the one a wave makes -- the others
+# are placed with it as companions. Final Xemnas's script hides the one whose argument is not 1 as it begins (its
+# init: flag 14, faded out at once, its collision off) and commands it (Ts::XEMNAS::Get, 6:59)
+PRIMARY = {"B_EX170_LAST_LV99": 1}
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
 SHARED = (
@@ -305,7 +314,7 @@ def kinds_line(
     calls: set[tuple[int, int]],
     handled: set[tuple[int, int]],
     journal: int | None = None,
-    with_it: list[tuple[str, float, float, float, float]] | None = None,
+    with_it: list[tuple[str, float, float, float, float, int]] | None = None,
     mission: str | None = None,
     paths: list[tuple[int, list[tuple[float, float, float]]]] | None = None,
     home: str | None = None,
@@ -315,9 +324,10 @@ def kinds_line(
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
     script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
     text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-", and the objects KH2 places with it
-    (companions: "name x y z yaw" each, apart by ";") else "-", and the mission KH2's area runs with its battle (its
-    msn file's name: kh2/msn/<name>.bar) else "-", the walk paths of its battle (walk_paths: "number x y z x y z
-    ..." each, apart by ";") else "-", the KH2 map it is bound to (room_objects: its battle's area, bb05) else "-" --
+    (companions: "name x y z yaw" each and its first argument when not 0, apart by ";") else "-", and the mission
+    KH2's area runs with its battle (its msn file's name: kh2/msn/<name>.bar) else "-", the walk paths of its battle
+    (walk_paths: "number x y z x y z ..." each, apart by ";") else "-", the KH2 map it is bound to (room_objects: its
+    battle's area, bb05) else "-" --
     the port makes it only in a room made from that map -- its room's objects there ("name x y z yaw argument" each,
     KH2's world, apart by ";") else "-", and the first argument its KH2 battle spawn gives it (unit_argument; 0 none)
     (tab-separated)."""
@@ -325,7 +335,7 @@ def kinds_line(
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
     named = str(journal) if journal is not None else "-"
-    placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" for n, x, y, z, yaw in with_it or []) or "-"
+    placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" + (f" {a}" if a else "") for n, x, y, z, yaw, a in with_it or []) or "-"
     covered = "no" if missing or not calls else "yes"
     ways = ";".join(f"{n} " + " ".join(f"{x:.1f} {y:.1f} {z:.1f}" for x, y, z in points) for n, points in paths or [])
     pieces = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f} {arg}" for n, x, y, z, yaw, arg in room or []) or "-"
@@ -414,15 +424,17 @@ def spawn_sets(
 
 def companions(
     ards: list[bytes], entries: dict[int, tuple[str, int]], name: str, kinds: set[str]
-) -> list[tuple[str, float, float, float, float]]:
+) -> list[tuple[str, float, float, float, float, int]]:
     """The objects KH2 places with a boss (its entry's kind 3 or 0xc) as its battle begins that are no enemies -- the
     Hydra's Phil, Pegasus and Phil's urn: its area's battle spawn ("b_..") whose set holds it and the player (its
     fight's own), the other objects of that spawn's sets KH2 places as the area loads (types 1 and 2; type 5 holds
     those its scripts make, 1:0) but the player and his party, enemies and bosses (a mission's author places those:
-    the Volcanic Lord's Blizzard Lord) and those the mod has no kind of; each as (name, x, y, z, yaw) in its own frame:
-    from it, turned so that the way from it to the player is + z (the port turns them to where its player stands).
-    The first such spawn of the areas as given; none when none holds it, or for an enemy."""
-    found = battle_of(ards, entries, name)
+    the Volcanic Lord's Blizzard Lord) and those the mod has no kind of -- save the boss's own others (PRIMARY: Final
+    Xemnas's hidden one); each as (name, x, y, z, yaw, its first argument, UnitArg[1]) in its own frame: from it,
+    turned so that the way from it to the player is + z (the port turns them to where its player stands). The first
+    such spawn of the areas as given; none when none holds it, or for an enemy."""
+    arguments: dict[tuple[int, float, float, float, float], int] = {}
+    found = battle_of(ards, entries, name, arguments=arguments)
     if found is None:
         return []
     placed, _, me, turn = found
@@ -431,24 +443,34 @@ def companions(
     for _, objects in placed:
         for o in objects:
             other, kind = entries.get(o[0], ("", -1))
-            if o is me or kind in PARTY or kind in ENEMIES or other not in kinds:
+            double = other == name and name in PRIMARY
+            if o is me or kind in PARTY or (kind in ENEMIES and not double) or other not in kinds:
                 continue
             dx, dy, dz = o[1] - me[1], o[2] - me[2], o[3] - me[3]
-            out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn))
+            out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn, arguments.get(o, 0)))
     return out
 
 
-def battle_of(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str, walking: bool = False):
+def battle_of(
+    ards: list[bytes],
+    entries: dict[int, tuple[str, int]],
+    name: str,
+    walking: bool = False,
+    arguments: dict[tuple[int, float, float, float, float], int] | None = None,
+):
     """A boss's battle in its area's spawns (companions, walk_paths): the first battle spawn ("b_..") whose set of
     those KH2 places as the area loads holds it and the player -- that spawn's placed sets, its own set's walk paths,
-    its own record (number, x, y, z, yaw) and the turn that makes the way from it to the player + z; None when none
-    does, or for an enemy (its entry's kind neither 3 nor 0xc). `walking`: the first whose own set has walk paths, the
-    player in any of the spawn's placed sets (the hyenas' second fight, lk05's b_60, keeps him in another)."""
+    its own record (number, x, y, z, yaw; PRIMARY: the one with that first argument) and the turn that makes the way
+    from it to the player + z; None when none does, or for an enemy (its entry's kind neither 3 nor 0xc). `walking`:
+    the first whose own set has walk paths, the player in any of the spawn's placed sets (the hyenas' second fight,
+    lk05's b_60, keeps him in another). `arguments`, when given, gets the first argument (UnitArg[1]) of each object
+    of that spawn by its record."""
     if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
         return None
     for ard in ards:
         walks: dict[tuple[str, int], list[tuple[int, list[tuple[float, float, float]]]]] = {}
-        for entry, sets in spawn_sets(ard, walks):
+        given: dict[tuple[str, int, int], int] = {}
+        for entry, sets in spawn_sets(ard, walks, given):
             if not entry.startswith("b"):
                 continue
             placed = [s for s in sets if s[0] in PLACED_SETS]
@@ -470,7 +492,16 @@ def battle_of(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str,
             if own is None:
                 continue
             place, objects = own
-            me = next(o for o in objects if entries.get(o[0], ("", -1))[0] == name)
+            mine = [k for k, o in enumerate(objects) if entries.get(o[0], ("", -1))[0] == name]
+            me = objects[
+                next((k for k in mine if given.get((entry, place, k), 0) == PRIMARY[name]), mine[0])
+                if name in PRIMARY
+                else mine[0]
+            ]
+            if arguments is not None:
+                for p, (_, placed_objects) in enumerate(sets):
+                    for k, o in enumerate(placed_objects):
+                        arguments[o] = given.get((entry, p, k), 0)
             player = next((o for o in objects if entries.get(o[0], ("", -1))[1] == 0), players[0] if players else me)
             turn = math.atan2(player[1] - me[1], player[3] - me[3])
             return placed, walks.get((entry, place), []), me, turn
@@ -491,7 +522,9 @@ def unit_argument(ards: list[bytes], entries: dict[int, tuple[str, int]], name: 
             for place, (kind, objects) in enumerate(sets):
                 for k, o in enumerate(objects):
                     if kind in PLACED_SETS and entries.get(o[0], ("", -1))[0] == name:
-                        return arguments.get((entry, place, k), 0)
+                        given = arguments.get((entry, place, k), 0)
+                        if name not in PRIMARY or given == PRIMARY[name]:
+                            return given
     return 0
 
 

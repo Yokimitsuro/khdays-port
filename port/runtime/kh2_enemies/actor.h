@@ -109,6 +109,10 @@ public:
     // sets, FUN_1403cad00; 0 with none)
     bool enter_over(Actor &a, const std::string &name);
     bool queue(Actor &a, const std::string &name);  // 1:9: after the current one (15 at most, KH2's ring)
+    // 6:58 (Ts::trap_obj_act_child_push -> YS::ACT::child_push): queued as 1:9, its element's flag bit 0 set -- when
+    // its turn comes (YS::ACT::check_start) it is entered on Final Xemnas's other one (Ts::XEMNAS::Get(1), World::
+    // xemnas) and the queue goes on to the next: his blades' dance, his own moves queued between his other one's
+    bool queue_child(Actor &a, const std::string &name);
     bool pending() const;                           // 1:10: one running or queued
     void clear(Actor &a);                           // 1:127: the current left, the queue emptied
     void unlock()
@@ -137,7 +141,11 @@ private:
     void wait_or_begin(Actor &a);
 
     std::uint32_t table_ = 0, handle_ = 0;
-    std::vector<std::string> queued_;
+    struct Queued final {
+        std::string name;
+        bool child = false; // 6:58's: entered on Final Xemnas's other one
+    };
+    std::vector<Queued> queued_;
     std::optional<StateEntry> current_;
     std::uint32_t thread_id_ = 0;
     bool locked_ = false;
@@ -481,6 +489,49 @@ public:
                               float /*size_y*/, float /*speed_x*/, float /*speed_y*/)
     {
     }
+    // 0:80: whether this game's own player holds the button of KH2's field pad bit `bit` now (trap_pad_is_button: bit
+    // n of YS::SOFTPAD::Get(0)'s held mask; the field's table, YS::SoftPadTableField, makes them from the pad: 8 the
+    // jump's CANCEL, 9 square, 10 triangle, 11 R1, 14 to 16 and 28 the D-pad, 22 Select, 23 L1, 24 to 27 circle,
+    // triangle, square, cross)
+    virtual bool pad_held(int /*bit*/)
+    {
+        return false;
+    }
+    // 1:113: the way the player's pad moves him (YS::PLAYER::get_movement -> PadToMovement: the camera's way, KH2's
+    // world) and how far the stick is pushed (its w: 0 none, 1 all the way); whether `o` is a player whose pad is known
+    virtual bool player_movement(Object & /*o*/, Vec3 &way, float &push)
+    {
+        way = {};
+        push = 0.0F;
+        return false;
+    }
+    // 1:354 / 1:356: KH2's 2D layers off and on (YS::EVENT::LayerOff: its common, mission, map and other layers, and
+    // YS::INDICATION::Disable: the reaction command's sign), Final Xemnas's while his laser dome's event plays
+    virtual void layers(bool /*on*/) {}
+    // 6:49: whether an object is stopped (Ts::trap_obj_is_stop -> YS::OBJ::is_stop: its STOP's -- Stop magic, a
+    // stop put on it, 6:46 --, a summon's mode)
+    virtual bool is_stopped(Object & /*o*/)
+    {
+        return false;
+    }
+    // 0:66: an effect held where it is or let go on (trap_effect_pause -> ryj::EFFECT::stop(bool): its flag 0x200000)
+    virtual void effect_pause(std::uint32_t /*handle*/, bool /*paused*/) {}
+    // 6:59: Final Xemnas's own (Ts::XEMNAS::Get: the field's objects whose entry's part is 4007, a B_EX170's): n 0
+    // the one whose first argument (UnitArg[1]) is 1, else one whose is not; null none
+    virtual Actor *xemnas(int /*n*/)
+    {
+        return nullptr;
+    }
+    // Final Xemnas's laser dome (ryj::LAST_XEMNUS_LASER: 8:3 started on its caster, 8:4 its lasers fired, 8:5 ended,
+    // 8:6 / 8:7 the room's map group 0, sky and glow hidden and shown again while it plays)
+    virtual void laser_start(Actor & /*caster*/) {}
+    virtual void laser_attack() {}
+    virtual void laser_end() {}
+    virtual void laser_optimize(bool /*on*/) {}
+    // 10:6 / 10:7: a special command put in the player's command menu by an object (YS::STDOBJ::set_special_command:
+    // PLAYER_COMMAND::set_special_command(n, its archive's 'comd' pictures, the object)) and taken off
+    virtual void special_command(Object & /*o*/, int /*number*/) {}
+    virtual void special_command_off(Object & /*o*/) {}
     // A way along the ground (`way`, KH2's cm) from `place` swept by a body's sphere of `radius` (KH2's cm; 0 the actor's
     // own) against the room's walls (Days's: its wall list, which its ray never meets): up to the first wall, the rest
     // slid along it when `slide`; the way made back in `way`, whether a wall stopped it
@@ -597,6 +648,9 @@ public:
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
+    // 1:227 on a player: KH2's jump at once (YS::ACTION::jump: his own action, the jump, taken back) -- an enemy that
+    // holds him lets him go to his own control then (Final Xemnas's throw's thread ends so)
+    virtual void player_let_go(Object & /*player*/, const char * /*why*/) {}
     // 1:112 on a player: a script's routine as the player's thread (the one before ended)
     virtual void player_thread(Object & /*player*/, ai::Machine & /*machine*/, std::uint32_t /*thread*/) {}
     // 1:242: KH2's player turned into the form of the object entry `entry` (YS::trap_player_capture_form ->

@@ -153,6 +153,11 @@ void seed_chance(std::uint32_t seed)
     chance_state = seed != 0 ? seed : 1;
 }
 
+std::uint32_t kh2_chance()
+{
+    return next_chance();
+}
+
 void forget_teamwork()
 {
     teamwork().clear();
@@ -541,6 +546,8 @@ void add_states(ai::Calls &calls)
     });
 }
 
+void add_final_xemnas(ai::Calls &calls);
+
 // ------------------------------------------------------------------------------------------------- the actor's fields
 
 void add_actor_fields(ai::Calls &calls)
@@ -705,6 +712,8 @@ void add_actor_fields(ai::Calls &calls)
         a[0] = ai::Value::of_address(self_of(m, a[0])->address() + 0x128);
     });
     calls.set(1, 179, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (is_player(object_of(m, a[0])))
+            return; // (one of Days's players: his own fall is Days's)
         self_of(m, a[0])->motion.after = std::int32_t(a[1].bits);
     });
     // 1:211 / 1:212 bit n of + 0xd10 set / cleared (FUN_14042ba50, FUN_14042ba80)
@@ -1317,6 +1326,11 @@ void add_motions(ai::Calls &calls)
     // YS::ACTION::jump -- YS::OBJ::prepare_jump with the vector as 1:55's, then change_action(1)): class 1 on the
     // spot, its motion as it is, no take-off waited for
     calls.set(1, 227, [begin_jump](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: his own control back
+            if (running(m)->world != nullptr)
+                running(m)->world->player_let_go(*o, "his jump at once (1:227)");
+            return;
+        }
         Actor *x = self_of(m, a[0]);
         x->take_off.reset();
         begin_jump(*x, read_vec(m, a[1].bits));
@@ -1634,11 +1648,19 @@ void add_moving(ai::Calls &calls)
     // the same, class 6 -- YS::ACTION_HOVER moves by ACTION_FLY's calc_movement, its other virtuals ACTION's as
     // FLY's are): Saïx's claymore
     const auto fly = [](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
         Vec v = read_vec(m, a[1].bits);
         for (float &c : v.v)
             if (std::isnan(c))
                 c = 0.0F;
+        if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: the world steers him (Final
+            // Xemnas's throw holds the player still so)
+            const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+            if (running(m)->world != nullptr)
+                running(m)->world->player_steer(*o, n > 0.0F ? Vec3{v.v[0] / n, v.v[1] / n, v.v[2] / n} : Vec3{},
+                                                n > 0.0F ? v.v[3] : 0.0F);
+            return;
+        }
+        Actor *x = self_of(m, a[0]);
         const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
         x->velocity = n > 0.0F ? Vec3{v.v[0] / n * v.v[3], v.v[1] / n * v.v[3], v.v[2] / n * v.v[3]} : Vec3{};
         x->steered = x->velocity;
@@ -3171,6 +3193,154 @@ void add_world(ai::Calls &calls)
     });
     for (const unsigned n : {257u, 258u, 259u, 260u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value>) {});
+    add_final_xemnas(calls);
+}
+
+// ------------------------------------------------------------------------------------------------- Final Xemnas
+
+void add_final_xemnas(ai::Calls &calls)
+{
+    // 0:66 an effect held or let go on (YS::trap_effect_pause -> ryj::EFFECT::stop(bool): its flag 0x200000)
+    calls.set(0, 66, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
+            w->effect_pause(a[0].bits, a[1].bits != 0);
+    });
+    // 0:80 whether a button of KH2's field pad is held (YS::trap_pad_is_button: bit n of YS::SOFTPAD::Get(0)'s
+    // Button): Final Xemnas's air fight lifts the player while he holds 8, the jump
+    calls.set(0, 80, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->pad_held(std::int32_t(a[0].bits & 0x7fu)) ? 1 : 0);
+    });
+    // 1:95 a flight turned into a jump (YS::trap_obj_fly_to_jump -> YS::OBJ::fly_to_jump: ACTION 1, the jump, its
+    // rise and height from the flight's speed -- + 0xd0 its vertical speed over YS::SPEC::GRAVITY, + 0xd8 where it
+    // tops -- its speed the flight's, + 0x20 = + 0x860): it goes on as it flew, falling under KH2's pull
+    calls.set(1, 95, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec3 v = x->velocity;
+        x->dashing = false;
+        x->jump.on = true;
+        x->jump.arc = false;
+        x->jump.blow = false;
+        x->jump.gravity = kKh2Pull;
+        x->jump.keep = Jump{}.keep;
+        x->jump.slow = Jump{}.slow;
+        x->jump.up = v[1];
+        x->jump.along = {v[0], 0.0F, v[2]};
+        x->velocity = x->jump.along;
+        x->steered = x->jump.along;
+        x->move_clock = 0.0F;
+        x->set_bits(field::kFlags, bit::kInAir, true);
+    });
+    // 1:113 the way the player's pad moves him (YS::trap_player_get_movement -> YS::PLAYER::get_movement: its w how far
+    // the stick is pushed): the vector of 1:113. Final Xemnas's air fight steers the player by it (1:111)
+    calls.set(1, 113, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        World *w = running(m)->world;
+        Vec v;
+        Vec3 way{};
+        float push = 0.0F;
+        if (w != nullptr && o != nullptr && w->player_movement(*o, way, push))
+            v.v[0] = way[0], v.v[1] = way[1], v.v[2] = way[2], v.v[3] = push;
+        a[0] = give_vec(m, "1:113", v);
+    });
+    // 1:115 the motions a jump goes on to (YS::trap_obj_set_jump_motion: + 0x100 n + 1 its fall, + 0x104 n + 2 its
+    // landing, as 1:55's flag sets them)
+    calls.set(1, 115, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->motion.after = std::int32_t(a[1].bits) + 1;
+        x->motion.landing = std::int32_t(a[1].bits) + 2;
+    });
+    // 1:192 whether its motion may be cut now (YS::trap_obj_is_motion_cancel: YS::MOTION's Flag bit 4, FLAG_CANCEL --
+    // the PC's + 0x18c, its motion's range 4)
+    calls.set(1, 192, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(x != nullptr && (x->u32(field::kStatus) & 0x10u) != 0 ? 1 : 0);
+    });
+    // 1:234 a party member's weapon object (YS::trap_party_get_weapon: YS::PARTY's + 0xaf8 + 4 n): Days's players
+    // hold no KH2 weapon object -- none (Final Xemnas's air fight then leaves the player's keyblade as it is, 6:65)
+    calls.set(1, 234, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        a[0] = ai::Value::of_address(x != nullptr && !is_player(x) ? x->u32(0xaf8u + 4u * (a[1].bits & 3u)) : 0u);
+    });
+    // 1:354 / 1:356 KH2's 2D layers off and on (YS::trap_event_layer_off: YS::EVENT::LayerOff -- its common, mission,
+    // map and other layers -- and YS::INDICATION::Disable; trap_event_layer_on the two back): World::layers
+    calls.set(1, 354, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->layers(false);
+    });
+    calls.set(1, 356, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->layers(true);
+    });
+    // 6:49 whether an object is stopped (Ts::trap_obj_is_stop -> YS::OBJ::is_stop): World::is_stopped
+    calls.set(6, 49, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && x != nullptr && w->is_stopped(*x) ? 1 : 0);
+    });
+    // 6:58 a state queued for Final Xemnas's other one (Ts::trap_obj_act_child_push -> YS::ACT::child_push): his
+    // blades' dance (StateMachine::queue_child)
+    calls.set(6, 58, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]))
+            x->states().queue_child(*x, name_at(m.memory(), a[1].bits));
+    });
+    // 6:59 one of Final Xemnas's own into an AI handle's + 4 (Ts::trap_xemnas_get_obj -> Ts::XEMNAS::Get(n): 0 the
+    // one whose first argument is 1, 1 the other; World::xemnas), 0 none
+    calls.set(6, 59, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        Actor *x = w != nullptr ? w->xemnas(std::int32_t(a[1].bits)) : nullptr;
+        m.memory().set_u32(a[0].bits + 4, x != nullptr ? x->address() : 0u);
+    });
+    // 6:65 an object's model cut to the screen's rectangle or not (Ts::trap_obj_set_scissoring: its draw list's flag
+    // 0x20, + 0x768): kept; the port's draw does not read it
+    calls.set(6, 65, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = Object::at(m.memory(), a[0].bits);
+        std::uint32_t inner = 0;
+        if (x == nullptr && a[0].bits != 0 && m.memory().read(a[0].bits + 4, &inner, 4))
+            x = Object::at(m.memory(), inner);
+        if (x != nullptr)
+            x->set_bits(0x768, 0x20u, a[1].bits != 0);
+    });
+    // 7:14 where on an attack its reaction command's sign stands (Ts::trap_attack_set_reaction_offset: + 0x130)
+    calls.set(7, 14, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (a[0].bits == 0)
+            return;
+        const Vec v = read_vec(m, a[1].bits);
+        m.memory().write(a[0].bits + 0x130, v.v, sizeof v.v);
+    });
+    // 8:3 to 8:7 Final Xemnas's laser dome (ryj::trap_special_last_xemnus_laser_start on its caster, _attack, _end,
+    // _optimize, _optimize_end: ryj::LAST_XEMNUS_LASER, World::laser_start ...)
+    calls.set(8, 3, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->laser_start(*self_of(m, a[0]));
+    });
+    calls.set(8, 4, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->laser_attack();
+    });
+    calls.set(8, 5, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->laser_end();
+    });
+    calls.set(8, 6, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->laser_optimize(true);
+    });
+    calls.set(8, 7, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->laser_optimize(false);
+    });
+    // 10:6 / 10:7 a special command of an object's put in the player's command menu and taken off
+    // (kn::trap_obj_set_special_command -> YS::STDOBJ::set_special_command(n), _reset_special_command): World::
+    // special_command
+    calls.set(10, 6, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]); x != nullptr && running(m)->world != nullptr)
+            running(m)->world->special_command(*x, std::int32_t(a[1].bits));
+    });
+    calls.set(10, 7, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]); x != nullptr && running(m)->world != nullptr)
+            running(m)->world->special_command_off(*x);
+    });
 }
 
 } // namespace khdays::kh2_enemies
