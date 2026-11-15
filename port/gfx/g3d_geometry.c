@@ -1259,14 +1259,20 @@ static void into_drawing_order(List *l)
     into_drawing_order_with(l, &order, &order_capacity, 1);
 }
 
+#if defined(_MSC_VER)
+#define THREAD_OWN __declspec(thread)
+#else
+#define THREAD_OWN _Thread_local
+#endif
+
 static int finish_body(const KhdaysG3dList *from, const KhdaysG3dPreVertex *vertices, KhdaysG3dList *out)
 {
     const KhdaysG3dPreVertex *source = vertices != NULL ? vertices : from->pre_verts;
     int32_t ds[2] = {0, 0};
     /* the sort's room kept per thread (the game's thread and the picture's both finish lists), not
      * allocated and freed on every call */
-    static __declspec(thread) Polygon *order;
-    static __declspec(thread) int32_t order_capacity;
+    static THREAD_OWN Polygon *order;
+    static THREAD_OWN int32_t order_capacity;
     out->npolys = out->nverts = out->beyond_ds = 0;
     out->npre = out->npre_verts = 0;
     out->swap_params = from->swap_params;

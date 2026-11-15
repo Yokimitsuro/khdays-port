@@ -652,9 +652,10 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         dst.buffer = buffer;
         dst.offset = 0;
         dst.size = entries * 16u;
-        if (dst.size > 0)
+        if (dst.size > 0) {
             generation++;
-        SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+            SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+        }
         src.offset = entries * 16u;
         for (uint32_t i = 0; i < nwanted; ++i) {
             const uint32_t id = wanted[i];

@@ -24,7 +24,10 @@ static int count, capacity, depth, enabled, volume = -1;
 static uintptr_t caster;
 static Shadow *shadows;
 static int shadow_count, shadow_capacity;
-static KhdaysShadowOutcome outcomes[64]; /* by owner, the oldest replaced (khdays_shadow_outcome) */
+/* by owner (khdays_shadow_outcome); one older than the last few lists is free for another owner, the
+ * table grows when none is */
+static KhdaysShadowOutcome *outcomes;
+static int outcome_count, outcome_capacity;
 static unsigned lists_finished;
 static int receives(const Capture *r, const KhdaysG3dPolygon *p);
 
@@ -35,7 +38,7 @@ unsigned khdays_shadow_lists_finished(void)
 
 const KhdaysShadowOutcome *khdays_shadow_outcome(uintptr_t owner)
 {
-    for (int i = 0; i < 64; ++i)
+    for (int i = 0; i < outcome_count; ++i)
         if (outcomes[i].owner == owner && owner != 0)
             return &outcomes[i];
     return NULL;
@@ -43,16 +46,30 @@ const KhdaysShadowOutcome *khdays_shadow_outcome(uintptr_t owner)
 
 static KhdaysShadowOutcome *outcome_for(uintptr_t owner)
 {
-    KhdaysShadowOutcome *oldest = &outcomes[0];
-    for (int i = 0; i < 64; ++i) {
+    KhdaysShadowOutcome *stale = NULL;
+    for (int i = 0; i < outcome_count; ++i) {
         if (outcomes[i].owner == owner)
             return &outcomes[i];
-        if (outcomes[i].list < oldest->list)
-            oldest = &outcomes[i];
+        if (stale == NULL && lists_finished - outcomes[i].list > 4u) /* model_stance.cpp reads the last 4 */
+            stale = &outcomes[i];
     }
-    memset(oldest, 0, sizeof(*oldest));
-    oldest->owner = owner;
-    return oldest;
+    if (stale == NULL) {
+        if (outcome_count == outcome_capacity) {
+            const int grown = outcome_capacity ? outcome_capacity * 2 : 64;
+            KhdaysShadowOutcome *more = realloc(outcomes, (size_t)grown * sizeof(*more));
+            if (more == NULL) {
+                static KhdaysShadowOutcome lost; /* out of memory: this owner's outcome goes unrecorded */
+                memset(&lost, 0, sizeof(lost));
+                return &lost;
+            }
+            outcomes = more;
+            outcome_capacity = grown;
+        }
+        stale = &outcomes[outcome_count++];
+    }
+    memset(stale, 0, sizeof(*stale));
+    stale->owner = owner;
+    return stale;
 }
 
 /* The polygons under the ground plan lo..hi (any height) that are not `owner`'s, by why they do not receive */
