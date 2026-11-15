@@ -445,9 +445,44 @@ void pose_cuffs(const Model &m)
     const float dt = static_cast<float>(gap) / 60.0F;
     static std::vector<HandVec> points;
     static std::vector<Mat> posed;
+    static std::vector<std::pair<Mat, Mat>> flap_frame; // by joint, a flap's bone: its frame now, and the motion's
+    static std::vector<char> flap_placed;
     for (std::size_t c = 0; c < m.cuffs.size(); ++c) {
         const Model::Cuff &cuff = m.cuffs[c];
         CuffMotion &motion = actor.cuff_motions[c];
+        // the fit opens each flap from its rest on the root: each bone back on its parent as at rest, the motion's turn
+        // left out but not its scale (KH2 motions shorten the flaps: N_CM040_BTL's idle to 0.41 of their length, its
+        // walk 0.7), each axis as the motion scales it against its parent, so a shortened bone brings its children in
+        if (!m.cuff_motion_flaps)
+            for (const auto &flap : cuff.flap_joints) {
+                flap_frame.resize(m.joints.size());
+                flap_placed.assign(m.joints.size(), 0);
+                for (const std::size_t j : flap) { // parents first
+                    const int up = m.joints[j].parent;
+                    if (up < 0)
+                        continue;
+                    const auto u = static_cast<std::size_t>(up);
+                    const Mat rest = inverse(m.joints[j].inverse_bind), up_rest = inverse(m.joints[u].inverse_bind);
+                    const Mat moved = mul(skin[j], rest); // as the motion poses it
+                    const bool above = flap_placed[u] != 0;
+                    const Mat up_now = above ? flap_frame[u].first : mul(skin[u], up_rest);
+                    const Mat up_moved = above ? flap_frame[u].second : up_now;
+                    Mat frame = mul(up_now, mul(inverse(up_rest), rest));
+                    // a parent the motion flattens to nothing on an axis (B_EX150's walk: the left flaps' y and z
+                    // 0.00) gives no ratio there: the bone keeps the parent's (already in up_now); the ratio at most 2
+                    // (flat against flat mid-blend made it 10^4, a flap a kilometre long)
+                    for (std::size_t a = 0; a < 3; ++a) {
+                        const float has = length({moved[a * 4], moved[a * 4 + 1], moved[a * 4 + 2]}),
+                                    under = length({up_moved[a * 4], up_moved[a * 4 + 1], up_moved[a * 4 + 2]});
+                        const float by = under > 1e-2F ? std::fmin(has / under, 2.0F) : 1.0F;
+                        for (std::size_t e = 0; e < 3; ++e)
+                            frame[a * 4 + e] *= by;
+                    }
+                    flap_frame[j] = {frame, moved};
+                    flap_placed[j] = 1;
+                    skin[j] = mul(frame, m.joints[j].inverse_bind);
+                }
+            }
         const Mat before = mul(skin[cuff.root], inverse(m.joints[cuff.root].bind));
         const Mat before_back = inverse(before);
         points.resize(cuff.points.size());

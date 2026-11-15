@@ -1,13 +1,16 @@
 #include "khdays/assets/kh2_mdlx.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -213,7 +216,11 @@ ImportedModel import_mdlx(const std::filesystem::path& path) {
     if (!in) {
         throw std::runtime_error("cannot open " + path.string());
     }
-    const std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    in.seekg(0, std::ios::end);  // in one go: an istreambuf_iterator reads a byte at a time
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(std::max<std::streamoff>(0, in.tellg())));
+    in.seekg(0, std::ios::beg);
+    in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<std::size_t>(in.gcount()));
     return import_mdlx(bytes.data(), bytes.size(), path.stem().string(), path.parent_path() / path.stem());
 }
 
@@ -266,6 +273,8 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         joint.world = w;
         joint.inverse_bind = inverse_affine(w);
         joint.parent = model.bones[b].parent;
+        joint.no_envelope = model.bones[b].no_envelope;
+        joint.length = model.bones[b].length * kMetres;
         result.joints.push_back(joint);
         result.model.palette.push_back(kIdentity);
     }
@@ -280,10 +289,47 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         const bool has_hd = !hd_folder.empty() && std::filesystem::is_directory(hd_folder, no_folder);
         int hd_pictures = 0, hd_sheets = 0;
         hd.resize(container.textures.size());
+        // the HD pictures, then the animations' sprite sheets, read and decoded on several threads at once (each
+        // its own file; a model has a few dozen, a DXT5 1024 x 1024 several ms to decode), notes and failures in order
+        const std::size_t count = container.textures.size();
+        const std::size_t all = count + container.animations.size();
+        std::vector<std::optional<DecodedTexture>> bigs(all);
+        std::vector<std::vector<std::string>> big_notes(all);
+        std::vector<std::exception_ptr> big_errors(all);
+        if (has_hd && all > 0) {
+            const unsigned threads =
+                std::max(1U, std::min({std::thread::hardware_concurrency(), 8U, static_cast<unsigned>(all)}));
+            std::atomic<std::size_t> next{0};
+            const auto work = [&] {
+                for (std::size_t t = next++; t < all; t = next++) {
+                    try {
+                        const int number =
+                            t < count ? container.hd_pictures[t] : container.animations[t - count].hd_sheet;
+                        if (t < count || number >= 0) {
+                            bigs[t] = read_hd_picture(hd_folder, number, big_notes[t]);
+                        }
+                    } catch (...) {
+                        big_errors[t] = std::current_exception();
+                    }
+                }
+            };
+            std::vector<std::thread> pool;
+            for (unsigned i = 1; i < threads; ++i) {
+                pool.emplace_back(work);
+            }
+            work();
+            for (std::thread& th : pool) {
+                th.join();
+            }
+        }
         for (std::size_t t = 0; t < container.textures.size(); ++t) {
             const std::string key = "tex" + std::to_string(t);
+            result.notes.insert(result.notes.end(), big_notes[t].begin(), big_notes[t].end());
             try {
-                auto big = has_hd ? read_hd_picture(hd_folder, container.hd_pictures[t], result.notes) : std::nullopt;
+                if (big_errors[t]) {
+                    std::rethrow_exception(big_errors[t]);
+                }
+                auto big = std::move(bigs[t]);
                 if (big) {
                     const GsTexture& gs = container.textures[t];
                     hd[t] = {true, static_cast<float>(big->width), static_cast<float>(big->height),
@@ -299,7 +345,8 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
             }
         }
         // the textures' animated parts (a face's eyes and mouth), their sprites decoded through the palette
-        for (const TextureAnimation& a : container.animations) {
+        for (std::size_t n = 0; n < container.animations.size(); ++n) {
+            const TextureAnimation& a = container.animations[n];
             ImportedTextureAnimation out;
             out.texture = "tex" + std::to_string(a.target);
             out.x = a.x;
@@ -337,8 +384,11 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                 }
                 out.scripts.push_back(std::move(script));
             }
-            auto sheet =
-                has_hd && a.hd_sheet >= 0 ? read_hd_picture(hd_folder, a.hd_sheet, result.notes) : std::nullopt;
+            result.notes.insert(result.notes.end(), big_notes[count + n].begin(), big_notes[count + n].end());
+            if (big_errors[count + n]) {
+                std::rethrow_exception(big_errors[count + n]);
+            }
+            auto sheet = std::move(bigs[count + n]);
             if (sheet && (a.sprite_count <= 0 || sheet->height % a.sprite_count != 0)) {
                 result.notes.push_back("-" + std::to_string(a.hd_sheet) + ": " + std::to_string(sheet->height) +
                                        " rows do not divide into its " + std::to_string(a.sprite_count) +

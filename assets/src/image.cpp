@@ -73,7 +73,12 @@ DecodedTexture read_image(const std::filesystem::path& path) {
     if (!file) {
         throw std::runtime_error("cannot open " + utf8(path));
     }
-    const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    // read in one go: an istreambuf_iterator takes it a byte at a time (dds.cpp's read_dds)
+    file.seekg(0, std::ios::end);
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(std::max<std::streamoff>(0, file.tellg())));
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<std::size_t>(file.gcount()));
     return read_image(bytes.data(), bytes.size(), utf8(path.stem()));
 }
 

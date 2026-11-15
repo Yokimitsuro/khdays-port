@@ -4,6 +4,7 @@
  * from a per-tile index of the polygons), compose.hlsl makes the screen. In widescreen the HUD's polygons
  * move to the sides as the 2D's pieces do (docs/RENDERING.md, "On the graphics card"). */
 #include "gpu_raster3d.h"
+#include "../../runtime/core/phases.h"
 #include "gpu_hd.h"
 #include "../../gfx/character_shadow.h"
 #include "generated/shadow_mask_cs.h"
@@ -65,10 +66,10 @@ static SDL_GPUTransferBuffer *shadow_upload;
 static uint32_t shadow_tile_capacity;
 static uint32_t *shadow_index;
 static uint32_t shadow_index_capacity;
-static uint32_t shadow_masks;            /* the masks shadow_raw and shadow_soft hold, grown to the most a list has had */
-static uint32_t *shadow_counts;          /* prepare_shadows' entries per tile of each mask, then where each goes */
+static uint32_t shadow_masks;   /* the masks shadow_raw and shadow_soft hold, grown to the most a list has had */
+static uint32_t *shadow_counts; /* prepare_shadows' entries per tile of each mask, then where each goes */
 static uint32_t shadow_cells_capacity;
-static int shadows_off;                  /* their pipelines could not be made: the native shadows stay */
+static int shadows_off;   /* their pipelines could not be made: the native shadows stay */
 static int shadows_ready; /* this list's mask can be drawn; if not, its native shadows stay and no receiver is drawn */
 static uint32_t shadow_groups, shadow_bytes, shadow_entries; /* prepare_shadows' for draw_shadows */
 
@@ -1168,19 +1169,27 @@ static int layer_of(const KhdaysG3dList *list, int hud, KhdaysG3dList *out)
         layer_polys = grown;
         layer_capacity = list->npolys * 2;
     }
+    int32_t kept = 0;
     for (int32_t i = 0; i < list->npolys && i < layer_capacity; ++i) {
         KhdaysG3dPolygon q = list->polys[i];
         if (((q.flags & KHDAYS_G3D_HUD) != 0) != (hud != 0)) {
+            if (hud) {
+                continue; /* the HUD's pass: its own polygons alone, the world's not uploaded or walked */
+            }
             q.ymin = q.ymax = -100000.0f;
         }
-        layer_polys[i] = q;
+        layer_polys[kept++] = q;
     }
     *out = *list;
     out->polys = layer_polys;
+    out->npolys = kept;
     return 1;
 }
 
-static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
+/* KHDAYS_PROFILE (runtime/core/phases.h): this draw's start, and when its upload began (0: not yet) */
+static unsigned long long draw_started, draw_submit_at;
+
+static int draw_body(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
 {
     const KhdaysG3dList *list = list_instead != NULL ? list_instead : &p->list3d;
     /* the DS's width, or the extra columns the list was made to cover */
@@ -1243,7 +1252,12 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
             return 0;
         }
     }
-    shadows_ready = prepare_shadows(list);
+    if (hud_apart && drawing_hud) { /* the HUD's pass: no world under it for a shadow to fall on */
+        shadow_groups = 0;
+        shadows_ready = 1;
+    } else {
+        shadows_ready = prepare_shadows(list);
+    }
     if (!shadows_ready) {
         static int said;
         if (!said) {
@@ -1305,6 +1319,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
             return 0;
         }
     }
+    khdays_phase_end(KHDAYS_PHASE_RENDER_PREP, draw_started);
+    draw_submit_at = khdays_phase_start();
     for (int n = 0; n < VRAM_PAGES; ++n) {
         const uint32_t v = n < TEX_PAGES ? p->tex_version[n] : p->texpal_version[n - TEX_PAGES];
         if (!vram_valid || vram_version[n] != v) {
@@ -1527,6 +1543,20 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         return 0;
     }
     return 1;
+}
+
+static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
+{
+    int r;
+    draw_started = khdays_phase_start();
+    draw_submit_at = 0;
+    r = draw_body(p, scale, texture_smoothing, compose_too);
+    if (draw_submit_at != 0) {
+        khdays_phase_end(KHDAYS_PHASE_RENDER_SUBMIT, draw_submit_at);
+    } else {
+        khdays_phase_end(KHDAYS_PHASE_RENDER_PREP, draw_started);
+    }
+    return r;
 }
 
 int khdays_raster3d_native(void)

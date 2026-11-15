@@ -19,6 +19,7 @@
 extern int GetFrameRateMode(void); /* 0: 30 fps, 1: 20 fps, 2: 60 fps */
 extern int QueryActiveStateOrDelegate(void);
 extern int GetEntryField20ByIndex(int idx);
+extern int khdays_overlay_loaded(int id); /* overlays.c */
 extern int Ov022_GetEntryField66(int player);
 extern void func_ov022_02088280(int player, short heading); /* sets a player's heading, as a camera's yaw */
 extern int func_ov022_020881f8(int player);                 /* a player's position */
@@ -109,6 +110,9 @@ enum { TAG_NOHIT = 2, TAG_NOCAM = 5, TAG_SICON = 8 };
 
 /* The actor's node */
 enum { ACTOR_NODE = 0x20, NODE_SCENE = 4 };
+
+/* ov022_battle: the players' table QueryActiveStateOrDelegate reads (data_ov022_020b2e78) */
+enum { OV_BATTLE = 22 };
 
 enum { WANT_NONE, WANT_FOLLOW, WANT_LOCK };
 
@@ -214,9 +218,11 @@ unsigned khdays_kh2_camera_faded_node(float *fade)
 {
     int actor;
     *fade = s.fade;
-    /* With the 3D on both screens only the first's camera is this one; the other's player is another's actor */
+    /* With the 3D on both screens only the first's camera is this one; the other's player is another's actor. Any
+     * scene's draw asks (the camp menu's scene panels, Ov025_Menu_RenderScenePanels): only with ov022 loaded is there a
+     * player, as ov025 loads over it (both at 0x02082960) and its table then reads as a wild pointer */
     if (s.fade >= 1.0f || *(const volatile unsigned char *)KHDAYS_W(KHDAYS_DS_data_0204be04) != 0 ||
-        (actor = GetEntryField20ByIndex(QueryActiveStateOrDelegate())) == 0) {
+        !khdays_overlay_loaded(OV_BATTLE) || (actor = GetEntryField20ByIndex(QueryActiveStateOrDelegate())) == 0) {
         return 0;
     }
     return *(const KhdaysRef *)KHDAYS_W((KhdaysRef)actor + ACTOR_NODE) + NODE_SCENE;

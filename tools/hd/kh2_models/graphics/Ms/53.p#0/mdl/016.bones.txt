@@ -1,0 +1,129 @@
+# KH2 bones (kh2_<index>) to the boss Saix's nodes, one pair a line: <joint> <node>.
+# This model is Saix (B_EX160) as the boss's body (Ms/53.p's model 016; Mission Mode's A_016 takes these settings).
+# The boss's skeleton is the player's (saix_h), node for node at rest, but for its root (016, not saix_R) and saix_tg,
+# so these are saix_h's pairs. His skeleton is B_EX150's (Luxord) to the collar: bones 0-94 (the legs and the coat's
+# strips) numbered as B_EX110's, spine 96-98, collar 99, hood 101, drawstrings 103-106/316-319, neck 166, head 169, its
+# jaw 182 (under 181); his left arm, cuff and hand B_EX150's (clavicle 107, upper arm 111, forearm 112, wrist 113, cuff
+# 114-128, hand 133, fingers 135-156), the right +213 from the left. His hair is 171-311 from the head's end (170). His
+# claymore is 379 (under 378, from the root). Unpaired KH2 bones follow their parents. No `scale`.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, 016, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips, spine, neck and head (kh2_98 carries the chest), as luxord_h's
+kh2_2 Bip01_Pelvis
+kh2_97 Bip01_Spine
+kh2_98 Bip01_Spine1
+kh2_166 Bip01_Neck
+kh2_169 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_107 Bip01_L_Clavicle
+kh2_111 Bip01_L_UpperArm
+kh2_112 Bip01_L_Forearm
+kh2_133 Bip01_L_Hand
+
+# Right arm
+kh2_320 Bip01_R_Clavicle
+kh2_324 Bip01_R_UpperArm
+kh2_325 Bip01_R_Forearm
+kh2_346 Bip01_R_Hand
+
+# Two-bone limbs, knees and elbows bending the way Days' do. `exact` (the legs): the feet go where the game's are. The
+# offset keeps KH2's sole on the game's: his ankle stands 15.8 over its sole, the game's 12.3 (the 1.6 is roxas_bf_h's).
+ik kh2_5 kh2_6 kh2_9 exact 0 3.5 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 3.5 1.6
+ik kh2_111 kh2_112 kh2_133
+ik kh2_324 kh2_325 kh2_346
+
+# The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
+# roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+# The upper thighs 10% thinner front to back (their y), as riku_h's, so they stay under the coat in the game's
+# strides; the pelvis under the coat not drawn, from 3 cm under the coat's own top (its vertices up to 120.9 cm) down to
+# the hip joints (114.8), faded back in over 4 cm (model cm at rest)
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+hide kh2_2 from 118 to 115 fade 4
+
+# `align`: the hands turned onto the game's at rest by their shape; the feet given no rest correction (`rest`, as
+# xaldin_h's): by their shape the toes stood 1.4-1.6 cm over the heels on the ground in the game's run and B000 (the
+# pass, replay), with none -0.1
+align kh2_9 rest
+align kh2_18 rest
+align kh2_133 hand
+align kh2_346 hand
+
+# His claymore's bone (379, from the root) on the boss's sa_h_R (just under his right hand at rest), exactly where it
+# is. `ride kh2_346`: moved by how far the KH2 right hand is from the game's, so it stands from his hand as the game's
+# from its own. The game's claymore is an object of its own (the boss's helper, Ov259_HelperUpdate) that takes this
+# node's place after each draw while he holds it (NNS_G3dGetResultMtx, Obj_RenderModel) and flies on its own once
+# thrown; its two models (W00, W01: Ms/53.p#60 and #62) are drawn as this file's claymore (their own bones.txt).
+kh2_379 sa_h_R
+place kh2_379 ride kh2_346
+
+# His claymore, both of KH2's (meshes 10-13 and 16, textures 6 and 7, on 379 alone): not drawn on the body; the game's
+# claymore object draws them (W00, W01).
+hide_mesh 10 11 12 13 16
+
+# His face, both of KH2's in one file (texture 3: the normal face on its left half, the berserk one on its right, with
+# the yellow eyes): the normal face (mesh 4) and its eye piece (mesh 6) out of berserk; the berserk face (mesh 7, the
+# only mesh on the jaw, 182: the open mouth) and its eye piece (mesh 5) while the game draws the boss's berserk head
+# (its shapes head_02_*: their materials, 02_*, are clear but in berserk, 016_B, so the game sends them only then).
+limit_shapes head_02*
+limit_hide_mesh 4 6
+limit_show_mesh 5 7
+
+# The cuffs, as luxord_h's (his arm and cuff are B_EX150's, the right +213 against Luxord's +71; the cuff 9.1 cm from
+# its axis, its flaps 11.2 long: Luxord's 9.2 and 11.4). They turn with the hand: the wrist ring of the sleeve
+# (kh2_115, under 114) and the cuff (116 on) take the hand's twist about the forearm
+twist kh2_114 kh2_133 kh2_112 kh2_113
+twist kh2_327 kh2_346 kh2_325 kh2_326
+# The cuff's root tilts with the hand as it bends, most of the way (it sits at the wrist)
+swing kh2_116 kh2_133 kh2_113 0.7 kh2_123
+swing kh2_329 kh2_346 kh2_326 0.7 kh2_336
+# The cuffs fitted round the hands, not simulated: `cuff <root> <hand> <flaps in order round the ring>`
+cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120
+cuff kh2_329 kh2_346 kh2_330 kh2_339 kh2_336 kh2_333
+# clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+# the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees
+cuff_thumb 0.5 28
+# The fit opens the flaps from rest (keeping the motions' scale of them), as in the game's own animations, not on top of
+# what his own motions turn them by
+cuff_motion_flaps off
+cuff_pose 110 2.86
+cuff_pose_bone kh2_115 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_118 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_120 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_121 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_124 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_328 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_331 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_333 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_334 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_337 0.02 -78.02 -0.03 0.322 1.000 1.000
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, as saix_h's,
+# so the knees bend as the game's (the legs alone straightened where the game's bent)
+lower_hips 1
+
+# Ov259_WatchSlot tilts him with the floor's normal under him: drawn upright instead (his yaw kept, the game's hit
+# shapes still tilted), his `exact` feet put on the floor's slope by the legs' IK while he touches it
+upright on

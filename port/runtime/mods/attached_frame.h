@@ -113,9 +113,29 @@ inline Mat attached_frame(const Mat &at, const Mat &game, float share)
     return frame_of(q, scale, at[12], at[13], at[14]);
 }
 
-// A joint's frames of `n` poses mixed by their weights (normalized here): its turn the weighted sum of their
-// quaternions, each on the first's side, made unit; its place and its axes' scales their weighted mean. A mix of the
-// matrices themselves shrank a joint between two turns far apart (a head squashed in a fade into the death)
+// A weapon the game holds at `grip` and puts at `game`, which a drawn hand standing `shift` from the game's holds at
+// `rigid`: rigid while the game keeps it within 0.6 `reach`es of the grip; from there to 1.5, eased, more and more at
+// the game's place moved by `shift` and turned as the game turns it, so one the game throws does not swing round as the
+// hand turns. `share`: how far it is let go (0..1).
+inline Mat let_go(const Mat &rigid, const Mat &game, const Mat &grip, const std::array<float, 3> &shift, float reach,
+                  float *share = nullptr)
+{
+    float away = 0.0F;
+    for (std::size_t c = 12; c < 15; ++c)
+        away += (game[c] - grip[c]) * (game[c] - grip[c]);
+    const float t = std::fmin(1.0F, std::fmax(0.0F, (std::sqrt(away) - 0.6F * reach) / std::fmax(0.9F * reach, 1e-6F)));
+    const float loose = t * t * (3.0F - 2.0F * t);
+    if (share != nullptr)
+        *share = loose;
+    Mat out = attached_frame(rigid, game, loose);
+    for (std::size_t c = 0; c < 3; ++c)
+        out[12 + c] = rigid[12 + c] + (game[12 + c] + shift[c] - rigid[12 + c]) * loose;
+    return out;
+}
+
+// A joint's frames of `n` poses mixed by their weights (normalized here), as KH2's kn::blend (PS3 0xF659C) for two: its
+// x and y axes (made unit) each the weighted sum, made unit; z = x cross y, y = z cross x; its place and its axes'
+// scales their weighted mean. Axes that cancel (turns 180 degrees apart) take the heaviest pose's turn.
 inline Mat blend_frames(const Mat *frames, const float *weights, std::size_t n)
 {
     using namespace frame_detail;
@@ -124,30 +144,58 @@ inline Mat blend_frames(const Mat *frames, const float *weights, std::size_t n)
         total += weights[i] > 0.0F ? weights[i] : 0.0F;
     if (n == 0 || !(total > 0.0F))
         return Mat{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    Quat sum{}, first{};
-    std::array<float, 3> scale{}, at{};
-    bool seen = false;
+    std::array<float, 3> x{}, y{}, scale{}, at{};
+    Mat heaviest = Mat{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    float most = 0.0F;
     for (std::size_t i = 0; i < n; ++i) {
         if (!(weights[i] > 0.0F))
             continue;
         const float w = weights[i] / total;
         std::array<float, 3> s{};
-        Quat q = quat_of(turn_of(frames[i], s));
-        if (!seen) {
-            first = q;
-            seen = true;
-        } else if (q[0] * first[0] + q[1] * first[1] + q[2] * first[2] + q[3] * first[3] < 0.0F) {
-            for (float &v : q)
-                v = -v;
+        const Mat r = turn_of(frames[i], s);
+        if (w > most) {
+            most = w;
+            heaviest = r;
         }
-        for (std::size_t k = 0; k < 4; ++k)
-            sum[k] += q[k] * w;
         for (std::size_t c = 0; c < 3; ++c) {
+            x[c] += r[c] * w;
+            y[c] += r[4 + c] * w;
             scale[c] += s[c] * w;
             at[c] += frames[i][12 + c] * w;
         }
     }
-    return frame_of(sum, scale, at[0], at[1], at[2]);
+    const auto cross = [](const std::array<float, 3> &a, const std::array<float, 3> &b) {
+        return std::array<float, 3>{a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+    };
+    const auto unit = [](std::array<float, 3> &a) {
+        const float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        if (l < 1e-5F)
+            return false;
+        for (float &v : a)
+            v /= l;
+        return true;
+    };
+    std::array<float, 3> z{};
+    bool whole = unit(x) && unit(y);
+    if (whole) {
+        z = cross(x, y);
+        whole = unit(z);
+    }
+    if (whole) {
+        y = cross(z, x);
+        whole = unit(y);
+    }
+    if (!whole)
+        for (std::size_t c = 0; c < 3; ++c) {
+            x[c] = heaviest[c];
+            y[c] = heaviest[4 + c];
+            z[c] = heaviest[8 + c];
+        }
+    Mat out = {x[0] * scale[0], x[1] * scale[0], x[2] * scale[0], 0.0F,
+               y[0] * scale[1], y[1] * scale[1], y[2] * scale[1], 0.0F,
+               z[0] * scale[2], z[1] * scale[2], z[2] * scale[2], 0.0F,
+               at[0],           at[1],           at[2],           1.0F};
+    return out;
 }
 
 } // namespace khdays::models

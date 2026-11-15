@@ -1,0 +1,210 @@
+# Secondary motion of KH2's Zexion (B_EX370) drawn as Days' zexion_h and zexion: marluxia_h's coat, drawstrings and
+# hood on his bones, and his hair. Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every line.
+# His cuffs are fitted in bones.txt (`cuff`), not simulated.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. The fixed sizes are axel_h's,
+# scaled by his parts' vertices against Axel's: pelvis 0.86 as long, chest bone 0.86, feet 1.22 (his ankle stands 18.2
+# over its sole, Axel's 14.9); his hands and thumbs are B_EX390's, so roxas_bf_h's sizes. ---
+collider pelvis   capsule 2 length 23 fit 0.85 tags body
+collider spine    capsule 115 117 fit 0.85 tags torso
+collider chest    capsule 117 length 18.7 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 15.7 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+# the feet tagged apart from the legs, for the coat's `collide`
+collider foot_l   capsule 9 length 14.2 radius 3.5 2.7 tags feet
+collider thigh_r  capsule 14 15 offset 15.7 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 14.2 radius 3.5 2.7 tags feet
+collider heel_l   capsule 9 length 13 radius 4.6 4.6 offset 0 3.55 0 tags feet
+collider heel_r   capsule 18 length 13 radius 4.6 4.6 offset 0 3.55 0 tags feet
+collider arm_l    capsule 130 131 fit 0.85 side motion tags arms
+collider forearm_l capsule 131 132 fit 0.85 side motion tags arms
+collider hand_l   sphere 152 offset 7 0 0 radius 4.5 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 158 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 232 233 fit 0.85 side motion tags arms
+collider forearm_r capsule 233 234 fit 0.85 side motion tags arms
+collider hand_r   sphere 254 offset 7 0 0 radius 4.5 side rest tags hands right_hand
+collider thumb_r  capsule 260 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
+# the head's vertices stand 172-201 cm high, 16 behind to 10 in front of the head bone (175.04, z -5.5)
+collider head     sphere 188 offset 11.5 2.5 0 radius 12.5 tags head
+# the hair's alone, inside every lock's root: the right side's 204 starts 9.6 cm from its centre and 206 10.5, so at
+# 10.5 they were pushed out each tick and jittered (hair alone, replayed: the idle's 3.4 cm p99 at 10.5, 0.01 at 9)
+collider scalp    sphere 188 offset 11.5 2.5 0 radius 9 tags scalp
+# the drawstrings' alone: over the chest's front (z 10; the axis about -6 where they hang), 1.4 clear of it
+collider chest_strings capsule 117 118 radius 17 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface ---
+# Each strip runs from just under the belt to the hem. The front starts at 83 (82 carries no vertices) and forks
+# under it into two panels (86-88 and 90-92) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 83 86 87 88
+  strip 83 90 91 92
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 34 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  follow_bone 5 radius 34 weight 0.9 always 0.7
+  follow_bone 14 radius 34 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 86 90        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  # not the feet (their capsules cut through the hem in the game's attacks)
+  collide body torso legs arms hands
+  # in the game's own animations a leg could throw the front fork (83) across the slit, up to 90 cm a frame
+  # (replay --days run): it rides its target, and contact moves no control faster than 5 m/s past its target
+  max_speed 5
+  bone 83 no_sim 1
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 -0.01 -3.49 0.48
+  rest 34 0.43 -10.63 -4.61
+  rest 42 0.08 -3.26 -2.68
+  rest 50 0.00 -4.17 0.10
+  rest 58 -0.27 -9.57 3.27
+  rest 66 -0.09 -3.73 2.79
+  rest 74 -0.01 -3.46 0.45
+  rest 83 0.02 -6.20 -0.66
+  rest 29 0.00 0.63 -0.13
+  rest 37 0.40 11.62 3.92
+  rest 45 0.02 2.45 0.94
+  rest 53 -0.20 8.75 -2.59
+  rest 61 -0.13 9.99 -1.45
+  rest 69 -0.02 2.93 -0.86
+  rest 77 0.14 7.96 1.98
+  rest 30 -0.06 8.41 -0.79
+  rest 38 0.05 0.34 1.00
+  rest 46 0.06 3.52 1.86
+  rest 54 -0.16 -5.13 3.23
+  rest 62 -0.08 0.94 -2.60
+  rest 70 -0.09 3.61 -2.18
+  rest 78 0.10 -5.19 -3.22
+  rest 86 0.45 16.25 3.13
+  rest 90 0.01 17.01 0.06
+  rest 31 -0.01 -4.20 0.29
+  rest 39 0.04 -0.52 -2.25
+  rest 47 0.03 -1.69 -0.91
+  rest 55 0.01 0.51 -0.81
+  rest 63 -0.06 -1.05 2.20
+  rest 71 0.03 -1.90 0.92
+  rest 79 0.02 0.69 0.75
+  rest 87 0.09 -2.47 -4.04
+  rest 91 -0.05 -3.10 1.56
+  rest 32 0.00 -1.38 0.17
+  rest 40 0.00 0.17 0.18
+  rest 48 0.00 -0.25 0.13
+  rest 56 0.06 0.23 -0.08
+  rest 64 -0.01 0.37 -0.07
+  rest 72 -0.17 -0.30 -0.12
+  rest 80 -0.08 0.16 0.17
+  rest 88 0.21 -2.51 0.02
+  rest 92 -0.25 -3.04 0.20
+end
+
+# --- Drawstrings: chains from the collar (118), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  # the arms too, and damped: the tips no longer whip when the hands cross the chest
+  collide torso body strings arms
+  attach 118
+  chain 122 123 124 125
+  hang 0 -1 0.35
+  settle on steps 360
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 122 -9.65 -30.74 35.88
+  rest 123 4.30 4.84 36.07
+  rest 124 1.11 3.95 15.68
+  rest 125 0.09 1.52 5.01
+end
+group string_r chain preset kh2_string
+  collide torso body strings arms
+  attach 118
+  chain 224 225 226 227
+  hang 0 -1 0.35
+  settle on steps 360
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 224 9.66 30.80 35.83
+  rest 225 -4.38 -4.79 36.08
+  rest 226 -1.11 -3.95 15.68
+  rest 227 -0.09 -1.48 5.07
+end
+
+# --- Hood: one bone (120) hanging behind the neck; it swings and lies on the back as one piece ---
+group hood chain preset kh2_hood
+  attach 118
+  chain 120
+  settle on steps 240
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 120 0.01 87.33 0.01
+end
+
+# --- Hair: locks on the head's end (189); the long fringe (195) carries the strands under it (198, 200) ---
+group hair hair preset kh2_hair
+  attach 189
+  collide scalp
+  tufts 191 193 195 202 204 206 208 211 213 215 217 219
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 191 0.00 0.00 0.00
+  rest 193 0.00 0.00 0.00
+  rest 195 0.00 0.00 0.00
+  rest 202 0.00 0.00 0.00
+  rest 204 0.00 0.00 0.00
+  rest 206 0.00 0.00 0.00
+  rest 208 0.00 0.00 0.00
+  rest 211 0.00 0.00 0.00
+  rest 213 0.00 0.00 0.00
+  rest 215 0.00 0.00 0.00
+  rest 217 0.00 0.00 0.00
+  rest 219 0.00 0.00 0.00
+end
+
+# --- Animation controls ---
+# B_EX370's own motions carry its coat and drawstrings as KH2 animated them: there they guide the cloth, and the thighs
+# carry none of it. The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end

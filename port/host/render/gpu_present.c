@@ -1008,6 +1008,7 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
             *alpha = shots[n].after > 1 ? (double)(5 - shots[n].after) * 0.25 : 0.999; /* KHDAYS_SHOTS_BETWEEN */
         }
     }
+    khdays_g3d_interp_pair(&interp, logic_time[a], logic_time[a + 1]); /* the same two again: their match kept */
     if (!khdays_g3d_interpolate(&interp, &logic_list[a], &logic_list[a + 1], (float)*alpha, &between)) {
         return NULL;
     }

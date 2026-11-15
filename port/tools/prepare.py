@@ -1188,6 +1188,17 @@ HOOKS = {
             "      khdays_g3d_flush_base((const int *)&NNS_G3dGlb.prmBaseRot, 1); }\n",
         )
     ],
+    # Gfx_ApplyBaseTransform (Obj_RenderModel's draws: the enemies, the boss Saix) sends NNS_G3dGlb's projection and
+    # camera itself, without a flush: the camera it sends is the frame's too, or the character shadows rebuilt what
+    # followed with whatever camera was flushed last (the boss Saix's shadow kept its circle, its floor "steep").
+    "main@0201574c": [
+        (
+            "void Gfx_ApplyBaseTransform(void)\n{\n",
+            "void Gfx_ApplyBaseTransform(void)\n{\n"
+            "    { extern void khdays_g3d_frame_camera(const int *projection, const int *camera);\n"
+            "      khdays_g3d_frame_camera((const int *)&NNS_G3dGlb.projMtx, (const int *)&NNS_G3dGlb.cameraMtx); }\n",
+        )
+    ],
     # The card's chip ID, read after every ROM read to see the card is still in: with the port's
     # reads, the value the card answers, without its command.
     "main@0200edb0": [

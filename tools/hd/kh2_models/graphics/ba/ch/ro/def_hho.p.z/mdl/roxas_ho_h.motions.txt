@@ -17,7 +17,9 @@ weapon ro_w_tg_R 222 rotate 0 -90 90
 # What he holds plays W_EX010_RX.mset's slots as his own play P_EX110's (on W_EX010's bones; bone 2 the
 # blade): the keyblade turns in his hand as KH2's does. A slot it has none for, and the game's own animations, hold
 # it as Days does. A replaced keyblade with `held` in its bones.txt is posed by it.
-weapon_motions W_EX010_RX.mset W_EX010.mdlx 2
+# The game's own keyblade (and a model made as it is, along +z from the grip) on bone 2 where the KH2 keyblade is
+# drawn: Days' axes into that bone's (`held kh2_2 rest 180 90 0` of the cutscene keyblades, the same turn either way)
+weapon_motions W_EX010_RX.mset W_EX010.mdlx 2 days 180 90 0
 
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the
 # calm idle) turns them at its first frame. `ds_pose <slot>[@<frame>] <bones> for <animation>...`
@@ -171,3 +173,9 @@ walk b_ro_A001 4 blend 6
 walk b_ro_e002 6 blend 6
 # The camp menu: the battle idle there as KH2 slot 7 (the keyblade plays W_EX010_RX's 7 with it)
 camp b_ro_A000 7
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (forward glide +29
+# degrees, replay) taken to about +3
+ds_pose rotate 0 0 -43 2 for b_ro_Ca001

@@ -9,6 +9,7 @@
 #include "../display/display.h"
 #include "../input/input.h"
 #include "session_log.h"
+#include "phases.h"
 #include "../movies/video.h"
 #include "../net/net_session.h"
 #include "../sound/sound_bridge.h"
@@ -243,8 +244,9 @@ static void profile_wait(u64 enter)
                 waits, busy * 1000.0 / KHDAYS_CLOCK_HZ, waited * 1000.0 / KHDAYS_CLOCK_HZ,
                 longest * 1000.0 / KHDAYS_CLOCK_HZ);
         busy = waited = waits = longest = 0;
-        khdays_files_second(); /* the file reads of that second */
-        khdays_video_second(); /* the movie frames of that second */
+        khdays_files_second();  /* the file reads of that second */
+        khdays_video_second();  /* the movie frames of that second */
+        khdays_phases_second(); /* the frame's phases in that second */
         report_at = enter + KHDAYS_CLOCK_HZ;
     }
 }

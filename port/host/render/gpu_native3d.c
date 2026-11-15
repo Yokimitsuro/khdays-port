@@ -227,21 +227,14 @@ static void effect_targets(SDL_GPUColorTargetDescription *t, int effect, int dep
         t[i].blend_state.color_write_mask = 0;
     }
     switch (effect) {
-    case EFFECT_ADD: /* Cs As + Cd */
-        dst = SDL_GPU_BLENDFACTOR_ONE;
-        break;
+    case EFFECT_ADD: /* Cs As + Cd */ dst = SDL_GPU_BLENDFACTOR_ONE; break;
     case EFFECT_SUBTRACT: /* Cd - Cs As */
         dst = SDL_GPU_BLENDFACTOR_ONE;
         op = SDL_GPU_BLENDOP_REVERSE_SUBTRACT;
         break;
-    case EFFECT_DARKEN: /* Cd (1 - As) */
-        src = SDL_GPU_BLENDFACTOR_ZERO;
-        break;
-    case EFFECT_REPLACE: /* Cs As */
-        dst = SDL_GPU_BLENDFACTOR_ZERO;
-        break;
-    default: /* Cs As + Cd (1 - As) */
-        break;
+    case EFFECT_DARKEN: /* Cd (1 - As) */ src = SDL_GPU_BLENDFACTOR_ZERO; break;
+    case EFFECT_REPLACE: /* Cs As */ dst = SDL_GPU_BLENDFACTOR_ZERO; break;
+    default: /* Cs As + Cd (1 - As) */ break;
     }
     if (effect != EFFECT_DEPTH_ONLY) {
         t[0].blend_state.color_write_mask = all;
@@ -977,6 +970,7 @@ void khdays_native3d_draw(SDL_GPUCommandBuffer *cmd, const KhdaysNative3dFrame *
         SDL_GPUBuffer *buffers[4] = {polys, verts, vram, hd};
         SDL_GPUBufferBinding binding;
         SDL_GPUGraphicsPipeline *bound = NULL;
+        int reference = -1; /* the stencil reference set, -1 none: set again only when it or the pipeline changes */
         binding.buffer = corner_buffer;
         binding.offset = 0;
         SDL_BindGPUVertexStorageBuffers(pass, 0, buffers, 4);
@@ -999,8 +993,12 @@ void khdays_native3d_draw(SDL_GPUCommandBuffer *cmd, const KhdaysNative3dFrame *
                     SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
                 }
                 bound = pipeline;
+                reference = -1;
             }
-            SDL_SetGPUStencilReference(pass, d->reference);
+            if (reference != (int)d->reference) {
+                SDL_SetGPUStencilReference(pass, d->reference);
+                reference = (int)d->reference;
+            }
             if (d->key < 0) {
                 SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             } else {

@@ -162,6 +162,20 @@ void khdays_g3d_flush_base(const int32_t base[15], int in_projection);
  * scale. 1: Flush's (the position matrix starts at camera x base), 2: FlushP's
  * (it starts at identity), 0: none yet. */
 int khdays_g3d_base(float base[16]);
+/* A base transform's words (NNSG3dGlb +0x94: rotation rows, translation,
+ * scale, fx32) as such a matrix: the GE's MTX_MULT_4x3 of the rotation and
+ * translation, then MTX_SCALE (a vertex scaled, turned, moved). */
+static inline void khdays_g3d_base_matrix(const int32_t words[15], float base[16])
+{
+    for (int i = 0; i < 16; ++i)
+        base[i] = 0.0f;
+    for (int c = 0; c < 3; ++c)
+        for (int r = 0; r < 3; ++r)
+            base[c * 4 + r] = (float)words[c * 3 + r] / 4096.0f * ((float)words[12 + c] / 4096.0f);
+    for (int r = 0; r < 3; ++r)
+        base[12 + r] = (float)words[9 + r] / 4096.0f;
+    base[15] = 1.0f;
+}
 
 void khdays_g3d_reset(void);
 

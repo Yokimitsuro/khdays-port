@@ -172,7 +172,9 @@ struct Group final {
 
 struct Bone final {
     int parent = -1;
+    bool no_envelope = false;  // +0xC bit 0 (PS3 kn::Model::getParentEnvelope skips such a bone)
     std::array<float, 3> scale{1.0F, 1.0F, 1.0F};
+    float length = 0.0F;              // the scale's w: the bone's own length along its x (kn::ModelHRC)
     std::array<float, 3> rotation{};  // radians, x y z
     std::array<float, 3> translation{};
 };

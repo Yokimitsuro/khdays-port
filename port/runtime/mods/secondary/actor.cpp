@@ -59,7 +59,11 @@ float envelope(const ControlConfig &k, const AnimationState &a)
     if (t < from || t > to)
         return 0.0F;
     float e = 1.0F;
-    if (k.blend_in > 0.0F)
+    // eased in from a range that starts later than the animation; one that starts with it is not eased again each
+    // time the animation starts over (a game animation looping, or played again): the control's own easing toward
+    // what the animations ask covers its turning on. Eased here, a coat guided by its KH2 motion fell back to the
+    // plain cloth at every loop of the game's run (0.6 s)
+    if (k.blend_in > 0.0F && from > 0.0F)
         e = minf(e, (t - from) / k.blend_in);
     if (k.blend_out > 0.0F && std::isfinite(to))
         e = minf(e, (to - t) / k.blend_out);
@@ -163,13 +167,15 @@ void Actor::drive(const ActorInput &in, float dt)
         winds[g] = rig.groups[g].wind.given ? wind_of(rig.groups[g].wind, rig.groups[g].wind_bone, in, g)
                                             : wind_of(rig.config.wind, rig.wind_bone, in, g);
     // controls by priority, the higher applied over the lower
-    std::vector<std::size_t> order(rig.controls.size());
-    for (std::size_t k = 0; k < order.size(); ++k)
-        order[k] = k;
-    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
-        return rig.controls[a].config->priority < rig.controls[b].config->priority;
-    });
-    for (const std::size_t k : order) {
+    if (control_order_.size() != rig.controls.size()) { // sorted once: the priorities are the file's
+        control_order_.resize(rig.controls.size());
+        for (std::size_t k = 0; k < control_order_.size(); ++k)
+            control_order_[k] = k;
+        std::stable_sort(control_order_.begin(), control_order_.end(), [&](std::size_t a, std::size_t b) {
+            return rig.controls[a].config->priority < rig.controls[b].config->priority;
+        });
+    }
+    for (const std::size_t k : control_order_) {
         const ControlRig &c = rig.controls[k];
         const ControlConfig &cfg = *c.config;
         float want = 0.0F;

@@ -36,7 +36,6 @@ are fixed.
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
 | `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked, how it found its place in the world (`placed by ...`) and where it is (`at`, metres); a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; with `weapon_motions`, `hand trace` (the weapon's joint, the frame written and the game's own, moved and turned since the last draw, in the root's space); a `held` weapon's `held trace` (its start against the frame written, its nodes from the first); for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
-| `KHDAYS_SECONDARY_NO_PREWARM=1` | rigs are cooked as their models load, not ahead on a thread of their own once the first loads (`model_link.cpp` prewarm_model_secondary: a later load takes its rig from there when its files are unchanged) |
 
 ## The model it works on
 
@@ -106,8 +105,9 @@ profile off
 | `follow_bone <bone> radius <r> [weight <w>] [always <a>]` | its reference shape also rides a body bone near it (below) |
 | `offset <bone> <x y z>` | a control's point, bone-local |
 | `bone <bone> <setting> <value> [hem <value>]` | one control's own setting; `bone <bone> mode <mode>` |
-| `hang <x y z>` | chains: hung straight that way (model space at rest) before settling |
-| `settle on [steps <n>]` | its reference shape hung under gravity against the colliders at load |
+| `hang <x y z>` | chains: hung straight that way (model space at rest) before settling (not with `rest`) |
+| `settle on [steps <n>]` | it hangs at each start (below); without `rest` lines, its reference shape is also hung under gravity against the colliders at load, until still (at most `n` steps) |
+| `rest <bone> <x y z>` | its reference shape as written: the bone's turn on its parent, degrees about x, then y, then z of the parent's axes ("Rest shape" below) |
 | `twist neighbours|reference` | surfaces: a control's twist from its row (default) or its reference |
 | `collide <tag>...` | the collider tags it collides with (no `collide` line: every collider; a bare `collide` or `collide none`: none) |
 | `self_collision <name>` | groups with one name collide with each other and themselves |
@@ -168,7 +168,11 @@ collider <name> capsule <bone> <end bone>|length <l> radius <r> [<end r>]
          [offset x y z] [end_offset x y z] [fit [<percentile>] [scale <s>]] [clear] [side rest|motion] [tags ...]
 ```
 
-A capsule runs from its bone's point (`offset`, bone-local) to its end bone's
+A collider on a bone the simulation moves (a hood's) follows that bone as simulated, not as
+animated: the last tick's rebuilt frame, kept on its group's reference bone and carried by that
+bone as posed now, so only the cloth's own swing is a tick behind (`Simulation::shapes`); until a
+tick has rebuilt it (at load, after a reset) it stands where the animation has the bone. Tag it
+apart from the bone's own group. A capsule runs from its bone's point (`offset`, bone-local) to its end bone's
 (`end_offset`), or `length` along the bone's x; two radii make it tapered. `fit`
 sizes it to the vertices skinned mostly to its bone beside its segment (that
 percentile of their distances, per half for the two radii; vertices past its ends
@@ -289,8 +293,47 @@ end
 
 Its weight is the playing animations' blend weights (the game's cross-fade
 ratios) times its time envelope, eased by its blends, so a cut between
-animations does not pop. Settings are blended toward its values by that weight;
+animations does not pop. The envelope eases in only from a `time` range that
+starts after the animation does: one from 0 (or none) is not eased again each
+time the animation starts over, which the game's looping animations do (its run
+every 0.6 s); turning on is covered by the easing toward what the animations ask.
+Eased at every start, a coat guided by its KH2 motion (`own_motions`) fell to
+0.44 of its weight and back over 0.15 s at each loop, sagging toward the plain
+cloth (replay `--days`, Mickey's run, `KHDAYS_REPLAY_CONTROLS`). Settings are blended toward its values by that weight;
 mode by authority; its wind replaces the group's by weight.
+
+**Tuning the KH2 coats** (a pass over every coat model, replay `--days` with the KH2 slots,
+2026-11-08; each character's file says what it changed and why):
+- demyx_h is left out of all of it: set up again as before the pass, he looked better (user).
+- Foot and heel capsules inside an ankle-length hem threw the coat's front panels across the shin
+  (Mickey: 37 cm a frame, the coat stretched 636% at rest): they carry tag `feet`, which the coat does
+  not collide with, where that measured better (Mickey, Zexion, Xigbar, Saix, Xemnas, Xaldin, Riku;
+  not Axel, Larxene, Marluxia or Roxas, whose coats end higher or whose runs got worse).
+- The game's own animations with no KH2 motion (attacks, guard, magic) fling a coat on full world inertia
+  in spins: a `days_moves` control over them (inertia 0.6, follow 8 Hz, hem 3) kept the legs inside in
+  Saix's, Xemnas's, Xaldin's and Riku's spins (legs out 15-25 cm before).
+- Drawstrings: `damping 3.5`, `max_speed 5`; colliding with the arms too where the strings do not rest
+  inside the torso collider (not Roxas's or Xemnas's).
+- Thighs thinned to 0.9 front to back (`mesh_scale`) and the pelvis hidden only where the coat closes all
+  round (`hide kh2_2 from <coat waist> to <hip joints or the slit's top>`); the replay does not draw those.
+- Left open: the drawn-face guard (`draw_guard`, on or off) causes most of the remaining pops in the game's
+  animations (off: jitter halves, legs show 9-21 cm through); Lexaeus's `B002`, roxas_bf_h's
+  `b_bf_B000` and Xemnas's guard still open or jump the coat. The replay's numbers also depend on which
+  scenarios ran before in one process (each scenario does not start a fresh actor).
+- Second round (same day): a coat whose KH2 motion flares it (Xaldin's hover, hem radius 54.5 cm) hangs in the
+  game's animations round its KH2 rest, a narrow tube (30.5 cm), pulled tight over the game's wide stance: a
+  `ds_pose <slot> <coat bones>` (the motion's first frame) and a guided control over the game's animations give it
+  the motion's shape (his idle: off its targets 19.9 -> 5.1 cm, the coat's jitter summed over 28 animations about
+  halved; not his `B000`, whose kick crosses the bell's front). One round pelvis capsule's end stood the back of
+  Riku's coat out behind his seat where the hips tip back (the glides, `Ca000` and `Ca001`): two side by side
+  (`offset 0 0 +-5`, flatter front to back) and a loose control for the held glides (`follow_frequency 2 hem 0.7`,
+  the back strips not following the raised thighs) brought its back rows from 33-47 to 27-36 cm behind the spine
+  line in the hover, 32-46 to 26-33 forward (his seat 16-20). Lexaeus's legs through his coat in the game's attacks: a swing cone turned a panel
+  the leg had pushed out straight back into it; `days_moves` with `swing_limit 180` and `row_max_strain 0.3 hem
+  4` took the frames with a leg out (10 runs a move) from 416 to 72; his `B006` and the roll still let a thigh
+  raised over the hip through the top rows for a frame or two. The glides' base of the spine: the pelvis turned
+  under (KH2_MODELS.md, `ds_pose`); with the coat colliding with his feet again and capsules along the soles to
+  the toes (the ankle capsules run down from the ankle), the feet no longer come through it there (5.7 cm before).
 
 **Wind**: `wind world|actor|bone <bone> <x y z> speed <m/s> [gust <f>]
 [frequency <Hz>] [turbulence <f>]` or `wind off` (global, per group, per control).
@@ -489,6 +532,14 @@ shook on the hill and not at its foot.
   leaked into the world and turning the camera swung the Kingdom Key's keychain.
   An actor's matrix is only taken as the start's (`fx_close`) when no such frame's
   view is at hand.
+- A model object drawn by `Obj_RenderModel` (the ov107 enemies, the boss Riku): its `Gfx_ApplyBaseTransform`
+  (0x0201574c) multiplies the camera onto the projection and starts the position matrix from `NNS_G3dGlb`'s base
+  alone, never through `NNS_G3dGlbFlush`, so the flushed base is stale. The live base (`NNS_G3dGlb` at 0x02047394:
+  rotation +0x94, translation +0xb8, scale +0xc4) is taken when it is exactly the draw's start (`live_base_world`):
+  the start is then in the world. Not shared with other draws; the level of detail measures from the camera.
+  Obj_RenderModel copies the object's +0x40 into the base's translation and +0x4c into its scale (the decomp's
+  `vecA`/`position` names are swapped). Before this the boss Riku's cloth went by the flushed camera, applied on
+  top of the projection's: turning the camera swung it (session logs, 2026-11-09).
 - Neither, and no other draw this frame: the latest flush's camera
   (`khdays_g3d_camera`), said once in the session log. Every session log until 2026-10-30 shows Roxas placed this way
   ("placed in the world by the flushed camera"): his body is not an
@@ -537,6 +588,45 @@ plaza's flares stopped with it. F12's lines name the room and group taken.
 4. Tune: presets first, then `hem` values, `follow_bone`, `bone` overrides,
    animation controls for moves that need them.
 5. In the game, `KHDAYS_SECONDARY_DEBUG=1` and edit the file while it runs.
+6. Write its rest shape ("Rest shape" below) once the groups and colliders are
+   done, and again whenever they change.
+
+## Rest shape
+
+A group's reference shape (what `follow_frequency` pulls toward, what swing and
+twist limits measure from) is not KH2's modelled shape: the cloth is pushed out of
+the colliders it collides with (contact relaxation, its links held) and the
+`settle on` groups (drawstrings, hoods) are hung under gravity against them, so
+the pull does not hold a hood up against gravity. Simulated at load, that took
+90-210 ms a model, and the prewarm thread that hid it queued every model of the
+mods behind one another: the first NPC in a field waited ~9.5 s (2026-11-12).
+
+It is computed once instead and written in the file: `rest <bone> <x y z>` per
+simulated bone, its turn on its parent (degrees about x, then y, then z of the
+parent's axes, `rest_turn`). A group with any `rest` line takes its shape from them
+at load (`rest_shape`: the rest skeleton with those turns, the bones below carried
+along) and is neither relaxed nor hung; `prepare_references` takes 0.1 ms. A group
+without them is prepared as before, its hang stopped once no control moves 0.05 mm
+a tick for 10 ticks (`settle` steps the most). `settle on` still hangs the group
+in its first pose at each start ("Time").
+
+`khdays-secondary-rest <model.mdlx> <model.secondary.txt> [--write <file>]` writes
+them: it prepares the shape as the load did (every `settle` step), turns each bone
+onto it, parents first, then turns any bone whose control lands inside a collider
+about its head until it is out (1 mm clear: the hang's links stretch a few mm, a
+turn keeps the bone's length), rounds to two decimals and checks the shape the
+lines give. It prints each group's distance from the hung shape and how deep it is
+in a collider. `--write` replaces the groups' `rest` lines in that file. For the HD
+pack, `tools/hd/kh2_cloth_rest.py` runs it on every installed model, writes the
+file in `tools/hd/kh2_models/` each takes and installs it again; a file models share
+is written from its own model and checked against the others (within 0.5 degrees;
+keyblades whose keychain hangs otherwise have files of their own). Rerun it after
+changing a group, its colliders or the model.
+
+2026-11-12, every HD pack model: no control inside a collider; the shape within
+1.9 cm of the hung one (drawstrings 1.0-1.1 cm, turned out of the chest), Xaldin's
+braids 4.3 cm at the tips (hung, they lay pressed into a collider on stretched
+links).
 
 ## N_EX830 (the coat Roxas)
 
@@ -623,7 +713,7 @@ motion taken out, the actor placed on a path), and writes `report.txt` (clipping
 of the skinned simulated vertices beyond their rest overlap with the colliders
 their group uses, vertices under the room, coat strain, recoveries, rebases, cost
 percentiles, per-phase cost) and a contact sheet per scenario of the proxies
-(colliders, coarse faces, links, anchors). It reads motions.txt's `mset ... own`,
+(colliders, coarse faces, links, anchors). It reads motions.txt's `rotate_motions`, `mset ... own`,
 `motions` and `carry` lines as the port does; the scenarios name P_EX110's slots,
 so for a model that adds P_EX110.mset from a slot on, `--slot-offset <slot>` moves
 them there. `--reference`'s slots are seen by the controls' `slot` lines, and a
@@ -631,17 +721,49 @@ reference model with this model's bone count drives all of them (else bones 0-94
 the dual wield Roxas (B_EX390 on its own motions) is checked against its own bake
 with `--reference roxas_bf_h.mdlx B_EX390.mset 0,1,4,5`.
 
-Options: `--out <dir>` (contact sheets and the report), `--scenario <name>` (idle, calm,
+Options: `--out <dir>` (contact sheets and the report; default `khdays-secondary-replay` in the
+system's temporary folder), `--scenario <name>` (idle, calm,
 idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall, spawn,
-teleport, cut, platform, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
+teleport, cut, platform, days, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
 at once, the benchmark; default 1), `--draw-hz <hz>` (default 60), `--repeat <n>` (draws
 each n times), `--reference <B.mdlx> <B.mset> <slot,...>`.
+
+**The game's own animations** (`--days`): the model is posed as the game poses it, by the
+port's `models.cpp` itself linked into the tool (`khdays_models_offline_pose`: one draw's pose
+up to the cloth, so bones.txt's pairs, `place`, `spine`, `ik`, `ds_pose`, twists, `hand` lines
+and cuffs all apply; the game's side stubbed in `port/tools/replay_game_stubs.cpp`, its camera
+at the origin), and the cloth simulated on it. Give the model from its mod's folder
+(`<mods>/<mod>/graphics/<name>.mdlx`, where the port finds it; that mod's files are read first,
+then the other mods' beside it) and the game model it replaces:
+
+```bash
+khdays-secondary-replay xaldin_h.mdlx xaldin_h.secondary.txt xaldin_h.motions.txt --days xa_def_h.nsbmd \
+    --days-anim b_xa_A000=xa_def_h.nsbca#0 --days-anim b_xa_A001=xa_def_h.nsbca#1 \
+    --days-scenario settle=b_xa_A000:2,b_xa_A001:3:5,b_xa_A000:4 --scenario days
+```
+
+`--days <BMD0>` the game model's bytes (its file's BMD0 block); `--days-anim
+<name>=<BCA0 file>#<index>` one of its animations by the name motions.txt knows it, played
+alone as the scenario `days:<name>` (two loops, 4 s at least, 30 frames a second);
+`--days-scenario <name>=<anim>:<seconds>[:<m/s>],...` several one after another, each crossed
+from the last by the scenarios' fade (two game animations: models.cpp plays both by their shares, the game's nodes
+mixed, as the game cross-fades), moving forward at that speed. `--scenario days` plays
+only these. Each game animation goes to models.cpp with its length in frames, which a `follow` section
+stretches onto (the boss Saix's `016_004`). An animation motions.txt gives a slot is posed by its KH2 motion there (models.cpp plays it), but
+the cloth's controls are not told the slot (`slot` lines do not apply): for such an animation the KH2 scenarios
+(`idle`) are the game's case. **Hair** (`--hair <group,...> [--hair-ignore <bones>]`): the report's `hair:` line
+for those groups' vertices, how many of their triangles' edges pass through the drawn body's
+triangles (the most in a frame, the frames with any, the hair and body bones crossing most:
+on thin cloth, a hood, a crossing is what shows), and their twitch, each vertex's
+frame-to-frame acceleration in the first group's reference bone's frame (cm; from the
+quarter second on). `--hair-ignore` bones' triangles are not the body (other hair, hidden
+weapons).
 
 Diagnostics, on stderr:
 
 | Variable | Effect |
 |---|---|
-| `KHDAYS_REPLAY_DEBUG=<strain>` | the worst links once strain passes it, and every leg in a coarse face with its side |
+| `KHDAYS_REPLAY_DEBUG=<strain>` | the worst links once strain passes it, and every leg in a coarse face with its side; each new deepest simulated vertex past its rest depth in a collider (the report's `worst penetration`), with its bone and the collider |
 | `KHDAYS_REPLAY_LEGS=1` | each frame's deepest leg in the coat (cm) |
 | `KHDAYS_REPLAY_DUMP=<frame>` | the coat's controls and targets in the hips' space (`KHDAYS_REPLAY_DUMP_WORLD`: in the world) |
 | `KHDAYS_REPLAY_REFDUMP=<frame>` | the bake's and the simulated coat there (`--reference`) |
@@ -651,10 +773,18 @@ Diagnostics, on stderr:
 | `KHDAYS_REPLAY_CLIP=<name>` | each frame's deepest simulated vertex in the colliders so named (`KHDAYS_REPLAY_CLIP_BY=<collider>`: of the groups that collide with it) |
 | `KHDAYS_REPLAY_POKE=<bone,...>` | those bones' body vertices through the coat's drawn surface |
 | `KHDAYS_REPLAY_NO_SIM=1` | draws the animation alone |
+| `KHDAYS_REPLAY_LOG=1` | the session log's lines on stderr (with `KHDAYS_SECONDARY_TRACE=1`, models.cpp's `kh2 trace` per draw) |
 | `KHDAYS_REPLAY_ROLL=<degrees>`, `KHDAYS_REPLAY_LIFT=<m>`, `KHDAYS_REPLAY_NOISE=<mm>` | turn the actor about its x, raise it, shake it each draw |
 | `KHDAYS_REPLAY_GROUP=<group>` | the group whose bones' turns the jitter measures (coat) |
 | `KHDAYS_REPLAY_TWIST=1` | their largest roll about their own length each frame |
 | `KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]` | the contact sheet's frames |
+| `KHDAYS_REPLAY_MODEL_DUMP=<frame>` | that frame's drawn model into `--out`: each vertex (m, its heaviest bone) and each bone's frame, to fit colliders to |
+| `KHDAYS_REPLAY_SPREAD=<cm>[,<bone>-<bone>...]` | each frame whose farthest drawn vertex from the root bone is past that, with its bone (a mesh stretched off the body); the bones listed left out (hidden weapons) |
+| `KHDAYS_REPLAY_DAYS_TRACE=1` | `--days`: each draw, the joint that moved most since the last |
+| `KHDAYS_REPLAY_DAYS_BONES=<bone>,...` | `--days`: each draw, those KH2 bones' places (cm, model space): feet off the ground (`lift`), a weapon bone against its hand |
+| `KHDAYS_REPLAY_HAIR_PAIRS=<n>` | `--hair`: the report lists that many hair-bone / body-bone pairs (6 by default) |
+| `KHDAYS_REPLAY_CONTROLS=1` | each frame, every control's weight and the animations the cloth was given (name, KH2 slot, frame, length, share) |
+| (note) | `--days` runs give the cloth what the game does: the KH2 slot and section models.cpp plays for each animation and the game's own looping frame; the plain scenarios give the slot and the time since the segment began |
 
 The test's real-model checks: `KHDAYS_SECONDARY_ASSETS` names the folder the HD pack
 installs `roxas_b_h` in (`mods/<Mod>/graphics/ba/ch/ro/def_hb.p.z/mdl`).
@@ -665,7 +795,8 @@ Measured 2026-10-29 with the replay tool (Release, MSVC 19.44 /O2), AMD Ryzen 7
 7800X3D (8 cores, 4.2 GHz), 64 GB; N_EX830 fully enabled: 7 groups (coat,
 drawstrings, cuffs, hood, hair), 90 controls, 41 anchors, 266 links, 64 coarse
 faces, 16 colliders, room contact, self-contact, wind off; 3 substeps x 2
-iterations at 60 Hz. Cook and settle at load: 170 ms.
+iterations at 60 Hz. Cook and settle at load: 170 ms (2026-11-12, with `rest`
+lines: 1-2 ms).
 
 "Legs in coat" is how far any leg collider's core reaches into or through a
 coarse coat face (the coat's actual drawn geometry: its vertices sit on the
@@ -689,6 +820,13 @@ bones 23, room 18, pose 7; first pose 3-4 ms. The 0.5 ms p95 aim is not met: exa
 face-against-capsule contact costs that much more than the sampled faces did.
 At peak the coat's strips stretch well past their 6 % (the body wins over the
 cloth's length whenever both cannot hold): up to 3.6x in the run's knee lifts.
+
+Body contact's cost (2026-11-14, gameplay Saix, idle): the controls' tests 11 %, the edges' 33 %, the faces'
+56 %. An edge or face whose box misses everything a core can touch (its box grown by its radius and the
+thickest particle's thickness, `pair_reach`'s most) is passed over, the results unchanged byte for byte in
+every scenario. Running the edges and faces once a substep instead of three times halved the contact (270 to
+130 us) but doubled the run's worst penetration (1.5 to 3.2 cm); twice (the iterations' last and the last
+spread pass) kept Saix's metrics but gave Roxas's run two frames over 1 cm: kept at three.
 
 ### How contact keeps the legs out
 

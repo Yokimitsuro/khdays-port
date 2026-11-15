@@ -4930,6 +4930,34 @@ test mod's waves fought, and the mission stayed in its first area.
 already there, and the routine faults). The battle's beginning places the player itself. Seen: moved 3
 units along x, then kept within 6 units of a point while chasing enemies.
 
+**Saix's berserk, as the boss** (ov259, `Ms/53.p`; read from the decompilation and the ROM's file, not
+seen in play). No model of its own: the body (entry 0, model `016`; Mission Mode's `A_016`, entry 1,
+`data_0204c240` bit 2) holds both looks. The normal one is the shapes on node `saix_00`; the berserk one
+is node `head_02`'s, materials `02_*` on the `bs_*` textures (three `bs_hair*` pieces of its own). Only
+the robe has no `02_` copy. At rest the `02_` materials have alpha 0, so a viewer that draws the model's
+own materials never shows them. Two BMA0 material animations switch the looks by alpha: `016_A`
+(entry 0x1d, pose 0x1b: the `02_` materials 0, the rest 31) and `016_B` (0x1e, pose 0x1c: the reverse).
+`Ov259_SetPose` plays poses 0x1b/0x1c (entry pose + 2) on the body's channel 2, beside its joint
+animation on channel 0 (+0x395 keeps the last of the two; poses below 0x1b go to +0x394).
+The transformation is move 14 (`Ov259_AiEnterFinisher`): it sets the berserk flag (ctx +0x4c) and plays
+pose 4, `016_004` (162 frames), and `Ov259_LandingTick` plays 0x1c 1.33 s in (0x1540 on the Q12-second
+clock). `Ov259_TickWindUp` swaps the claymore 0.5 s later and `Ov259_BurrowBurstTick` pushes the
+players away; pose 2 (`016_002`) follows, the idle `Ov259_AiResetMoveState` picks while the flag is
+set (0 without it). `Ov259_DownEntry` clears the flag, and `Ov259_DownTick` plays 0x1b. His chase (move
+11, `Ov259_AiEnterRise`/`Ov259_RiseTick`) plays pose 1, `016_001`, in both looks. Pose 3, `016_003` (an
+18-frame run cycle like it, with its own `move_01` track), is played by nothing in ov259 or ov107:
+unused (a berserk run by the 0/1, 2/3 pairing is a guess). Poses 23-25 (`016_023`-`025`) are shaped
+as a jump's take-off, air (one held frame) and landing, but the only jump-like move, 18, has no
+take-off: pose 0xf, then `Ov259_RiseTick_2` places him at (-4, 10, -30) in pose 2. `Ov259_ChargeTick`
+loops pose 24 after 2.5 s as `Ov259_TickDive` flies him at the player, pose 26 near them and 25 on
+touching down (`Ov259_SlamSweepTick`'s shockwave follows). Pose 23 is played by nothing; his own jump
+(move 13, `Ov259_JumpEntry`) is pose 14, `016_014`. The claymore is a
+helper actor (+0x384) with two models, `W00` (entry 0x3c) and the berserk `W01` (0x3e; Mission Mode's
+0x3d/0x3f). `Ov259_SwapShells` shows one by scaling the other to 0: berserk in moves 16-18,
+`Ov259_TickWindUp` (after that landing) and message slot 1 (which also anchors effect 0xf on him);
+normal in moves 8-11 and 13, `Ov259_DownEntry` and message slot 4. Entry 0x20 (`K`, texture `kiseki`)
+is the swings' trail, posed per move from 0x21 + pose.
+
 ## 23. The player's defeat and how a run ends
 
 Read in the decompilation, then traced in the game (2026-10-22: the play walk opening

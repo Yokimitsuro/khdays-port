@@ -1,0 +1,50 @@
+# KH2 bones (kh2_<index>) to Days' Donald nodes, one pair a line: <joint> <node>.
+# This model is KH2's Donald (P_EX020), Days' only Donald model (donald, def.p.z: no def_h). KH2's is the shorter (the
+# hat's top 98 cm against the game's 105; the head's pivot 69.6 against 74.4, the hips 32.5 against 28.7), not scaled.
+# Unpaired KH2 bones (the tail, hood, hat, beak, belt, fingers) follow their parents.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+kh2_0 Bip01
+
+pose_degrees 5
+
+# Hips and spine. KH2's spine (30-35) curves up the belly from the root, not the hips; the game's spine node (37 cm)
+# turns 34 (38.1 cm), its spine1 (48 cm) the chest (38, 46.7 cm), its neck (the arms' parent, as KH2's 39) 39, its head
+# the head's pivot (79)
+kh2_2 Bip01_Pelvis
+kh2_34 Bip01_Spine
+kh2_38 Bip01_Spine1
+kh2_39 Bip01_Neck
+kh2_79 Bip01_Head
+
+# Legs (thigh, knee, ankle): 13, 14 and 17 carry the thigh's, calf's and foot's vertices (12, 15 and 16 helpers on
+# them); the right leg is the left's +9
+kh2_13 Bip01_L_Thigh
+kh2_14 Bip01_L_Calf
+kh2_17 Bip01_L_Foot
+kh2_22 Bip01_R_Thigh
+kh2_23 Bip01_R_Calf
+kh2_26 Bip01_R_Foot
+
+# Arms (clavicle, shoulder, elbow, wrist): the hand (53) and its fingers ride the wrist (50); the right arm is the
+# left's +77
+kh2_42 Bip01_L_Clavicle
+kh2_46 Bip01_L_UpperArm
+kh2_47 Bip01_L_Forearm
+kh2_50 Bip01_L_Hand
+kh2_119 Bip01_R_Clavicle
+kh2_123 Bip01_R_UpperArm
+kh2_124 Bip01_R_Forearm
+kh2_127 Bip01_R_Hand
+
+# Two-bone limbs. `exact` (the legs): the feet go where the game's are. KH2's ankle stands 3.8 cm over its sole, the
+# game's 4.8, so 1.0 down; nothing forward (not measured for him).
+ik kh2_13 kh2_14 kh2_17 exact 0 -1.0 0
+ik kh2_22 kh2_23 kh2_26 exact 0 -1.0 0
+ik kh2_46 kh2_47 kh2_50
+ik kh2_123 kh2_124 kh2_127
+
+align kh2_17 foot
+align kh2_26 foot

@@ -118,6 +118,7 @@ private:
     std::vector<std::uint8_t> jumped_;              // per group: its reference bone jumped this draw
     std::vector<Vec3> last_game_, game_a_, game_b_; // the last draw's game targets, a tick's start and end
     std::vector<float> control_applied_;
+    std::vector<std::size_t> control_order_; // the controls by priority, lowest first (drive)
     Profile profile_;
     LodConfig full_;
 };

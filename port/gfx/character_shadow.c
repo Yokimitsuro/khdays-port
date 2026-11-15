@@ -1,5 +1,6 @@
 /* Capture the current pose once, then project its silhouette onto nearby floor polygons. */
 #include "character_shadow.h"
+#include "../runtime/core/phases.h"
 #include "../host/app/hud_settings.h"
 #include <math.h>
 #include <stdlib.h>
@@ -23,6 +24,73 @@ static int count, capacity, depth, enabled, volume = -1;
 static uintptr_t caster;
 static Shadow *shadows;
 static int shadow_count, shadow_capacity;
+static KhdaysShadowOutcome outcomes[64]; /* by owner, the oldest replaced (khdays_shadow_outcome) */
+static unsigned lists_finished;
+static int receives(const Capture *r, const KhdaysG3dPolygon *p);
+
+unsigned khdays_shadow_lists_finished(void)
+{
+    return lists_finished;
+}
+
+const KhdaysShadowOutcome *khdays_shadow_outcome(uintptr_t owner)
+{
+    for (int i = 0; i < 64; ++i)
+        if (outcomes[i].owner == owner && owner != 0)
+            return &outcomes[i];
+    return NULL;
+}
+
+static KhdaysShadowOutcome *outcome_for(uintptr_t owner)
+{
+    KhdaysShadowOutcome *oldest = &outcomes[0];
+    for (int i = 0; i < 64; ++i) {
+        if (outcomes[i].owner == owner)
+            return &outcomes[i];
+        if (outcomes[i].list < oldest->list)
+            oldest = &outcomes[i];
+    }
+    memset(oldest, 0, sizeof(*oldest));
+    oldest->owner = owner;
+    return oldest;
+}
+
+/* The polygons under the ground plan lo..hi (any height) that are not `owner`'s, by why they do not receive */
+static void tally_under(const KhdaysG3dList *list, uintptr_t owner, const float lo[3], const float hi[3],
+                        KhdaysShadowOutcome *o)
+{
+    o->under_lo = 1e30f;
+    o->under_hi = -1e30f;
+    for (int i = 0; i < count; ++i) {
+        const Capture *r = &captures[i];
+        const KhdaysG3dPolygon *p = &list->pre[r->pre];
+        if (r->volume != -1 || r->owner == owner)
+            continue;
+        float plo[3] = {1e30f, 1e30f, 1e30f}, phi[3] = {-1e30f, -1e30f, -1e30f};
+        for (int v = 0; v < p->count; ++v)
+            for (int k = 0; k < 3; ++k) {
+                plo[k] = fminf(plo[k], r->points[v].world[k]);
+                phi[k] = fmaxf(phi[k], r->points[v].world[k]);
+            }
+        if (phi[0] < lo[0] || plo[0] > hi[0] || phi[2] < lo[2] || plo[2] > hi[2])
+            continue;
+        ++o->under;
+        o->under_lo = fminf(o->under_lo, plo[1]);
+        o->under_hi = fmaxf(o->under_hi, phi[1]);
+        int caster_of = 0;
+        for (int j = 0; j < shadow_count; ++j)
+            caster_of |= r->owner == shadows[j].owner;
+        if (caster_of)
+            ++o->casters;
+        else if (((p->attr >> 4) & 3) == 3)
+            ++o->shadow_mode;
+        else if (((p->attr >> 16) & 31) != 31) {
+            ++o->translucent;
+            o->translucent_alpha = (int)((p->attr >> 16) & 31);
+        } else if (!receives(r, p))
+            ++o->steep;
+    }
+}
 static int sprite;
 static float camera[16], inverse[16];
 static int32_t last_projection[16];
@@ -171,7 +239,7 @@ int khdays_shadow_has_sprite(void)
     return 0;
 }
 
-void khdays_shadow_record(const KhdaysG3dList *list)
+static void shadow_record_body(const KhdaysG3dList *list)
 {
     if (!enabled || list->npre == 0)
         return;
@@ -234,6 +302,14 @@ void khdays_shadow_record(const KhdaysG3dList *list)
     ++count;
 }
 
+/* KHDAYS_PROFILE: timed (runtime/core/phases.h) */
+void khdays_shadow_record(const KhdaysG3dList *list)
+{
+    const unsigned long long t = khdays_phase_start();
+    shadow_record_body(list);
+    khdays_phase_end(KHDAYS_PHASE_SHADOW_RECORD, t);
+}
+
 static int clip_plane(const Point *in, int n, Point *out, int axis, float bound, int sign)
 {
     int used = 0;
@@ -262,16 +338,120 @@ static int clip_plane(const Point *in, int n, Point *out, int axis, float bound,
     return used;
 }
 
-int khdays_shadow_finish(KhdaysG3dList *list)
+/* A capture another shadow's polygons may fall on: opaque (alpha 31), not a shadow's own, of no caster, not steep */
+static int receives(const Capture *r, const KhdaysG3dPolygon *p)
+{
+    if (r->volume != -1 || ((p->attr >> 4) & 3) == 3 || ((p->attr >> 16) & 31) != 31)
+        return 0;
+    for (int j = 0; j < shadow_count; ++j)
+        if (r->owner == shadows[j].owner)
+            return 0;
+    const float *a = r->points[0].world, *b = r->points[1].world, *c = r->points[2].world;
+    float nx = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
+    float ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+    float nz = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    return ny * ny >= 0.04f * (nx * nx + ny * ny + nz * nz);
+}
+
+/* Shadow `s`'s receiving polygons: every receiver's part inside the box lo..hi, appended; their count */
+static int add_receivers(KhdaysG3dList *list, int s, const float lo[3], const float hi[3],
+                         const KhdaysG3dPolygon *shade, const float shade_rgb[3], int *failed)
+{
+    int receivers = 0;
+    for (int i = 0; i < count; ++i) {
+        const Capture *r = &captures[i];
+        KhdaysG3dPolygon p = list->pre[r->pre];
+        if (!receives(r, &p))
+            continue;
+        Point work[2][16];
+        memcpy(work[0], r->points, (size_t)p.count * sizeof(Point));
+        int n = p.count, buffer = 0;
+        for (int k = 0; k < 3 && n; ++k) {
+            n = clip_plane(work[buffer], n, work[1 - buffer], k, lo[k], 1);
+            buffer = 1 - buffer;
+            if (n) {
+                n = clip_plane(work[buffer], n, work[1 - buffer], k, hi[k], -1);
+                buffer = 1 - buffer;
+            }
+        }
+        if (n < 3)
+            continue;
+        KhdaysG3dPreInfo key = list->pre_info[r->pre];
+        key.draw ^= (uint64_t)shadows[s].owner << 32;
+        key.occurrence |= 0x80000000u | (((unsigned)s & 0x3ffu) << 20); /* the draw's owner tells shadows apart */
+        p.pltt = (p.attr >> 24) & 63;
+        p.attr = (shade->attr & ~0x8f0u) | 0x4000u | 0xc0u;
+        p.tex = 0;
+        p.replacement = -1;
+        p.translucent = 1;
+        p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_RECEIVER;
+        p.shadow = s;
+        if (shadows[s].sprite) {
+            p.flags |= KHDAYS_G3D_SHADOW_SPRITE | (p.pltt << 18);
+            p.tex = shade->tex;
+            p.pltt = shade->pltt;
+            p.replacement = shade->replacement;
+        }
+        for (int t = 1; t < n - 1; ++t) {
+            KhdaysG3dClipVertex tri[3];
+            int at[3] = {0, t, t + 1};
+            for (int v = 0; v < 3; ++v) {
+                const Point *q = &work[buffer][at[v]];
+                tri[v] = q->clip;
+                tri[v].s = (q->world[0] - lo[0]) / (hi[0] - lo[0]) * KHDAYS_SHADOW_SIZE * 16;
+                tri[v].t = (q->world[2] - lo[2]) / (hi[2] - lo[2]) * KHDAYS_SHADOW_SIZE * 16;
+                tri[v].r = shade_rgb[0];
+                tri[v].g = shade_rgb[1];
+                tri[v].b = shade_rgb[2];
+                tri[v].a = 1;
+            }
+            key.ordinal = list->pre_info[r->pre].ordinal * 16u + (unsigned)t;
+            if (!khdays_g3d_shadow_polygon(tri, 3, &p, &key))
+                *failed = 1;
+            ++receivers;
+        }
+    }
+    return receivers;
+}
+
+/* The highest receiver under the box lo..hi's ground plan, at most `reach` below its bottom (lo[1]); -1e30 none */
+static float floor_below(const KhdaysG3dList *list, const float lo[3], const float hi[3], float reach)
+{
+    float top = -1e30f;
+    for (int i = 0; i < count; ++i) {
+        const Capture *r = &captures[i];
+        const KhdaysG3dPolygon *p = &list->pre[r->pre];
+        if (!receives(r, p))
+            continue;
+        float plo[3] = {1e30f, 1e30f, 1e30f}, phi[3] = {-1e30f, -1e30f, -1e30f};
+        for (int v = 0; v < p->count; ++v)
+            for (int k = 0; k < 3; ++k) {
+                plo[k] = fminf(plo[k], r->points[v].world[k]);
+                phi[k] = fmaxf(phi[k], r->points[v].world[k]);
+            }
+        if (phi[0] < lo[0] || plo[0] > hi[0] || phi[2] < lo[2] || plo[2] > hi[2])
+            continue;
+        if (plo[1] < lo[1] && phi[1] >= lo[1] - reach) /* its lowest under the box: the floor beneath, not a ledge */
+            top = fmaxf(top, fminf(phi[1], lo[1]));
+    }
+    return top;
+}
+
+static int shadow_finish_body(KhdaysG3dList *list)
 {
     int changed = 0;
     enabled = 0; /* appending projected geometry must not enter the capture */
+    ++lists_finished;
     for (int s = 0; s < shadow_count; ++s) {
+        KhdaysShadowOutcome *o = outcome_for(shadows[s].owner);
+        memset(o, 0, sizeof(*o));
+        o->owner = shadows[s].owner;
+        o->list = lists_finished;
         float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
         float floor_lo = 1e30f, floor_hi = -1e30f;
         KhdaysG3dPolygon shade = {0};
         float shade_rgb[3] = {0};
-        int sources = 0, receivers = 0;
+        int sources = 0;
         float sprite_width = 0;
         for (int i = 0; i < count; ++i) {
             const Capture *r = &captures[i];
@@ -307,6 +487,15 @@ int khdays_shadow_finish(KhdaysG3dList *list)
             floor_lo -= margin;
             floor_hi += margin;
         }
+        o->sources = sources;
+        o->own_lo = lo[1];
+        o->own_hi = hi[1];
+        o->band_lo = floor_lo;
+        o->band_hi = floor_hi;
+        o->outcome = !sources               ? KHDAYS_SHADOW_NO_SOURCES
+                     : !shade.attr          ? KHDAYS_SHADOW_NO_SHADE
+                     : floor_hi <= floor_lo ? KHDAYS_SHADOW_NO_BAND
+                                            : KHDAYS_SHADOW_REPLACED_IT;
         if (!sources || !shade.attr || floor_hi <= floor_lo)
             continue;
         float pad = fmaxf(hi[0] - lo[0], hi[2] - lo[2]) * 0.04f + 0.002f;
@@ -317,73 +506,27 @@ int khdays_shadow_finish(KhdaysG3dList *list)
         lo[1] = floor_lo;
         hi[1] = floor_hi;
         int first = list->npre, first_vertex = list->npre_verts, failed = 0;
-        for (int i = 0; i < count; ++i) {
-            const Capture *r = &captures[i];
-            KhdaysG3dPolygon p = list->pre[r->pre];
-            if (r->volume != -1 || r->owner == shadows[s].owner || ((p.attr >> 4) & 3) == 3 ||
-                ((p.attr >> 16) & 31) != 31)
-                continue;
-            int other_caster = 0;
-            for (int j = 0; j < shadow_count; ++j)
-                other_caster |= r->owner == shadows[j].owner;
-            if (other_caster)
-                continue;
-            const float *a = r->points[0].world, *b = r->points[1].world, *c = r->points[2].world;
-            float nx = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
-            float ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
-            float nz = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-            if (ny * ny < 0.04f * (nx * nx + ny * ny + nz * nz))
-                continue;
-            Point work[2][16];
-            memcpy(work[0], r->points, (size_t)p.count * sizeof(Point));
-            int n = p.count, buffer = 0;
-            for (int k = 0; k < 3 && n; ++k) {
-                n = clip_plane(work[buffer], n, work[1 - buffer], k, lo[k], 1);
-                buffer = 1 - buffer;
-                if (n) {
-                    n = clip_plane(work[buffer], n, work[1 - buffer], k, hi[k], -1);
-                    buffer = 1 - buffer;
-                }
-            }
-            if (n < 3)
-                continue;
-            KhdaysG3dPreInfo key = list->pre_info[r->pre];
-            key.draw ^= (uint64_t)shadows[s].owner << 32;
-            key.occurrence |= 0x80000000u | (((unsigned)s & 0x3ffu) << 20); /* the draw's owner tells shadows apart */
-            p.pltt = (p.attr >> 24) & 63;
-            p.attr = (shade.attr & ~0x8f0u) | 0x4000u | 0xc0u;
-            p.tex = 0;
-            p.replacement = -1;
-            p.translucent = 1;
-            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_RECEIVER;
-            p.shadow = s;
-            if (shadows[s].sprite) {
-                p.flags |= KHDAYS_G3D_SHADOW_SPRITE | (p.pltt << 18);
-                p.tex = shade.tex;
-                p.pltt = shade.pltt;
-                p.replacement = shade.replacement;
-            }
-            for (int t = 1; t < n - 1; ++t) {
-                KhdaysG3dClipVertex tri[3];
-                int at[3] = {0, t, t + 1};
-                for (int v = 0; v < 3; ++v) {
-                    const Point *q = &work[buffer][at[v]];
-                    tri[v] = q->clip;
-                    tri[v].s = (q->world[0] - lo[0]) / (hi[0] - lo[0]) * KHDAYS_SHADOW_SIZE * 16;
-                    tri[v].t = (q->world[2] - lo[2]) / (hi[2] - lo[2]) * KHDAYS_SHADOW_SIZE * 16;
-                    tri[v].r = shade_rgb[0];
-                    tri[v].g = shade_rgb[1];
-                    tri[v].b = shade_rgb[2];
-                    tri[v].a = 1;
-                }
-                key.ordinal = list->pre_info[r->pre].ordinal * 16u + (unsigned)t;
-                if (!khdays_g3d_shadow_polygon(tri, 3, &p, &key))
-                    failed = 1;
-                ++receivers;
+        int receivers = add_receivers(list, s, lo, hi, &shade, shade_rgb, &failed);
+        /* the game's flat shadow off any floor: ov107 puts it at its actor's own height when the floor ray finds no
+         * plain floor (Ov107_AiState_ResolveContacts: a hit with a type byte, or none), the boss Saix in the air
+         * among them. The floor beneath it, within 4 units, takes the shadow instead of the circle */
+        if (!receivers && !failed && shadows[s].sprite) {
+            const float band = hi[1] - lo[1], top = floor_below(list, lo, hi, 4.0f);
+            if (top > -1e29f) {
+                lo[1] = top - band * .5f;
+                hi[1] = top + band * .5f;
+                receivers = add_receivers(list, s, lo, hi, &shade, shade_rgb, &failed);
+                o->moved_below = 1;
+                o->band_lo = lo[1];
+                o->band_hi = hi[1];
             }
         }
-        if (!receivers)
+        o->receivers = receivers;
+        if (!receivers) {
+            o->outcome = KHDAYS_SHADOW_NO_RECEIVERS;
+            tally_under(list, shadows[s].owner, lo, hi, o);
             continue;
+        }
         for (int i = 0; i < count; ++i) {
             const Capture *r = &captures[i];
             KhdaysG3dPolygon p = list->pre[r->pre];
@@ -415,6 +558,7 @@ int khdays_shadow_finish(KhdaysG3dList *list)
         if (failed) {
             list->npre = first;
             list->npre_verts = first_vertex;
+            o->outcome = KHDAYS_SHADOW_FAILED;
             continue;
         }
         if (list->npre > first) {
@@ -426,4 +570,13 @@ int khdays_shadow_finish(KhdaysG3dList *list)
     }
     khdays_shadow_reset();
     return changed;
+}
+
+/* KHDAYS_PROFILE: timed (runtime/core/phases.h) */
+int khdays_shadow_finish(KhdaysG3dList *list)
+{
+    const unsigned long long t = khdays_phase_start();
+    const int r = shadow_finish_body(list);
+    khdays_phase_end(KHDAYS_PHASE_SHADOW_FINISH, t);
+    return r;
 }

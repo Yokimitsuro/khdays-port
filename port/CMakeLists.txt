@@ -289,7 +289,9 @@ add_library(khdays-gfx STATIC
     gfx/describe.c
     gfx/character_shadow.c
     gfx/g3d_geometry.c
-    gfx/g3d_interp.c)
+    gfx/g3d_interp.c
+    gfx/mips.c
+    runtime/core/phases.c) # KHDAYS_PROFILE's phases, timed in the 3D too
 target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
 target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
 add_executable(khdays-character-shadow-test tests/character_shadow_test.c)
@@ -448,7 +450,7 @@ target_compile_options(khdays-kh2-gpu-test PRIVATE
 add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
 set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
 # the HD pictures on the card: growth, the 3D's pictures coming and going past the most (needs a card)
-add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c)
+add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c gfx/mips.c)
 target_link_libraries(khdays-gpu-hd-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-gpu-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-gpu-hd COMMAND khdays-gpu-hd-test)
@@ -699,6 +701,7 @@ add_executable(khdays-native
     runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions
     runtime/mods/model_own_skeleton.cpp # ... a mod's character's own skeleton
     runtime/mods/model_hands.cpp        # ... a KH2 model's hands and cuffs
+    runtime/mods/model_stance.cpp       # ... its stance on the game's floor
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
     runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
@@ -990,11 +993,27 @@ target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/includ
 target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
 # The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
+# With `--days`, the game's own animations posed onto the model by the port's models.cpp itself (bones.txt's pairs,
+# place, spine, ik, ds_pose, cuffs), the game's side of it stubbed (tools/replay_game_stubs.cpp).
 add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
     ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
-    ../assets/src/dds.cpp ../assets/src/image.cpp)
-target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+    ../assets/src/dds.cpp ../assets/src/image.cpp
+    runtime/mods/models.cpp runtime/mods/model_load.cpp runtime/mods/model_bones.cpp runtime/mods/model_kh2_motions.cpp
+    runtime/mods/model_own_skeleton.cpp runtime/mods/model_hands.cpp runtime/mods/model_stance.cpp
+    runtime/mods/face.cpp runtime/mods/room_animation.cpp
+    runtime/mods/secondary/model_link.cpp runtime/mods/secondary/days_environment.cpp
+    ../assets/src/animation.cpp ../assets/src/mesh.cpp ../assets/src/gltf.cpp ../assets/src/fbx.cpp
+    ../assets/src/filesystem.cpp tools/replay_game_stubs.cpp)
+target_include_directories(khdays-secondary-replay PRIVATE ../assets/include ../sdk/include runtime/mods/secondary
+                           "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}" "${KHDAYS_GEN}")
 target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
+target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx khdays-gfx)
+# A model's cloth reference shape computed once and written as `rest` lines (docs/SECONDARY_MOTION.md, "Rest shape").
+add_executable(khdays-secondary-rest tools/secondary_rest.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-rest PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-rest PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)
