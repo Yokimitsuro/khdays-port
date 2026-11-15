@@ -73,4 +73,20 @@ int khdays_lock_action_exists(int action, int lockon_scheme);
 uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, int field, int locked, int lockon_scheme,
                                      uint16_t held, int r_free);
 
+/* The field's control packet (Ov022_SendControlPacket: the buttons held, the command chosen, the target):
+ * the game builds it in the battle's network send (func_ov022_02089704), after the host's characters have
+ * read the one before at the start of their update (Ov022_RefreshSlotRows), so they move by the buttons
+ * of the game frame before -- a game frame late. Alone the port puts this frame's buttons in the local
+ * player's row as they are about to read it, once a game frame; the game's own packet still brings the
+ * rest (docs/RUNTIME_MAP.md, "The field's controls"). */
+typedef struct KhdaysControlSender {
+    uint32_t early; /* the game frame + 1 the buttons were put in before the characters read them, 0 never */
+} KhdaysControlSender;
+
+void khdays_control_sender_reset(KhdaysControlSender *s);
+
+/* The host's characters are about to read the table in game frame `frame`: whether to put the buttons in
+ * now (once a frame). `allowed`: alone, in the ordinary battle (controls_hooks.c says when). */
+int khdays_control_sender_early(KhdaysControlSender *s, uint32_t frame, int allowed);
+
 #endif

@@ -105,6 +105,12 @@ static LONGLONG counter_at(u64 cycle)
 static volatile LONG lock_screen;  /* the host's: a window shows the game */
 static int lock_trace = -1;        /* KHDAYS_TRACE_LOCK: the phase every 300 VBlanks */
 static double lock_test_hz = -1.0; /* KHDAYS_SCREEN_LOCK=HZ: a screen at that rate, whatever this one's (testing) */
+static volatile LONG lock_refreshes; /* the screen's refreshes a VBlank while the lock holds, else 0 */
+
+int khdays_clock_screen_refreshes(void)
+{
+    return (int)InterlockedCompareExchange(&lock_refreshes, 0, 0);
+}
 
 void khdays_clock_lock_screen(int on)
 {
@@ -139,6 +145,7 @@ void khdays_clock_vblank(u64 vblank)
             fprintf(stderr, "lock: off (screen %ld, held %d, compositor %08lx, period %llu)\n", (long)screen, paused,
                     (unsigned long)hr, (unsigned long long)info.qpcRefreshPeriod);
         }
+        InterlockedExchange(&lock_refreshes, 0);
         set_rate(1.0);
         return;
     }
@@ -151,9 +158,11 @@ void khdays_clock_vblank(u64 vblank)
     refreshes = (int)(ds_frame / (double)info.qpcRefreshPeriod + 0.5);
     refresh = (double)info.qpcRefreshPeriod * (refreshes > 0 ? refreshes : 1);
     if (refreshes < 1 || refresh / ds_frame < 0.99 || refresh / ds_frame > 1.01) {
+        InterlockedExchange(&lock_refreshes, 0);
         set_rate(1.0);
         return;
     }
+    InterlockedExchange(&lock_refreshes, refreshes);
     /* the VBlank's place in the screen's frame (when it was due: the game's thread takes it a little
      * later), and how far from where it should be (-half to half) */
     when = counter_at(vblank);
