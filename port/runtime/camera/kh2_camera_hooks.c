@@ -851,10 +851,12 @@ static void commit_frame(int camera)
     }
 }
 
-/* The eye and the look-at last committed by Days's camera (its first, not the second screen's), Days's units */
+/* The eye and the look-at last committed by Days's camera (its first, not the second screen's), Days's units, and
+ * half its vertical field of view (radians) */
 static struct {
     int known;
     float eye[3], at[3];
+    float fov_half;
 } view;
 
 void khdays_kh2_camera_commit(int camera)
@@ -866,8 +868,18 @@ void khdays_kh2_camera_commit(int camera)
             view.eye[k] = (float)cam[WORD_EYE + k] / 4096.0f;
             view.at[k] = (float)cam[WORD_FOCUS + k] / 4096.0f;
         }
+        view.fov_half = atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
         view.known = 1;
     }
+}
+
+int khdays_kh2_camera_fov(float *half)
+{
+    if (!view.known || half == NULL) {
+        return 0;
+    }
+    *half = view.fov_half;
+    return 1;
 }
 
 int khdays_kh2_camera_view(float eye[3], float at[3])

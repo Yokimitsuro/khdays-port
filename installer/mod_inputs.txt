@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools fa139d530e255d63b2a39d29384ad5c1688ea1c4f325708924d962bd6ee099b3
+# tools 36afc246abfb67925bac91287a3a783afd837ea2c17ca3cc1b100cbb15a51486
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -107,6 +107,8 @@ kh2_fifth msn/us/BB15_MS203.bar
 kh2_fifth msn/us/BB15_MS203_RE.bar
 kh2_fifth msn/us/CA10_MS107.bar
 kh2_fifth msn/us/DC07_FM_NAZO.bar
+kh2_fifth msn/us/EH10_MS102.bar
+kh2_fifth msn/us/EH14_MS103.bar
 kh2_fifth msn/us/EH15_MS104.bar
 kh2_fifth msn/us/EH21_MS101.bar
 kh2_fifth msn/us/HB04_MS403.bar
@@ -135,6 +137,8 @@ kh2_fifth obj/B_AL120.mset
 kh2_fifth obj/B_BB100.a.us
 kh2_fifth obj/B_BB100.mdlx
 kh2_fifth obj/B_BB100.mset
+kh2_fifth obj/B_BB110.mdlx
+kh2_fifth obj/B_BB120.mdlx
 kh2_fifth obj/B_BB130.a.us
 kh2_fifth obj/B_BB130.mdlx
 kh2_fifth obj/B_CA000.a.us
@@ -171,6 +175,12 @@ kh2_fifth obj/B_EX130.mdlx
 kh2_fifth obj/B_EX130.mset
 kh2_fifth obj/B_EX130_LV99.a.us
 kh2_fifth obj/B_EX130_LV99.mdlx
+kh2_fifth obj/B_EX140.mset
+kh2_fifth obj/B_EX140_LV99.a.us
+kh2_fifth obj/B_EX140_LV99.mdlx
+kh2_fifth obj/B_EX150.mset
+kh2_fifth obj/B_EX150_LV99.a.us
+kh2_fifth obj/B_EX150_LV99.mdlx
 kh2_fifth obj/B_EX160.mset
 kh2_fifth obj/B_EX160_LV99.a.us
 kh2_fifth obj/B_EX160_LV99.mdlx
@@ -179,6 +189,9 @@ kh2_fifth obj/B_EX170.mdlx
 kh2_fifth obj/B_EX170.mset
 kh2_fifth obj/B_EX170_LV99.a.us
 kh2_fifth obj/B_EX170_LV99.mdlx
+kh2_fifth obj/B_EX210.a.us
+kh2_fifth obj/B_EX210.mdlx
+kh2_fifth obj/B_EX210.mset
 kh2_fifth obj/B_EX220.mset
 kh2_fifth obj/B_EX220_LV99.a.us
 kh2_fifth obj/B_EX220_LV99.mdlx
@@ -225,6 +238,7 @@ kh2_fifth obj/B_LK110.mdlx
 kh2_fifth obj/B_LK110.mset
 kh2_fifth obj/B_LK110_PHANTOM.a.us
 kh2_fifth obj/B_LK110_PHANTOM.mdlx
+kh2_fifth obj/B_NM000.mdlx
 kh2_fifth obj/B_NM100.a.us
 kh2_fifth obj/B_NM100.mdlx
 kh2_fifth obj/B_NM100.mset
@@ -638,8 +652,10 @@ kh2_sixth voice/us/battle/n_berserker.win32.scd
 kh2_sixth voice/us/battle/n_dancer.win32.scd
 kh2_sixth voice/us/battle/n_dancer_hb.win32.scd
 kh2_sixth voice/us/battle/n_dragoon.win32.scd
+kh2_sixth voice/us/battle/n_gambler.win32.scd
 kh2_sixth voice/us/battle/n_larxene.win32.scd
 kh2_sixth voice/us/battle/n_roxas.win32.scd
+kh2_sixth voice/us/battle/n_sniper.win32.scd
 kh2_sixth voice/us/battle/n_xemnas.win32.scd
 kh2_sixth voice/us/battle/n_zexion.win32.scd
 kh2_sixth voice/us/battle/scar.win32.scd

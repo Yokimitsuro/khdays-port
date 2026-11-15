@@ -438,6 +438,49 @@ public:
     {
         return false;
     }
+    // 1:135: the same segment and the polygon it meets (trap_bg_cross_pos -> YS::BG::GetCrossPos), where in `hit`; a
+    // number for that polygon (1:137's), below 0 none
+    virtual int bg_cross(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
+    {
+        return -1;
+    }
+    // 1:137: that polygon's normal, KH2's axes (trap_bg_get_normal -> dk::Octree::getNormal); whether it has one
+    virtual bool bg_normal(int /*polygon*/, Vec3 & /*normal*/)
+    {
+        return false;
+    }
+    // KH2's scope camera (dk::ScopeCamera, ObjCamera's mode 7; Xigbar's sniping): 1:281 made on the object, its eye's
+    // point `height` above the object's place (its head), its zoom 0.5, close-up distance 10 and target (0, 0, 0) to
+    // start; 1:283 gone, the camera's mode before back; 1:312 its zoom, 1:313 its close-up distance, 1:314 the point
+    // it looks at
+    virtual void scope_begin(Object & /*o*/, float /*height*/) {}
+    virtual void scope_end() {}
+    virtual void scope_zoom(float /*zoom*/) {}
+    virtual void scope_closeup(float /*distance*/) {}
+    virtual void scope_target(const Vec3 & /*target*/) {}
+    // 1:316: where a point of KH2's world shows on KH2's screen through the camera (trap_camera_get_projection_pos:
+    // kn::RotTransPers, the GS's 2048 off): KH2's dots from the screen's middle, y down, in x and y; its depth in z;
+    // whether a camera is known
+    virtual bool projection(const Vec3 & /*point*/, Vec3 & /*out*/)
+    {
+        return false;
+    }
+    // KH2's object pictures (YS::STDOBJ::show_picture: its archive's first entry of type 0x2e, a BAR of a LAYD and an
+    // IMGZ, as dk::Layout): 1:285 its layout `number` shown, a handle for it (0 none); 1:290 another layout of it
+    // (Tz::Layout::setNum); 1:315 it moved by x, y KH2 dots (dk::Layout::setPos -> YI::LAYOUT::SetOffset)
+    virtual std::uint32_t show_picture(Object & /*o*/, int /*number*/)
+    {
+        return 0;
+    }
+    virtual void picture_change(std::uint32_t /*handle*/, int /*number*/) {}
+    virtual void picture_place(std::uint32_t /*handle*/, float /*x*/, float /*y*/) {}
+    // 6:0: the screen shaken (Ts::trap_camera_shake -> ryj::SHAKE::Start: the shown frame moved by dk::DispFrame::
+    // setShakeXYoffset): its life in ticks, the x and y waves' periods, their sizes in KH2's dots and how much those
+    // change a tick
+    virtual void screen_shake(float /*life*/, float /*period_x*/, float /*period_y*/, float /*size_x*/,
+                              float /*size_y*/, float /*speed_x*/, float /*speed_y*/)
+    {
+    }
     // A way along the ground (`way`, KH2's cm) from `place` swept by a body's sphere of `radius` (KH2's cm; 0 the actor's
     // own) against the room's walls (Days's: its wall list, which its ray never meets): up to the first wall, the rest
     // slid along it when `slide`; the way made back in `way`, whether a wall stopped it

@@ -861,8 +861,66 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   cards end in KH2's "leave" (`all_card_vanish` and their own): an object a script made (1:0) has no spawner to bring
   it back, so its Days enemy is sent away then (`khdays_enemies_remove`: no defeat, no reward) -- before, each came
   back as a wave's enemy does, dozens of them lying on the floor (the maintainer's screenshot, 2026-11-15).
-- **Not yet**: Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures, `1:281`-`1:316`), Xemnas's final
-  form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
+- **Xigbar** `B_EX140_LV99` (his data battle, his KH2 mission `EH10_MS102`) (2026-11-15): his sniping
+  (`scope_start` to `scope_end_self` / `scope_end_player`) as KH2 plays it -- his place 8 m up and 19 m out, the
+  scope camera from his head toward the player, its sights his own pictures, his shots and their reaction commands
+  ("The scope, the pictures and the screen's shake", below). His thirteen calls: the scope's 1:281, 1:283, 1:312 to
+  1:316, the pictures' 1:285, 1:290, 1:315, the screen's shake 6:0, the room's polygons 1:135 and 1:137 (his shots
+  glance off the walls), the shots' commands 2:52, 7:34 and 1:166. `change_space` (KH2's room changing its shape
+  under him) only moves him and shows its flash (his layout 4): Days's rooms have no other shape. Seen in a window
+  run (the coliseum): the scope's opening event cameras ("00", "10"), twelve rounds of aiming and locking on (the
+  violet sights, then the yellow), Roxas moving under it, reaction commands 491 and 598 taken, the shake, the
+  sights' closing (layout 3) and "20" after. Not seen: his end.
+- **Not yet**: Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
+
+### The scope, the pictures and the screen's shake
+
+Xigbar's sniping, read in his script and the PS3 build (2026-11-15):
+
+- **The scope camera** (1:281 `trap_camera_begin_scope` -> `dk::ScopeCamera::create`: `ObjCamera`'s mode 7): the
+  object it looks from and its eye's height over the object's place (Xigbar's 200: his head), its zoom (0.5),
+  close-up distance (10; his 1:313 150) and target ((0, 0, 0)) as globals; 1:312, 1:313, 1:314 set them; 1:283 ends it
+  (`ObjCamera::returnMode` while the mode is 7). `ScopeCamera::update`: a point the close-up distance from the target
+  toward the head, the eye that point x zoom + the head x (1 - zoom) (`Axa::interVector(a, b, t)` = a t + b (1 - t)),
+  looking at the target. His script moves the target toward the player's bone 140 (1:83) by up to 15 a tick, eases
+  the zoom to 0.4 (to 1 locked on, 0.2 shaken). The port: the KH2 enemies' camera (`khdays_kh2_enemies_event_camera`)
+  gives it when no event of the player's plays, the camera's own field of view kept. 1:83 on a player (Days's has no
+  KH2 pose) gives his aim point -- before, the running actor's bone: the scope looked at Xigbar's own chest.
+- **Where a point shows** (1:316 `trap_camera_get_projection_pos`): `kn::RotTransPers` through the camera, then
+  1792 + 256 off x and 1840 + 208 off y: KH2's dots from the screen's middle (y down). He locks on when the player
+  shows within 50 across and 30 up or down. The port projects through Days's camera's last eye, look-at and vertical
+  field of view onto KH2's 512 x 416 screen shown at 4:3.
+- **His pictures** (1:285 `trap_obj_show_picture` -> `YS::STDOBJ::show_picture`: his archive's first entry of type
+  0x2e, `YS::BINARC::get_info(0x2e, 0)`, a BAR of a LAYD and an IMGZ, as a `dk::Layout` of a layout number; 1:290
+  `Tz::Layout::setNum`; 1:315 `dk::Layout::setPos` -> `YI::LAYOUT::SetOffset`, whole dots). The LAYD
+  (`YI::LAYOUT`): its screens (24 bytes: the picture, the sequence unit, the sequence's clip, the frame it starts at,
+  x, y), its layouts (20 bytes: a u16 first screen and a u16 count), its sequence units (a SEQD's offset each). A
+  layout's time starts at 0 (`SetNumber`: `ChangeNumber`, its time the longest of its sequences', looping if one
+  loops); each screen's sequence plays once the time reaches its frame (`Control`); the screens draw at their places
+  plus the offset (`Draw`); a layout over (`GetPlayMode` 0) ends the picture (`Tz::Layout::update`: no next number,
+  the object ends itself). Xigbar's: five screens at (256, 208), layouts 0 to 4 one each (clips 0, 1, 4, 3, 2):
+  0 aiming (violet), 2 locked on (yellow), 1 after a shot, 3 the scope closing, 4 the room's change's flash. The port:
+  ui/kh2_pictures.cpp plays them and draws them over the 3D (a sequence polygon of the 3D layer, KH2's 512 x 416 dots
+  the 4:3 picture's), from KH2 PC's HD pages after the archive's effects' (`kh2/fx/<name>/-19`, `-20`).
+- **The screen's shake** (6:0 `Ts::trap_camera_shake` -> `ryj::SHAKE::Start`: life, the x and y waves' periods, their
+  sizes and their change a tick; Xigbar's 90, 6, 4, 10, 12, -1/9, -2/15): `ryj::SHAKE::exec` a tick moves each wave's
+  count on (back by its period), its size by its change (0 to 16), the shown frame's offset
+  sin(count / period x 2 pi - pi) x size (`dk::DispFrame::setShakeXYoffset`), its life down. The port moves the KH2
+  enemies' camera (the scope's, an event's) across its view so what it looks at moves by those dots; Days's own
+  camera is not shaken.
+- **His shots' reaction commands** (2:51 on the shot, 7:34 its owner, trigger 11 with the command's record): 2:51
+  keeps what it is given at + 0x114 (the PS3 build's `ATTACK_MAGIC::set_reaction_command(void *, ...)`: his shot's
+  thread's block) -- the port had kept an object there; 2:52 (`trap_attack_rc_receiver`) gives it back, 7:34
+  (`trap_attack_set_rc_owner`) puts the object the command goes to at + 0x118, 1:166 (`trap_target_attack`) reads
+  the attack at a command's record's + 8 (`TARGET::set_attack`): the port's record of a command an attack offers names
+  it there. His 491 and 598 then send the shot back.
+- **The room's polygons** (1:135 `trap_bg_cross_pos` -> `YS::BG::GetCrossPos(from, to, out, flags)`: the polygon a
+  segment meets, -1 none; 1:137 `trap_bg_get_normal` -> `dk::Octree::getNormal`): the port's polygon is Days's
+  collision face's record (the nearest of its three lists'), its normal the face's plane.
+- **The control in an event**: `YS::EVENT::start` takes the player's and his party's control away when its event's
+  flags say so, `YS::EVENT::phase_end` gives both back (`YS::OBJ::ControlOn(0)`, `(1)`) unless 4:56 kept it off.
+  Xigbar's `scope_start` takes it (1:42) and leaves it to his event's end; the port gives it back when an event
+  sequence it plays ends (it had kept Roxas from acting for the whole scope).
 
 ### A player turned into a form
 

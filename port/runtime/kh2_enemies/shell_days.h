@@ -67,6 +67,11 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
  * Collision_RunSphereCast with no radius its walls (the second), Collision_CastNearest its ceilings -- the nearest of
  * the three. Until 2026-11-14 the ray alone: no wall was ever met. */
 int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3]);
+/* The same, and the face it meets in `face` (the collision's own record, while the room stands: KH2's 1:135 gives
+ * its polygon so, 1:137 its normal) */
+int khdays_kh2_shell_ray_face(unsigned actor, const float from[3], const float to[3], float hit[3], unsigned *face);
+/* A face's plane normal (a unit way, Days's axes) from its record; whether it has one */
+int khdays_kh2_shell_face_normal(unsigned face, float normal[3]);
 
 /* The same segment's sphere of `radius` (metres) against the room's walls (Collision_RunSphereCast: the second list,
  * Actor_ResolveMove's walls), the collision's objects left out: where the sphere's centre is as it first meets one in

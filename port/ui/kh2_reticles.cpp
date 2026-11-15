@@ -1,6 +1,7 @@
 // Ov022's screen-projected selection markers, drawn through the existing GPU 3D layer.
 #include "../host/app/hud_settings.h"
 #include "kh2_reticles.h"
+#include "kh2_pictures.h"
 #include "kh2_hp_config.h"
 #include "../gfx/kh2_sequence.h"
 #include "../host/render/kh2_sequence_asset.h"
@@ -269,6 +270,7 @@ extern "C" int khdays_reticles_mark(int kind, unsigned identity, unsigned sprite
 extern "C" void khdays_reticles_end(int cancel)
 {
     khdays_g3d_set_marker(0);
+    khdays_ui_kh2_pictures_draw(); // the field's 3D built: KH2's object pictures over it too (kh2_pictures.h)
     if (!observing)
         return;
     khdays_g3d_set_marker(1); // Includes exit clips when no native marker was drawn this frame.

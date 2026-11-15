@@ -316,6 +316,7 @@ void khdays_g3d_set_marker(int on)
 {
     marker_scope = on != 0;
 }
+void khdays_ui_kh2_pictures_draw(void) {} // KH2 enemies' pictures: none here
 int khdays_textures_add_info(const char *, int, int, const std::uint32_t *, std::uint32_t)
 {
     return allocations++;

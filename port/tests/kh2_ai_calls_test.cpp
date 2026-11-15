@@ -2382,6 +2382,158 @@ void test_zexion()
           world.command_images[1] == std::make_pair(&zexion, false));
 }
 
+// Xigbar's scope (1:281-1:316), his pictures (1:285, 1:290, 1:315), the screen's shake (6:0), the room's polygons
+// (1:135, 1:137) and his shots' reaction commands (2:51, 2:52, 7:34, 1:166)
+struct XigbarWorld final : kh::World {
+    kh::Object *standing = nullptr;
+    std::vector<std::string> told;
+    kh::Vec3 target{};
+    float zoom = 0.0F, closeup = 0.0F, height = 0.0F;
+    std::vector<float> shake;
+    kh::Object *player(kh::Actor &) override
+    {
+        return standing;
+    }
+    void scope_begin(kh::Object &, float h) override
+    {
+        height = h;
+        told.push_back("begin");
+    }
+    void scope_end() override
+    {
+        told.push_back("end");
+    }
+    void scope_zoom(float z) override
+    {
+        zoom = z;
+    }
+    void scope_closeup(float d) override
+    {
+        closeup = d;
+    }
+    void scope_target(const kh::Vec3 &t) override
+    {
+        target = t;
+    }
+    bool projection(const kh::Vec3 &point, kh::Vec3 &out) override
+    {
+        out = {point[0] * 2.0F, point[1] * 2.0F, 7.0F};
+        return point[2] >= 0.0F; // a point behind: no camera here
+    }
+    std::uint32_t show_picture(kh::Object &, int number) override
+    {
+        told.push_back("show " + std::to_string(number));
+        return 0x7c000000u;
+    }
+    void picture_change(std::uint32_t handle, int number) override
+    {
+        told.push_back("change " + std::to_string(handle) + " " + std::to_string(number));
+    }
+    void picture_place(std::uint32_t, float x, float y) override
+    {
+        told.push_back("place " + std::to_string(int(x)) + " " + std::to_string(int(y)));
+    }
+    void screen_shake(float life, float px, float py, float sx, float sy, float vx, float vy) override
+    {
+        shake = {life, px, py, sx, sy, vx, vy};
+    }
+    int bg_cross(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, kh::Vec3 &hit) override
+    {
+        if (to[0] < 0.0F)
+            return -1;
+        hit = {(from[0] + to[0]) / 2.0F, (from[1] + to[1]) / 2.0F, (from[2] + to[2]) / 2.0F};
+        return 77;
+    }
+    bool bg_normal(int polygon, kh::Vec3 &normal) override
+    {
+        normal = {0.0F, -1.0F, 0.0F};
+        return polygon == 77;
+    }
+    bool aim_point(kh::Object &o, kh::Vec3 &out) override
+    {
+        const kh::Vec3 at = o.place();
+        out = {at[0], at[1] - 90.0F, at[2]};
+        return true;
+    }
+};
+
+void test_xigbar()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "1:281 2 0\n1:283 0 0\n1:312 1 0\n1:313 1 0\n1:314 1 0\n1:316 1 1\n1:285 2 1\n"
+                               "1:290 2 0\n1:315 3 0\n6:0 7 0\n1:135 4 1\n1:137 1 1\n2:51 5 0\n2:52 1 1\n7:34 2 0\n"
+                               "1:166 1 1\n1:83 3 1\n");
+    XigbarWorld world;
+    kh::Actor xigbar(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "xigbar");
+    xigbar.world = &world;
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    player.set_place({100.0F, 0.0F, 300.0F});
+    world.standing = &player;
+    const ai::Value self = ai::Value::of_address(xigbar.address());
+    const auto i = ai::Value::of_int;
+    const auto f = ai::Value::of_float;
+    const auto adr = ai::Value::of_address;
+    const std::uint32_t vec = rig.memory.add(16, "a vector");
+    const auto put = [&](float x, float y, float z) {
+        const float w[4] = {x, y, z, 1.0F};
+        rig.memory.write(vec, w, sizeof w);
+    };
+    float v[4] = {};
+    // the scope: made on him with its eye's height, its zoom, close-up and target, gone
+    call(rig, xigbar, 1, 281, {self, f(200.0F)});
+    call(rig, xigbar, 1, 312, {f(0.4F)});
+    call(rig, xigbar, 1, 313, {f(150.0F)});
+    put(1.0F, -2.0F, 3.0F);
+    call(rig, xigbar, 1, 314, {adr(vec)});
+    call(rig, xigbar, 1, 283, {});
+    CHECK(world.height == 200.0F && world.zoom == 0.4F && world.closeup == 150.0F);
+    CHECK(world.target[0] == 1.0F && world.target[1] == -2.0F && world.target[2] == 3.0F);
+    // 1:316: the point on KH2's screen (its w 0); none without a camera: far off it
+    put(10.0F, -5.0F, 1.0F);
+    rig.memory.read(call(rig, xigbar, 1, 316, {adr(vec)}).bits, v, sizeof v);
+    CHECK(v[0] == 20.0F && v[1] == -10.0F && v[2] == 7.0F && v[3] == 0.0F);
+    put(10.0F, -5.0F, -1.0F);
+    rig.memory.read(call(rig, xigbar, 1, 316, {adr(vec)}).bits, v, sizeof v);
+    CHECK(v[0] > 1000.0F && v[1] > 1000.0F);
+    // his pictures: shown (a handle), another layout, moved by whole dots
+    const ai::Value picture = call(rig, xigbar, 1, 285, {self, i(0)});
+    CHECK(picture.bits == 0x7c000000u);
+    call(rig, xigbar, 1, 290, {picture, i(2)});
+    call(rig, xigbar, 1, 315, {picture, f(3.7F), f(-2.2F)});
+    CHECK(world.told == (std::vector<std::string>{"begin", "end", "show 0", "change 2080374784 2", "place 3 -2"}));
+    // the screen's shake, its seven values as given
+    call(rig, xigbar, 6, 0, {f(90.0F), f(6.0F), f(4.0F), f(10.0F), f(12.0F), f(-0.111111F), f(-0.133333F)});
+    CHECK(world.shake == (std::vector<float>{90.0F, 6.0F, 4.0F, 10.0F, 12.0F, -0.111111F, -0.133333F}));
+    // the room's polygon a segment meets and its normal; none: -1, the point left
+    const std::uint32_t from = rig.memory.add(16, "from"), to = rig.memory.add(16, "to"), hit = rig.memory.add(16, "hit");
+    const float a[4] = {0.0F, 0.0F, 0.0F, 1.0F}, b[4] = {4.0F, 2.0F, 6.0F, 1.0F};
+    rig.memory.write(from, a, sizeof a);
+    rig.memory.write(to, b, sizeof b);
+    CHECK(call(rig, xigbar, 1, 135, {adr(from), adr(to), adr(hit), i(4)}).i() == 77);
+    rig.memory.read(hit, v, sizeof v);
+    CHECK(v[0] == 2.0F && v[1] == 1.0F && v[2] == 3.0F);
+    rig.memory.read(call(rig, xigbar, 1, 137, {i(77)}).bits, v, sizeof v);
+    CHECK(v[0] == 0.0F && v[1] == -1.0F && v[2] == 0.0F && v[3] == 1.0F);
+    const float c[4] = {-4.0F, 2.0F, 6.0F, 1.0F};
+    rig.memory.write(to, c, sizeof c);
+    CHECK(call(rig, xigbar, 1, 135, {adr(from), adr(to), adr(hit), i(4)}).i() == -1);
+    // a reaction command on a shot: 2:51 keeps what it is given (2:52's), 7:34 the object it goes to, a command's
+    // record names the attack (1:166)
+    const std::uint32_t shot = rig.memory.add(0x130, "a shot");
+    call(rig, xigbar, 2, 51, {adr(shot), adr(0x1234u), i(597), f(5000.0F), f(0.0F)});
+    CHECK(call(rig, xigbar, 2, 52, {adr(shot)}).bits == 0x1234u && rig.memory.u32(shot + 0x11c) == 597u);
+    call(rig, xigbar, 7, 34, {adr(shot), self});
+    CHECK(rig.memory.u32(shot + 0x118) == xigbar.address());
+    const std::uint32_t record = rig.memory.add(16, "a command's record");
+    const std::uint32_t words[4] = {xigbar.address(), 0u, shot, 0xffffffffu};
+    rig.memory.write(record, words, sizeof words);
+    CHECK(call(rig, xigbar, 1, 166, {adr(record)}).bits == shot);
+    // 1:83 on a player (no KH2 actor of his own): his aim point, not the running actor's bone
+    rig.memory.read(call(rig, xigbar, 1, 83, {adr(player.address()), i(140), adr(vec)}).bits, v, sizeof v);
+    CHECK(v[0] == 100.0F && v[1] == -90.0F && v[2] == 300.0F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -2411,6 +2563,7 @@ int main()
     test_hit_event();
     test_data_roxas();
     test_zexion();
+    test_xigbar();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

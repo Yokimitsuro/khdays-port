@@ -149,6 +149,8 @@ KINDS = {
     # games turn the player into (1:242)
     "B_EX150_LV99": "Luxord (Data)",
     "B_EX210": "Luxord's card",
+    # his data battle (FINAL MIX's Limit Cut, _LV99): his sniping's scope and sights, his shots' reaction commands
+    "B_EX140_LV99": "Xigbar (Data)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -175,6 +177,7 @@ VOICES = {
     "B_EX400": "n_larxene",
     "B_EX370": "n_zexion",
     "B_EX150_LV99": "n_gambler",
+    "B_EX140_LV99": "n_sniper",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for

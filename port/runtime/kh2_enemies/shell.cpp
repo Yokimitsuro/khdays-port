@@ -1090,6 +1090,7 @@ struct ScriptOffer final {
     unsigned enemy = 0;
     int command = -1;
     unsigned frame = 0;
+    std::uint32_t attack = 0; // the attack carrying it (2:51), 0 a script's own offer (1:165)
 };
 ScriptOffer script_offer;
 // KH2's player's command menu as an enemy's script gives it (1:237: its four top commands, renewed each tick it
@@ -1185,6 +1186,68 @@ struct Playing final {
     std::optional<Shake> shake;
 };
 std::optional<Playing> playing;
+
+// KH2's scope camera a script made (1:281: dk::ScopeCamera, ObjCamera's mode 7; Xigbar's sniping) while it stands: the
+// object it looks from, its eye's point `height` above the object's place (its head), its zoom, close-up distance and
+// the point it looks at (KH2's world). ScopeCamera::update (the PS3 build's, read): a point `closeup` from the target
+// toward the head, the eye that point times `zoom` plus the head times 1 - `zoom` (Axa::interVector), looking at the
+// target; an event's camera comes first, as KH2's event camera does over ObjCamera
+struct Scope final {
+    std::uint32_t object = 0;
+    float height = 0.0F, zoom = 0.5F, closeup = 10.0F;
+    Vec3 target{};
+};
+std::optional<Scope> scope;
+
+// KH2's screen shake (6:0: ryj::SHAKE, its fields' names the PS3 build's): ticks left, the x and y waves' periods and
+// their counts, their sizes (KH2's dots, 0 to 16) and how much those change a tick; the shown frame's offset this
+// tick (dk::DispFrame::setShakeXYoffset, whole dots), x right and y down
+struct ScreenShake final {
+    float life = 0.0F;
+    std::array<float, 2> period{}, count{}, size{}, speed{};
+    std::array<float, 2> offset{};
+};
+std::optional<ScreenShake> screen_shake;
+
+// ryj::SHAKE::exec, a KH2 tick: each wave's count on by the tick (back by its period), its size by its speed (kept
+// within 0 and 16), the offset sin(count / period x 2 pi - pi) x size; its life down by the tick, nothing at 0
+void screen_shake_tick()
+{
+    if (!screen_shake)
+        return;
+    ScreenShake &k = *screen_shake;
+    if (k.life <= 0.0F) {
+        screen_shake.reset();
+        return;
+    }
+    for (std::size_t i = 0; i < 2; ++i) {
+        if (k.period[i] > 0.0F) {
+            k.count[i] += 1.0F;
+            while (k.count[i] >= k.period[i])
+                k.count[i] -= k.period[i];
+        }
+        k.size[i] = std::clamp(k.size[i] + k.speed[i], 0.0F, 16.0F);
+        k.offset[i] = k.period[i] > 0.0F
+                          ? std::trunc(std::sin(k.count[i] / k.period[i] * 6.2831853F - 3.1415927F) * k.size[i])
+                          : 0.0F;
+    }
+    k.life = std::max(0.0F, k.life - 1.0F);
+}
+
+// KH2's object pictures (1:285: YS::STDOBJ::show_picture, a dk::Layout of its archive's first entry of type 0x2e) by
+// handle: the object, its kind (the archive: kh2/obj/<name>.a.us, its pictures' HD pages after its effects'), the
+// layout shown, the count of its changes (Tz::Layout::setNum: the layout started again), how far it is moved (KH2's
+// dots). ui/kh2_pictures.cpp plays and draws them; a layout over (none of its sequences playing nor looping:
+// Tz::Layout::update) is gone, as a dk::Layout ends itself
+struct Picture final {
+    std::uint32_t object = 0;
+    const KindFiles *kind = nullptr;
+    int number = 0;
+    unsigned changes = 0;
+    float x = 0.0F, y = 0.0F;
+};
+std::map<std::uint32_t, Picture> pictures;
+std::uint32_t next_picture = 0x7c000000u; // handles out of the scripts' memory's addresses
 
 // One of KH2's commands (03system.bin's "cmd", 0x30 bytes each: OpenKH's 03system page): what a reaction command
 // sends when taken (its argument), the one it follows (require: a range 26 of that number must be on), its name's text
@@ -1775,6 +1838,127 @@ public:
             return false;
         eye = to_kh2(e);
         at = to_kh2(t);
+        return true;
+    }
+    void scope_begin(Object &o, float height) override
+    {
+        scope = Scope{o.address(), height, 0.5F, 10.0F, {}};
+        if (tracing())
+            khdays_log("kh2 enemies: the scope camera from %08x, its eye %.0f up", o.address(), double(height));
+    }
+    void scope_end() override
+    {
+        if (scope && tracing())
+            khdays_log("kh2 enemies: the scope camera gone");
+        scope.reset();
+    }
+    void scope_zoom(float zoom) override
+    {
+        if (scope)
+            scope->zoom = zoom;
+    }
+    void scope_closeup(float distance) override
+    {
+        if (scope)
+            scope->closeup = distance;
+    }
+    void scope_target(const Vec3 &target) override
+    {
+        if (scope)
+            scope->target = target;
+    }
+    bool projection(const Vec3 &point, Vec3 &out) override
+    {
+        float e[3], t[3], half = 0.0F;
+        if (!khdays_kh2_camera_view(e, t) || !khdays_kh2_camera_fov(&half) || half <= 0.0F)
+            return false;
+        float p[3];
+        to_days(point, p);
+        const auto unit = [](std::array<float, 3> v) {
+            const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (l > 1e-9F)
+                for (float &c : v)
+                    c /= l;
+            return v;
+        };
+        // the view's axes: forward, right (forward x up), up
+        const auto f = unit({t[0] - e[0], t[1] - e[1], t[2] - e[2]});
+        const auto r = unit({-f[2], 0.0F, f[0]});
+        const std::array<float, 3> u = {r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2],
+                                        r[0] * f[1] - r[1] * f[0]};
+        const float d[3] = {p[0] - e[0], p[1] - e[1], p[2] - e[2]};
+        const float z = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+        if (z <= 1e-4F) {
+            out = {1.0e6F, 1.0e6F, z * kKh2PerDays}; // behind the camera: on no part of the screen
+            return true;
+        }
+        const float x = d[0] * r[0] + d[1] * r[1] + d[2] * r[2], y = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+        // KH2's screen: 512 x 416 dots shown at 4:3, its projection's height the field of view's
+        const float tall = std::tan(half);
+        out = {x / (z * tall * (4.0F / 3.0F)) * 256.0F, -y / (z * tall) * 208.0F, z * kKh2PerDays};
+        return true;
+    }
+    std::uint32_t show_picture(Object &o, int number) override
+    {
+        Actor *a = o.actor();
+        const auto it = a != nullptr ? by_actor.find(a) : by_actor.end();
+        if (it == by_actor.end() || it->second->kind == nullptr)
+            return 0;
+        const std::uint32_t handle = next_picture++;
+        pictures[handle] = Picture{o.address(), it->second->kind, number, 0, 0.0F, 0.0F};
+        if (tracing())
+            khdays_log("kh2 enemies: %08x shows its picture %08x, layout %d", it->second->days, handle, number);
+        return handle;
+    }
+    void picture_change(std::uint32_t handle, int number) override
+    {
+        const auto it = pictures.find(handle);
+        if (it == pictures.end())
+            return;
+        it->second.number = number;
+        ++it->second.changes;
+        if (tracing())
+            khdays_log("kh2 enemies: picture %08x to layout %d", handle, number);
+    }
+    void picture_place(std::uint32_t handle, float x, float y) override
+    {
+        if (const auto it = pictures.find(handle); it != pictures.end())
+            it->second.x = x, it->second.y = y;
+    }
+    void screen_shake(float life, float period_x, float period_y, float size_x, float size_y, float speed_x,
+                      float speed_y) override
+    {
+        ScreenShake k;
+        k.life = life;
+        k.period = {period_x, period_y};
+        k.size = {size_x, size_y};
+        k.speed = {speed_x, speed_y};
+        ::screen_shake = k;
+        if (tracing())
+            khdays_log("kh2 enemies: the screen shakes for %.0f ticks (%.0f by %.0f dots)", double(life),
+                       double(size_x), double(size_y));
+    }
+    int bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end())
+            return -1;
+        float f[3], t[3], h[3];
+        unsigned face = 0;
+        to_days(from, f);
+        to_days(to, t);
+        if (!khdays_kh2_shell_ray_face(shell_of(*it->second), f, t, h, &face))
+            return -1;
+        hit = to_kh2(h);
+        // the face's record names it (the collision's own memory, below 0x80000000 as all the port's)
+        return int(face & 0x7fffffffu);
+    }
+    bool bg_normal(int polygon, Vec3 &normal) override
+    {
+        float n[3];
+        if (polygon <= 0 || !khdays_kh2_shell_face_normal(unsigned(polygon), n))
+            return false;
+        normal = {n[0], -n[1], n[2]};
         return true;
     }
     void camera_watch(Object &o) override
@@ -3570,6 +3754,10 @@ void event_tick(const Enemy &e)
         if (tracing())
             khdays_log("kh2 enemies: event sequence %s over", playing->event->name.c_str());
         playing.reset();
+        // YS::EVENT::phase_end: the control of the player and his party given back (YS::OBJ::ControlOn 0 and 1) -- a
+        // script takes it away for an event (1:42) and leaves it to the event's end to give back (Xigbar's scope)
+        controls_off.erase(0);
+        controls_off.erase(1);
     }
 }
 
@@ -3959,7 +4147,7 @@ void attack_offers(Enemy &e)
         if (dx * dx + dz * dz <= reach * reach && std::fabs(me[1] - o.at[1]) <= std::max(reach, height)) {
             if (tracing() && script_offer.command != command)
                 khdays_log("kh2 enemies: %08x's attack %08x offers command %d", e.days, at, command);
-            script_offer = {e.days, command, khdays_link_frame()};
+            script_offer = {e.days, command, khdays_link_frame(), at};
         }
     }
 }
@@ -4036,7 +4224,7 @@ void take_command(Enemy &e)
     }
     // a press takes one command: the one a held player's motion offers, else a script's, else a zone's; one chosen in
     // the menu a script gives (A) is no reaction command's bar's
-    const auto send = [&e](int id, const char *how, bool menu = false) {
+    const auto send = [&e](int id, const char *how, bool menu = false, std::uint32_t attack = 0) {
         pressed = std::uint16_t(pressed & ~(menu ? KHDAYS_KEY_A : KHDAYS_KEY_X));
         if (!menu) {
             ++local_takes;
@@ -4046,11 +4234,12 @@ void take_command(Enemy &e)
         const int number = c != nullptr ? c->argument : id;
         const auto o = players.find(local_player);
         // KH2 sends the command's target record (FUN_1403a8b10 -> FUN_1403b5fa0: the manager's + 0x10, FUN_1403bee60's:
-        // the object, its group, none, -1); the scripts take the object from its first word (the Dusk's Reversal
-        // orbits the player round it)
+        // the object, its group, the attack -- TARGET::set_attack's, for a command an attack carries (2:51): 1:166
+        // reads it -- or none, -1); the scripts take the object from its first word (the Dusk's Reversal orbits the
+        // player round it)
         if (e.command_record == 0)
             e.command_record = mod().memory.add(16, e.actor->name() + "'s command record");
-        const std::uint32_t record[4] = {e.actor->address(), 0u, 0u, 0xffffffffu};
+        const std::uint32_t record[4] = {e.actor->address(), 0u, attack, 0xffffffffu};
         mod().memory.write(e.command_record, record, sizeof record);
         const ai::Value values[3] = {ai::Value::of_address(o != players.end() && o->second ? o->second->address() : 0),
                                      ai::Value::of_int(number), ai::Value::of_address(e.command_record)};
@@ -4069,7 +4258,8 @@ void take_command(Enemy &e)
     }
     if (const int id = script_offered(); id >= 0 && (pressed & KHDAYS_KEY_X) != 0 && script_offer.enemy == e.days) {
         script_offer.command = -1;
-        send(id, "offered by the script of");
+        send(id, script_offer.attack != 0 ? "offered by an attack of" : "offered by the script of", false,
+             script_offer.attack);
     }
     if (e.zone >= 0 && (pressed & KHDAYS_KEY_X) != 0 && zone_offerer() == &e) {
         const int id = e.zone;
@@ -5862,6 +6052,9 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     script_offer = {};
     top_offer = {};
     playing.reset();
+    scope.reset();
+    screen_shake.reset();
+    pictures.clear();
     drawn_weapons.clear();
     shell_draws.clear();
     local_player = 0;
@@ -5969,6 +6162,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             if (t == 0 && !shouts.empty())
                 send_shouts();
             lights.tick();
+            screen_shake_tick();
             if (kh2_mission) { // its script, its timer (KH2's 60 ticks a second); its pieces' time
                 Kh2Mission &m = *kh2_mission;
                 ++m.ticks;
@@ -6361,19 +6555,80 @@ extern "C" int khdays_kh2_enemies_reaction_camera(float player[3], float target[
 
 // The camera of the event sequence playing, while it is this game's player's (runtime/camera/kh2_camera_hooks.c): its
 // eye and look-at in Days's world, half its vertical field of view (0: the camera's own kept); 0 when none shows
+// The scope camera's eye and look-at (Scope), Days's world; false when none stands (its object gone ends it)
+bool scope_view(float eye[3], float at[3])
+{
+    if (!scope)
+        return false;
+    Object *o = Object::at(mod().memory, scope->object);
+    if (o == nullptr) {
+        scope.reset();
+        return false;
+    }
+    const Vec3 place = o->place(), &t = scope->target;
+    const Vec3 head = {place[0], place[1] - scope->height, place[2]}; // KH2's y down
+    Vec3 near = {head[0] - t[0], head[1] - t[1], head[2] - t[2]};
+    const float l = std::sqrt(near[0] * near[0] + near[1] * near[1] + near[2] * near[2]);
+    for (std::size_t i = 0; i < 3; ++i)
+        near[i] = t[i] + (l > 1e-6F ? near[i] / l : 0.0F) * scope->closeup;
+    Vec3 e{};
+    for (std::size_t i = 0; i < 3; ++i)
+        e[i] = near[i] * scope->zoom + head[i] * (1.0F - scope->zoom);
+    to_days(e, eye);
+    to_days(t, at);
+    if (static unsigned told = 0; tracing() && khdays_link_frame() - told >= 30u) {
+        told = khdays_link_frame();
+        khdays_log("kh2 enemies: the scope camera: from %.0f %.0f %.0f (head %.0f %.0f %.0f) at %.0f %.0f %.0f, zoom %.2f, "
+                   "close-up %.0f",
+                   double(e[0]), double(e[1]), double(e[2]), double(head[0]), double(head[1]), double(head[2]),
+                   double(t[0]), double(t[1]), double(t[2]), double(scope->zoom), double(scope->closeup));
+    }
+    return true;
+}
+
+// The screen's shake (ScreenShake) on a camera of the KH2 enemies': its eye and look-at moved across the view so what
+// it looks at moves by the offset's dots on KH2's 512 x 416 screen (its height the field of view's: `half` its half)
+void shake_view(float eye[3], float at[3], float half)
+{
+    if (!screen_shake || (screen_shake->offset[0] == 0.0F && screen_shake->offset[1] == 0.0F) || half <= 0.0F)
+        return;
+    const float f[3] = {at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]};
+    const float distance = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    const float flat = std::sqrt(f[0] * f[0] + f[2] * f[2]);
+    if (distance <= 1e-6F || flat <= 1e-6F)
+        return;
+    const float right[3] = {-f[2] / flat, 0.0F, f[0] / flat};
+    const float tall = std::tan(half) * distance;
+    const float across = screen_shake->offset[0] / 256.0F * tall * (4.0F / 3.0F);
+    const float down = screen_shake->offset[1] / 208.0F * tall;
+    for (int i = 0; i < 3; ++i) {
+        const float by = -right[i] * across + (i == 1 ? down : 0.0F); // the picture right and down: the eye left, up
+        eye[i] += by;
+        at[i] += by;
+    }
+}
+
 extern "C" int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half)
 {
-    if (!playing || playing->player == 0 || playing->player != local_player)
-        return 0;
+    float camera_half = 0.0F;
+    khdays_kh2_camera_fov(&camera_half);
+    const kh2::EventCamera *cam = nullptr;
     float within = 0.0F;
-    const kh2::EventCamera *cam = kh2::event_camera_at(*playing->event, float(playing->ticks) / 2.0F, within);
-    if (cam == nullptr)
-        return 0;
+    if (playing && playing->player != 0 && playing->player == local_player)
+        cam = kh2::event_camera_at(*playing->event, float(playing->ticks) / 2.0F, within);
+    if (cam == nullptr) {
+        if (!scope_view(eye, at))
+            return 0;
+        *fov_half = 0.0F; // the camera's own
+        shake_view(eye, at, camera_half);
+        return 1;
+    }
     kh2::EventView view;
     kh2::event_view(*cam, within, view);
     event_point(*playing, view.eye, eye);
     event_point(*playing, view.at, at);
     *fov_half = view.fov * 0.5F;
+    shake_view(eye, at, *fov_half);
     if (playing->shake) {
         // the eye moved in the camera's own axes: x and z turned with its yaw, y up (FUN_140528920)
         const float dx = at[0] - eye[0], dz = at[2] - eye[2], flat = std::sqrt(dx * dx + dz * dz);
@@ -6636,6 +6891,58 @@ extern "C" int khdays_kh2_enemies_command_image(char *archive, int archive_room,
     std::memcpy(picture, stem.data(), stem.size());
     picture[stem.size()] = '\0';
     return 1;
+}
+
+// KH2's object pictures shown (Picture), for ui/kh2_pictures.cpp: how many, those whose object is gone left out first
+// (a dk::Layout outlives no object here: the port's choice, its script's 1:283 or layout 3 never coming then)
+extern "C" int khdays_kh2_enemies_picture_count(void)
+{
+    if (pictures.empty())
+        return 0;
+    for (auto it = pictures.begin(); it != pictures.end();)
+        if (Object::at(mod().memory, it->second.object) == nullptr)
+            it = pictures.erase(it);
+        else
+            ++it;
+    return int(pictures.size());
+}
+
+extern "C" int khdays_kh2_enemies_picture(int index, unsigned *handle, int *number, unsigned *changes, float place[2],
+                                          char *archive, int archive_room, char *stem, int stem_room, int *first_page)
+{
+    if (index < 0 || std::size_t(index) >= pictures.size() || archive == nullptr || stem == nullptr ||
+        archive_room <= 0 || stem_room <= 0)
+        return 0;
+    const auto &[key, p] = *std::next(pictures.begin(), index);
+    if (p.kind == nullptr)
+        return 0;
+    const KindFiles &k = *p.kind;
+    static std::map<std::pair<std::string, std::string>, std::u8string> found; // looked for once (asked every frame)
+    auto at = found.find({k.name, k.folder});
+    if (at == found.end())
+        at = found.emplace(std::make_pair(k.name, k.folder), kh2_file("obj/" + k.name + ".a.us", k.folder).u8string())
+                 .first;
+    const std::u8string &path = at->second;
+    const std::string pages = "kh2/fx/" + k.name + "/-";
+    if (path.empty() || path.size() >= std::size_t(archive_room) || pages.size() >= std::size_t(stem_room))
+        return 0;
+    std::memcpy(archive, path.data(), path.size());
+    archive[path.size()] = '\0';
+    std::memcpy(stem, pages.data(), pages.size());
+    stem[pages.size()] = '\0';
+    *handle = key;
+    *number = p.number;
+    *changes = p.changes;
+    place[0] = p.x;
+    place[1] = p.y;
+    *first_page = k.fx_hd_pages;
+    return 1;
+}
+
+extern "C" void khdays_kh2_enemies_picture_over(unsigned handle)
+{
+    if (pictures.erase(handle) != 0 && tracing())
+        khdays_log("kh2 enemies: picture %08x over (its layout played out)", handle);
 }
 
 // KH2's text as its menus' international encoding has it (msg/<language>/sys.bar; our reading of the files): 01 a

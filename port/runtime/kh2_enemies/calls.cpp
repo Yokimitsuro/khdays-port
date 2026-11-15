@@ -1657,8 +1657,19 @@ void add_moving(ai::Calls &calls)
             o->set_u32(0xd70, a[1].bits);
     });
     // 1:83 a point given on a bone (0x4000 the actor itself) in the world (FUN_1403b50f0 the bone's matrix, then the
-    // point through it; NaN components 0): the shared vector
+    // point through it; NaN components 0): the shared vector. On a player (Xigbar's scope aims at the player's bone
+    // 140), whose KH2 pose the port has not -- Days's player is no KH2 actor --, his aim point (his middle): it was the
+    // running actor's own bone before, Xigbar's scope aiming at his own chest
     calls.set(1, 83, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && o->actor() == nullptr) {
+            Vec3 out = o->place();
+            if (World *w = running(m)->world; w != nullptr && std::int32_t(a[1].bits) != 0x4000)
+                w->aim_point(*o, out);
+            Vec r;
+            r.v[0] = out[0], r.v[1] = out[1], r.v[2] = out[2], r.v[3] = 1.0F;
+            a[0] = give_vec(m, "1:83", r);
+            return;
+        }
         Actor *x = self_of(m, a[0]);
         Vec v = read_vec(m, a[2].bits);
         for (float &c : v.v)
@@ -2259,19 +2270,35 @@ void add_shots(ai::Calls &calls)
     calls.set(2, 42, [](ai::Machine &, std::span<ai::Value> a) {
         a[0] = ai::Value::of_address(a[0].bits != 0 ? a[0].bits + 0xb4 : 0);
     });
-    // 2:51 a reaction command put on one of its attacks (trap_attack_set_rc, FUN_140432790 -> FUN_140437b70): + 0x114
-    // the object it is of, + 0x118 the attack's owner, + 0x11c the command, + 0x120 and + 0x124 two values (the second,
-    // 0 or less, the first): kept as KH2 keeps them; what offers it is not read yet (the Hydra's Urninator, 420)
+    // 2:51 a reaction command put on one of its attacks (trap_attack_set_rc, FUN_140432790 -> FUN_140437b70; the PS3
+    // build's YS::ATTACK_MAGIC::set_reaction_command(void *, int, float, float)): + 0x114 what it is given (its
+    // receiver, 2:52's: the Hydra's urn, a block of Xigbar's shot's thread), + 0x118 the attack's owner (the one the
+    // command goes to: 7:34 sets another), + 0x11c the command, + 0x120 and + 0x124 two sizes (the second, 0 or less,
+    // the first): kept as KH2 keeps them; offered as the PS3 build's RC_SEARCHER::check_magic offers it (shell.cpp)
     calls.set(2, 51, [](ai::Machine &m, std::span<ai::Value> a) {
         const std::uint32_t at = a[0].bits;
         if (at == 0)
             return;
-        Object *of = object_of(m, a[1]);
-        m.memory().set_u32(at + 0x114, of != nullptr ? of->address() : 0u);
+        m.memory().set_u32(at + 0x114, a[1].bits);
         m.memory().set_u32(at + 0x118, running(m)->address());
         m.memory().set_u32(at + 0x11c, a[2].bits);
         m.memory().set_u32(at + 0x120, a[3].bits);
         m.memory().set_u32(at + 0x124, a[4].f() <= 0.0F ? a[3].bits : a[4].bits);
+    });
+    // 2:52 what an attack's reaction command was given (trap_attack_rc_receiver, FUN_140432800: its + 0x114); 7:34 the
+    // object a command on an attack goes to (Ts::trap_attack_set_rc_owner, FUN_14053fac0: the AI handle's object at
+    // + 0x118); 1:166 the attack a command's target record names (trap_target_attack, FUN_140430510: the record's + 8,
+    // TARGET::set_attack's). Xigbar's shots: the command taken sends the shot back to him
+    calls.set(2, 52, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_address(a[0].bits != 0 ? m.memory().u32(a[0].bits + 0x114) : 0u);
+    });
+    calls.set(7, 34, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[1]);
+        if (a[0].bits != 0 && o != nullptr)
+            m.memory().set_u32(a[0].bits + 0x118, o->address());
+    });
+    calls.set(1, 166, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_address(a[0].bits != 0 ? m.memory().u32(a[0].bits + 8) : 0u);
     });
     // 2:24 an attack's owner (trap_attack_get_owner, FUN_140432ad0: its + 0x10's handle)
     calls.set(2, 24, [world](ai::Machine &m, std::span<ai::Value> a) {
@@ -2912,6 +2939,91 @@ void add_world(ai::Calls &calls)
         Vec v;
         v.v[0] = at[0], v.v[1] = at[1], v.v[2] = at[2], v.v[3] = 1.0F;
         a[0] = give_vec(m, "1:306", v);
+    });
+    // 1:281 KH2's scope camera made on the object, its eye's point the height given above its place (trap_camera_
+    // begin_scope -> dk::ScopeCamera::create: ObjCamera's mode 7, its zoom 0.5, close-up distance 10 and target (0, 0,
+    // 0) to start); 1:283 gone (trap_camera_end_scope -> ScopeCamera::destroy: the mode before back while it is 7);
+    // 1:312, 1:313, 1:314 its zoom, close-up distance and target (trap_camera_set_scope_zoom, _closeup_distance,
+    // _target_pos). Xigbar's sniping: the camera from his head, toward the player as its target moves to him
+    calls.set(1, 281, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (World *w = running(m)->world; w != nullptr && o != nullptr)
+            w->scope_begin(*o, a[1].f());
+    });
+    calls.set(1, 283, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->scope_end();
+    });
+    calls.set(1, 312, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->scope_zoom(a[0].f());
+    });
+    calls.set(1, 313, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->scope_closeup(a[0].f());
+    });
+    calls.set(1, 314, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->scope_target(xyz(read_vec(m, a[0].bits)));
+    });
+    // 1:316 where a point shows on KH2's screen (trap_camera_get_projection_pos: kn::RotTransPers through kn::
+    // getProjection and getCamera, then 1792 + 256 off x and 1840 + 208 off y: KH2's dots from the screen's middle,
+    // its depth after, w 0); Xigbar's scope locks on when the player shows within 50 across and 30 up or down
+    calls.set(1, 316, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v;
+        Vec3 out{};
+        World *w = running(m)->world;
+        if (w != nullptr && w->projection(xyz(read_vec(m, a[0].bits)), out))
+            v.v[0] = out[0], v.v[1] = out[1], v.v[2] = out[2];
+        else
+            v.v[0] = v.v[1] = 1.0e6F; // no camera: nowhere on the screen
+        v.v[3] = 0.0F;
+        a[0] = give_vec(m, "1:316", v);
+    });
+    // 1:285 one of the object's pictures shown (trap_obj_show_picture -> YS::STDOBJ::show_picture: its archive's first
+    // entry of type 0x2e -- a BAR of a LAYD and an IMGZ -- as a dk::Layout of that layout number), a handle for it;
+    // 1:290 another layout of it (trap_picture_change -> Tz::Layout::setNum); 1:315 it moved by x, y (trap_picture_
+    // set_pos -> dk::Layout::setPos: YI::LAYOUT::SetOffset, whole dots). Xigbar's scope's sights
+    calls.set(1, 285, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_address(w != nullptr && o != nullptr ? w->show_picture(*o, std::int32_t(a[1].bits)) : 0u);
+    });
+    calls.set(1, 290, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->picture_change(a[0].bits, std::int32_t(a[1].bits));
+    });
+    calls.set(1, 315, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->picture_place(a[0].bits, std::trunc(a[1].f()), std::trunc(a[2].f()));
+    });
+    // 6:0 the screen shaken (Ts::trap_camera_shake -> ryj::SHAKE::Start: life, the x and y waves' periods, their sizes
+    // and their sizes' change a tick); Xigbar's scope when a shot of his own comes back to him
+    calls.set(6, 0, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->screen_shake(a[0].f(), a[1].f(), a[2].f(), a[3].f(), a[4].f(), a[5].f(), a[6].f());
+    });
+    // 1:135 where a segment meets the room (trap_bg_cross_pos -> YS::BG::GetCrossPos(from, to, out, flags)): the point
+    // at the third argument, the polygon's number back (below 0 none); 1:137 that polygon's normal (trap_bg_get_normal
+    // -> dk::Octree::getNormal). Xigbar's shots glance off the room's walls so
+    calls.set(1, 135, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        Vec3 hit{};
+        const int polygon =
+            w != nullptr ? w->bg_cross(*running(m), xyz(read_vec(m, a[0].bits)), xyz(read_vec(m, a[1].bits)), hit) : -1;
+        if (polygon >= 0) {
+            const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
+            m.memory().write(a[2].bits, p, sizeof p);
+        }
+        a[0] = ai::Value::of_int(polygon);
+    });
+    calls.set(1, 137, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v;
+        Vec3 n{};
+        if (World *w = running(m)->world; w != nullptr && w->bg_normal(std::int32_t(a[0].bits), n))
+            v.v[0] = n[0], v.v[1] = n[1], v.v[2] = n[2];
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "1:137", v);
     });
     // 1:359, 1:360 the player's command menu drawn in the object's own pictures and back (trap_obj_hook_command_image
     // -> YS::STDOBJ::hook_command_image: its archive's -- its .a.us's -- entries of types 0x18 and 0x19 named "comd",

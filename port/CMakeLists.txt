@@ -788,6 +788,7 @@ add_executable(khdays-native
     ui/player_names.cpp            # the players' names in multiplayer
     ui/reaction_command.cpp        # a KH2 enemy's reaction command offered to the player
     ui/kh2_font.cpp                # KH2's font for the names the port writes on KH2's pieces
+    ui/kh2_pictures.cpp            # a KH2 enemy's object pictures (Xigbar's scope's sights)
     ui/kh2_mission_2d.cpp          # a KH2 boss's mission's timer and counters
     ui/pause.cpp                   # the pause's Retry line in Mission Mode
     ui/text.c

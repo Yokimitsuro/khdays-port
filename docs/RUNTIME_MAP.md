@@ -6031,6 +6031,16 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   meet in the middle ("SORA [TIME GAUGE VS] LUXORD", 3.5 to 503.5 dots). Laid out by its side the port had cut it at
   the screen's left edge.
 
+- **Xigbar's sniping** (2026-11-15, B_EX140_LV99 in a window run, the coliseum; docs/KH2_ENEMIES.md, "The scope,
+  the pictures and the screen's shake"): `scope_start` puts him at KH2's (0, -800, 1900) -- 8 m up, 19 m out -- and
+  his scope camera's eye between his head (2 m over his place) and a point 1.5 m short of the player (zoom 0.4, 1
+  locked on); its target follows Roxas's middle at up to 15 a tick. The lock-on came every few seconds with Roxas
+  moving under it; twelve rounds then `scope_end_self` (the sights' layout 3 played out in 1 s, the event "20" after).
+  His layouts drew where KH2 puts them (the 4:3 picture's middle), the HD pages 19 and 20 of his archive after its 19
+  effect pages. Days's player has no KH2 pose: 1:83 on him (bone 140) gave the running actor's bone before -- the
+  scope looked down at Xigbar's own chest; now his aim point. Events gave no control back: `scope_start`'s 1:42 kept
+  Roxas still for the whole scope until the port ended an event as `YS::EVENT::phase_end` does.
+
 ## 38. Days's commands on KH2's reaction command bar
 
 Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)

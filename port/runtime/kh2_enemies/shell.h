@@ -60,6 +60,17 @@ int khdays_kh2_enemies_prize_drain(void);
  * mod path without the extension (kh2/fx/<name>/-<n>: numbered after its effects' pages) into `picture`; 0 none. */
 int khdays_kh2_enemies_command_image(char *archive, int archive_room, char *picture, int picture_room);
 
+/* KH2's object pictures a KH2 enemy's script shows (1:285: YS::STDOBJ::show_picture, a dk::Layout of its archive's
+ * first entry of type 0x2e -- a BAR of a LAYD and an IMGZ; Xigbar's scope's sights), for ui/kh2_pictures.cpp: how many
+ * stand; the nth's handle, layout number, the count of its layout's changes (1:290: the layout started again), how far
+ * it is moved (1:315, KH2's dots), its archive's path, its HD pictures' stem (kh2/fx/<name>/-) and the page number of
+ * its archive's first picture after its effects' (the IMGZ's nth picture that number + n); 0 none. A layout played out
+ * is told back (Tz::Layout::update: it ends itself). */
+int khdays_kh2_enemies_picture_count(void);
+int khdays_kh2_enemies_picture(int index, unsigned *handle, int *number, unsigned *changes, float place[2],
+                               char *archive, int archive_room, char *stem, int stem_room, int *first_page);
+void khdays_kh2_enemies_picture_over(unsigned handle);
+
 /* Ov022_UpdateCommandInput (prepare.py's joins): whether this A press on the deck chooses a command of the menu a KH2
  * enemy's script gives a free player (1:237: Zexion's Lexicon's pages; the runtime sends it), Days's own deck slot then
  * not used; and at the command's commit, that press's command made none (kind 7, argument 0: 1 returned). */
