@@ -740,8 +740,11 @@ HOOKS = {
         (
             "            Ov002_SubmitActorDraw(iVar4);\n",
             "            { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "              /* not while a KH2 script has turned the player into a form (his model hidden) */\n"
+            "              extern int khdays_kh2_enemies_turned(void *actor);\n"
+            "              if (!khdays_kh2_enemies_turned((void *)param_1)) {\n"
             "              khdays_character_caster_begin((char *)*(int *)(param_1 + 0x20) + 4);\n"
-            "              Ov002_SubmitActorDraw(iVar4); khdays_character_caster_end(); }\n",
+            "              Ov002_SubmitActorDraw(iVar4); khdays_character_caster_end(); } }\n",
         ),
     ],
     "ov002@0205f980": [  # Ov002_Hud_RewindWidget: repeated pickups restart the pulse
@@ -2849,7 +2852,9 @@ HOOKS["ov107@020c89e8"] = [
         "static int khdays_calc_hit_damage(Actor *self, struct HitEvent *hit);\n"
         "int Ov107_CalcHitDamage(Actor *self, struct HitEvent *hit)\n{\n"
         "    extern int khdays_stop_damage(void *enemy, int amount);\n"
-        "    return khdays_stop_damage(self, khdays_calc_hit_damage(self, hit));\n"
+        # a KH2 enemy's: the damage its hit was kept to (its least health, its withstanding: runtime/kh2_enemies)
+        "    extern int khdays_kh2_enemies_dealt(void *enemy, int amount);\n"
+        "    return khdays_stop_damage(self, khdays_kh2_enemies_dealt(self, khdays_calc_hit_damage(self, hit)));\n"
         "}\n"
         "static int khdays_calc_hit_damage(Actor *self, struct HitEvent *hit)\n{\n",
     )

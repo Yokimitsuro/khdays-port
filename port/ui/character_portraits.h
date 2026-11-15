@@ -15,5 +15,16 @@ void khdays_ui_character_portraits_emit(void);
 int khdays_ui_review_face(int entry, unsigned char *characters, unsigned short *palette);
 #ifdef __cplusplus
 }
+
+#include <cstdint>
+#include <vector>
+
+namespace khdays::ui {
+// The local player's portrait as the HUD shows it by his HP gauge (slot 0): his mod character's own picture when he
+// plays one with a portrait, else the game's portrait cells as the upper screen's BG 3 holds them now
+// (Ov002_LoadPanelSlots's); the last one found when the HUD shows none now. Straight-alpha RGBA rows top to bottom,
+// red in bits 0-7; `key` another for another picture. False when none has been seen.
+bool local_portrait(std::vector<std::uint32_t> &rgba, int &width, int &height, std::uint64_t &key);
+} // namespace khdays::ui
 #endif
 #endif

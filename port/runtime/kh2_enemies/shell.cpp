@@ -743,12 +743,19 @@ struct Enemy final {
     std::int64_t record_most = 0;
     double start_share = 1.0;
     bool held_at_least = false; // the last Days hit's damage kept off by its least health (1:231): a hit all the same
+    // what the last hit's damage was kept to (khdays_kh2_enemies_damage) and the frame it was, for its class's own
+    // working out of it (khdays_kh2_enemies_dealt); -1 none
+    int dealt = -1;
+    unsigned dealt_frame = 0;
     std::int64_t health_taken = 0; // the last Days hit's damage on its health (khdays_kh2_enemies_damage), until told
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
     // where it was last drawn (Days's place) and the projection then, for its end once its Days enemy is gone
     float place[3] = {};
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
+    // made by a script (1:0: Luxord's cards), not by a wave: after KH2's "leave" it is gone (no spawner of KH2's brings
+    // it back), its Days enemy sent away once (`sent_away`)
+    bool made = false, sent_away = false;
     // its battle's frame, KH2's world, as it was set going: its place and its facing (the way to its player) -- where
     // its kind's companions and walk paths are placed from
     Vec3 battle_at{};
@@ -844,6 +851,28 @@ struct Kh2Mission final {
 };
 std::unique_ptr<Kh2Mission> kh2_mission;
 unsigned kh2_mission_serial = 0;
+
+// KH2's damage told to its mission (YS::UNITSCRIPT::DamageCallback, the PS3 build's: its trigger 6, given the object
+// struck and the hit -- Luxord's time gauges drain there): the hit as YS::DAMAGE, its damage (+ 0x28, 2:46) in KH2's
+// measure and its attack's record (+ 0x20) of type 0 (+ 4: no cure, 2:72)
+void mission_damage(std::uint32_t object, std::int64_t damage)
+{
+    if (!kh2_mission || !kh2_mission->actor || kh2_mission->over || object == 0 || damage <= 0)
+        return;
+    static std::unique_ptr<Object> hit;
+    static std::uint32_t params = 0;
+    if (!hit)
+        hit = std::make_unique<Object>(mod().memory, "a hit as a mission reads it");
+    if (params == 0)
+        params = mod().memory.add(48, "a hit's attack as a mission reads it");
+    hit->set_u32(0x20, params);
+    hit->set_u32(0x28, std::uint32_t(std::min<std::int64_t>(damage, 0x7fffffff)));
+    const ai::Value values[2] = {ai::Value::of_address(object), ai::Value::of_address(hit->address())};
+    kh2_mission->actor->event(6, values);
+    if (trace_level() >= 2)
+        khdays_log("kh2 enemies: mission %s told %08x's damage %lld", kh2_mission->name.c_str(), object,
+                   static_cast<long long>(damage));
+}
 
 // The mission's piece of `kind` (4 a timer, 5 a counter) and number `index`, null when it has none
 MissionPiece *mission_piece(Kh2Mission &m, int kind, int index)
@@ -2320,6 +2349,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
     a.set_u32(field::kEntry, entry_record(k.name));
     a.set_place(to_kh2(s.place));
     e->on_floor_first = !made; // (set going by a wave: on its floor at its first tick)
+    e->made = made;
     std::copy(s.place, s.place + 3, e->home);
     Enemy *raw = e.get();
     by_actor[&a] = raw;
@@ -5492,6 +5522,11 @@ void Field::capture_form(Actor &by, int entry)
     if (tracing())
         khdays_log("kh2 enemies: player %08x turned into %s (%08x) by %08x's script", object, name.c_str(), c.form,
                    m.days);
+    // out of the hands that held him: CHANGEFORM makes KH2's player anew, the grip on the one before gone with it --
+    // the card game's hold (Luxord's motions 252-254) was left on him past the card, his own self held there after it
+    // (the die's script lets him go itself, 1:11; the card's does not)
+    if (held.count(object) != 0)
+        let_go(object, "turned into a form");
 }
 
 void Field::capture_end(Actor &by)
@@ -5583,6 +5618,11 @@ void capture_tick(Capture &c, Enemy &e, Vec3 &place)
                 a.jump.on = true;
                 a.jump.up = -std::sqrt(2.0F * kKh2Pull * dice_spec[2]);
                 a.jump.along = {way[0] * far, 0.0F, way[2] * far};
+                // its way kept through the air: the travel along the ground is its velocity (Actor::step), never
+                // slowed (its air evaluation keeps `keep` of it steered, `slow` of it not -- all of it here)
+                a.jump.keep = a.jump.slow = 1.0F;
+                a.velocity = a.steered = a.jump.along;
+                a.move_clock = 0.0F;
                 a.set_bits(field::kFlags, bit::kInAir, true);
                 a.play(3, 2.0F, 0.0F);
                 a.motion.after = 4;
@@ -5590,9 +5630,9 @@ void capture_tick(Capture &c, Enemy &e, Vec3 &place)
             } else if (a.motion.id != 0 && a.motion.ended)
                 a.play(0, 2.0F, 0.0F);
         } else if (a.jump.on) { // its way in the air swept against the walls: stopped at one
-            Vec3 along = a.jump.along;
+            Vec3 along = a.velocity;
             if (wall_sweep(c.anchor, place, kWallRadius, along, false))
-                a.jump.along = {};
+                a.jump.along = a.velocity = a.steered = {};
         }
     }
     c.jump = c.command = false; // (each press taken once)
@@ -5626,6 +5666,32 @@ void capture_blows(Capture &c, Enemy &e, const KhdaysKh2Shell &s)
         if (hit > told)
             c.time -= float(hit - told) * float(attack_param(atkp).add_drive) * kLandedBlowDrive;
         told = hit;
+    }
+}
+
+// A turned player's form kept out of the KH2 enemies' bodies: the player's own body (kWallRadius, the one its walls
+// keep off) never inside an enemy's Days collision sphere, pushed out along the ground the shortest way, as Days's
+// collision keeps its players off its enemies (the form stands where the player is, the player held there: Days
+// moves neither). The card game puts the player in front of Luxord, his die made there; without it Luxord's body and
+// the die were drawn one in the other
+void keep_off_enemies(const Enemy &form, Vec3 &place)
+{
+    for (const auto &[id, g] : enemies) {
+        const Enemy &e = *g;
+        if (e.dying || e.released || e.down || !e.actor || e.radius <= 0.0F)
+            continue;
+        const Vec3 at = e.actor->place();
+        const float apart_most = e.radius * kKh2PerDays + kWallRadius;
+        const float dx = place[0] - at[0], dz = place[2] - at[2], d = std::hypot(dx, dz);
+        if (d >= apart_most)
+            continue;
+        // the way out: from its middle, or (standing on it) back along the form's facing
+        const float ux = d > 0.01F ? dx / d : -std::sin(form.actor->yaw());
+        const float uz = d > 0.01F ? dz / d : -std::cos(form.actor->yaw());
+        Vec3 out = {ux * (apart_most - d), 0.0F, uz * (apart_most - d)};
+        wall_sweep(form.anchor, place, kWallRadius, out, true);
+        place[0] += out[0];
+        place[2] += out[2];
     }
 }
 
@@ -5691,6 +5757,10 @@ void allies_close()
             if (turned != nullptr)
                 capture_tick(*turned, e, place); // a player's form: his pad moves it (KH2's action)
             one_tick(e, s, place);
+            if (turned != nullptr) {
+                keep_off_enemies(e, place); // the player's form: out of the enemies' bodies
+                e.actor->set_place(place);
+            }
             put_on_carrier(e, place); // on what carries it (1:18)
             pose(e);
             if (turned != nullptr)
@@ -6062,9 +6132,20 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     // KH2's "leave" (the enemy far from the player: its scripts' 1:56 distances): it fades out and waits for KH2's
     // spawner to bring it back. Days's field has none, so once it has faded out it comes back where its wave placed
     // it, its script anew, its Days HP as it is.
-    if (const StateEntry *now = e->actor->states().current();
-        now != nullptr && now->name == "leave" && !e->dying && e->actor->fade <= 0.0F &&
-        (e->actor->u32(field::kFade) & bit::kFadeHeld) != 0) {
+    const StateEntry *state_now = e->actor->states().current();
+    const bool left = state_now != nullptr && state_now->name == "leave" && !e->dying && e->actor->fade <= 0.0F &&
+                      (e->actor->u32(field::kFade) & bit::kFadeHeld) != 0;
+    if (left && e->made) {
+        // a script's: gone for good -- its Days enemy sent away as a spawner sends one away (no defeat, no reward);
+        // before, it came back as a wave's does, and Luxord's cards grew to dozens on the floor
+        if (!e->sent_away) {
+            e->sent_away = true;
+            const int sent = khdays_enemies_remove(days);
+            if (tracing())
+                khdays_log("kh2 enemies: %08x (made by a script) left: %s", days,
+                           sent ? "its Days enemy sent away" : "its Days enemy already leaving");
+        }
+    } else if (left) {
         KhdaysKh2Shell back = s;
         std::copy(e->home, e->home + 3, back.place);
         // where its wave placed it when the player is near it (10 m), else 4 m from the player on its way there: it
@@ -6120,6 +6201,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     const unsigned days = unsigned(KHDAYS_REF(actor));
     Enemy *e = find(days);
     KhdaysKh2Shell s;
+    if (e != nullptr)
+        e->dealt = -1; // (its class has taken it)
     if (e == nullptr || e->dying || !khdays_kh2_shell_read(days, &s))
         return;
     // the hit's damage: on its own health when it has one (Days's fields show a share of it, which a small hit may not
@@ -6142,6 +6225,7 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     if (!blow && damage > 0)
         e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     Actor &a = *e->actor;
+    mission_damage(a.address(), damage); // its mission told (its last blow too)
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
         e->dying = true;
         // counted defeated (+ 0x9b8 bit 2, FUN_1403d4a40 as its death tells its group): what 1:272 reads -- Zexion
@@ -6181,12 +6265,14 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         days_hit = std::make_unique<Object>(mod().memory, "a Days hit");
     // the hit as KH2's YS::DAMAGE, at the offsets KH2FM.exe's calls read: its way (Dir, + 0) from the player who
     // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, its
-    // reaction (Reaction, + 0x26: 2:7, 2:8) and the one it had before the patterns (OrigReaction, + 0x27)
+    // reaction (Reaction, + 0x26: 2:7, 2:8) and the one it had before the patterns (OrigReaction, + 0x27), its damage
+    // (Damage, + 0x28: 2:46), in its health's measure
     mod().memory.write(days_hit->address(), way, sizeof way);
     days_hit->set_u32(0x10, striker != nullptr ? striker->address() : 0u);
     days_hit->set_u32(0x14, a.address());
     days_hit->set_u32(0x18, 0);
     days_hit->set_u32(0x24, std::uint32_t(hit_reaction & 0xff) << 16 | std::uint32_t(first_reaction & 0xff) << 24);
+    days_hit->set_u32(0x28, std::uint32_t(std::min<std::int64_t>(std::max<std::int64_t>(damage, 0), 0x7fffffff)));
     // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
     // and no push back of its own (+ 0xc, 0x7fff: 2:86 gives KH2's battle constants' then)
     static std::uint32_t params = 0;
@@ -6351,6 +6437,34 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
     }
     if (node != 0)
         player_of_node[node] = object;
+    // its HP lost told to the KH2 mission (its damage trigger: KH2's player's damage drains Luxord's player's time
+    // gauge), in KH2's measure as the mission's boss's health is measured against what Days shows of it -- Days has
+    // no KH2 player's health to measure it by
+    if (kh2_mission) {
+        static std::map<unsigned, int> last_hp;
+        static unsigned last_serial = 0;
+        if (last_serial != kh2_mission_serial) { // (a mission's own: from its start)
+            last_hp.clear();
+            last_serial = kh2_mission_serial;
+        }
+        const int hp = khdays_kh2_shell_player_hp(unsigned(KHDAYS_REF(actor)));
+        if (const auto was = last_hp.find(object); was != last_hp.end() && hp >= 0 && was->second > hp) {
+            double per = 1.0;
+            for (const auto &[id, g] : enemies)
+                if (const Kind *k = g->kind != nullptr ? find_kind(mod().kinds, g->kind->name) : nullptr;
+                    k != nullptr && k->mission == kh2_mission->name && g->health_most > 0 && g->shown_most > 0) {
+                    per = double(g->health_most) / double(g->shown_most);
+                    break;
+                }
+            auto &o = players[object];
+            if (!o) {
+                o = std::make_unique<Object>(mod().memory, "a player");
+                o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
+            }
+            mission_damage(o->address(), std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)));
+        }
+        last_hp[object] = hp;
+    }
     if (tracing()) { // its HP as it changes (the KH2 enemies' hits on it)
         static std::map<unsigned, int> seen;
         const int hp = khdays_kh2_shell_player_hp(unsigned(KHDAYS_REF(actor)));
@@ -6372,6 +6486,12 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
         const Enemy &form = *f->second;
         if (cap.time <= 0.0F && !(form.actor->jump.on || form.aloft)) {
             end_capture(object, "its time out");
+            return 0;
+        }
+        // fallen (his HP out: the hits on the form are his): himself again where the form stood (he is held there
+        // each frame), so that Days's fall and its game over show him, not a form left standing
+        if (khdays_kh2_shell_player_hp(cap.actor) == 0) {
+            end_capture(object, "he fell, his HP out");
             return 0;
         }
         if (!cap.hidden) {
@@ -6416,6 +6536,16 @@ extern "C" int khdays_kh2_enemies_captured(void *actor)
         c->second.command |= (pressed & 1u) != 0;
     }
     return 1;
+}
+
+// func_ov022_0209c9fc (prepare.py), before it draws the actor's two weapon slots: whether this player is turned into a
+// form, his model hidden -- his weapons too then (his node's undrawn flag keeps his body from being drawn, not the
+// slots, which follow his hand: his keyblade was left in the air beside the die)
+extern "C" int khdays_kh2_enemies_turned(void *actor)
+{
+    const unsigned object = khdays_kh2_shell_player_object(unsigned(KHDAYS_REF(actor)), nullptr, nullptr);
+    const auto c = object != 0 ? captures.find(object) : captures.end();
+    return c != captures.end() && c->second.hidden ? 1 : 0;
 }
 
 // The reaction command offered to this game's own player now (its name's KH2 text number in `text`), 0 none
@@ -6739,9 +6869,35 @@ extern "C" int khdays_kh2_enemies_no_contact(void *actor)
     return e != nullptr && !e->dying && (e->actor->u32(field::kFlags) & bit::kNoHitObject) != 0;
 }
 
+int kept_damage(void *actor, int amount, int kinds);
+
 // Ov107_AiState_ApplyHit (prepare.py's join): a hit's damage kept from taking the enemy under the least health its
-// script set (1:231, YS::SHEET's MinHp: KH2's damage stops there -- the Phantom's)
+// script set (1:231, YS::SHEET's MinHp: KH2's damage stops there -- the Phantom's), or one over it while it withstands
+// (pattern 9); what Days's fields then lose kept for the enemy's class (khdays_kh2_enemies_dealt)
 extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
+{
+    const int kept = kept_damage(actor, amount, kinds);
+    if (Enemy *e = find(unsigned(KHDAYS_REF(actor)))) {
+        e->dealt = kept;
+        e->dealt_frame = khdays_link_frame();
+    }
+    return kept;
+}
+
+// Ov107_CalcHitDamage (prepare.py's join): the damage a KH2 enemy's Days class works out again in its own hit
+// handler (each class's OnHit takes its HP off so, never the amount Ov107_AiState_ApplyHit kept) -- the kept one,
+// once, in the frame it was kept: else Luxord, kept at 1 while his time lasts, fell to the hit all the same
+extern "C" int khdays_kh2_enemies_dealt(void *actor, int amount)
+{
+    Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    if (e == nullptr || e->dealt < 0 || e->dealt_frame != khdays_link_frame())
+        return amount;
+    const int kept = e->dealt;
+    e->dealt = -1;
+    return kept;
+}
+
+int kept_damage(void *actor, int amount, int kinds)
 {
     Enemy *e = find(unsigned(KHDAYS_REF(actor)));
     if (e == nullptr || e->dying || amount <= 0)
@@ -6815,6 +6971,11 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
     if (least > 0 && e->record_most > 0 && e->health >= 0) // the record's measure to its health's
         least = int(std::min<std::int64_t>(
             0x7fffffff, (std::int64_t(least) * e->health_most + e->record_most - 1) / e->record_most));
+    // withstanding (its damage pattern 9 on: YS::BTLOBJ::is_withstand, the PS3 build's): a hit that would take it to
+    // its least or below leaves it one over (BTLOBJ::add_damage), so it cannot fall -- Luxord, till his time gauge
+    // runs out (his script takes the pattern off then, 1:324, and leaves him 1)
+    if (const Actor &a = *e->actor; (((a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18)) & 0x200u) != 0)
+        least = std::max(least, 0) + 1;
     if (e->health >= 0) {
         // its own health takes the damage (Days's damage is in its stand-in's measure, as its health is); Days's
         // fields lose what their share does

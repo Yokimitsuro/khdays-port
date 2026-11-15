@@ -49,7 +49,10 @@ extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
 #define PLAYER_FIELD 0x4ecu /* its field object, the players' list's */
 #define PLAYER_PRESSED 0x18u /* u16: Days's buttons pressed this frame (1 the command, 0x800 the jump) */
 #define PLAYER_ANGLE_BIAS 0x478u /* s16: the camera's turn its D-pad's heading is made from (nAngleBias) */
-#define PLAYER_DRAW 0x694u /* bit 0: bSuppressDraw -- Ov022_ActorUpdate draws no model */
+#define NODE_FLAGS 0x0u    /* u32 of its model's node: 0x20 -- Ov022_ActorUpdate, Ov022_ActorSetState and
+                               Ov022_RunReplayFrame leave the node undrawn (nothing of the game sets it on an
+                               actor's node) */
+#define NODE_UNDRAWN 0x20u
 #define NODE_ANGLE 0x80u    /* u16: the way its model looks, (sin, 0, cos) of it (Ov022_StepGlideState: the heading
                                + 0x8000, its way (-sin, -cos) of the heading) */
 
@@ -404,9 +407,10 @@ int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
 
 void khdays_kh2_shell_player_hidden(unsigned actor, int hidden)
 {
-    if (actor == 0 || !khdays_game_ram(actor + PLAYER_DRAW)) {
+    const unsigned node = actor != 0 ? rd32(actor + PLAYER_NODE) : 0u;
+    if (node == 0 || !khdays_game_ram(node + NODE_FLAGS)) {
         return;
     }
-    unsigned char *draw = (unsigned char *)KHDAYS_W(actor + PLAYER_DRAW);
-    *draw = (unsigned char)(hidden ? (*draw | 1u) : (*draw & ~1u));
+    unsigned *flags = (unsigned *)KHDAYS_W(node + NODE_FLAGS);
+    *flags = hidden ? (*flags | NODE_UNDRAWN) : (*flags & ~NODE_UNDRAWN);
 }

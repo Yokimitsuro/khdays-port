@@ -95,7 +95,9 @@ int khdays_kh2_shell_player_hp(unsigned actor);
  * 0x10000 a turn, along (-sin, -cos) of it; -1 none held. Whether it is in the game's memory. */
 int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading);
 
-/* A player's actor's model left undrawn or drawn again (+0x694 bit 0, bSuppressDraw: Ov022_ActorUpdate draws it not). */
+/* A player's actor's model left undrawn or drawn again: its node's flag 0x20, which the game's draws read and only
+ * they (+0x694 bit 0, bSuppressDraw, would also have Ov022_TickSubObjectChain draw his sub objects: a copy of his
+ * body standing in its rest pose). His weapons are drawn apart (khdays_kh2_enemies_turned). */
 void khdays_kh2_shell_player_hidden(unsigned actor, int hidden);
 
 #ifdef __cplusplus

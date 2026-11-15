@@ -744,9 +744,28 @@ void add_actor_fields(ai::Calls &calls)
     });
     // Days's players answer KH2's player's number (+ 0x4c of P_EX100's record: Sora's 1; Roxas's is 14, Donald's 2):
     // they stand for KH2's player, whose motions and commands the enemies' sets carry (Cerberus's reaction command
-    // begins on 1)
+    // begins on 1); any other object its own entry's (YS::trap_obj_part: Luxord's 4005, which his mission's damage
+    // trigger asks; his die's and card's 1, KH2's player's), 0 without one
     calls.set(1, 213, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(is_player(object_of(m, a[0])) ? 1 : 0);
+        Object *o = object_of(m, a[0]);
+        std::uint16_t part = 0;
+        if (is_player(o))
+            part = 1;
+        else if (const std::uint32_t entry = o != nullptr ? o->u32(field::kEntry) : 0u; entry != 0)
+            m.memory().read(entry + 0x4c, &part, 2);
+        a[0] = ai::Value::of_int(part);
+    });
+    // 2:46 a hit's damage (YS::trap_damage_damage: YS::DAMAGE + 0x28, the PS3 build's) and 2:72 whether it cures
+    // (trap_damage_is_cure: its attack's record, + 0x20, of type 5 or 6 at + 4) -- what a mission's damage trigger asks
+    calls.set(2, 46, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(a[0].bits != 0 ? std::int32_t(m.memory().u32(a[0].bits + 0x28)) : 0);
+    });
+    calls.set(2, 72, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t params = a[0].bits != 0 ? m.memory().u32(a[0].bits + 0x20) : 0u;
+        std::uint8_t type = 0;
+        if (params != 0)
+            m.memory().read(params + 4, &type, 1);
+        a[0] = ai::Value::of_int(type == 5 || type == 6 ? 1 : 0);
     });
     calls.set(1, 225, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:157 an event sequence started by a name of up to four letters from the actor's .a.us entries of type 0x16

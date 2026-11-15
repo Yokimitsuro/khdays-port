@@ -12,16 +12,24 @@
 // 12 its full part scaled across by it, 13 its empty part by what is left, 14 its tip moved that share of the bar's
 // length (14's ex) along. The pieces stand in the columns the mission names as KH2's INFO_BASE
 // stacks them (each below the open ones before it by its base's height), half a DS dot a KH2 dot, under Days's own
-// pieces at the top of that side; drawn on the CPU into HUD images.
+// pieces at the top of that side -- one KH2 PC's wide screen brings to the middle (Luxord's time gauges) in the
+// middle at the top; drawn on the CPU into HUD images.
 #include "kh2_mission_2d.h"
 
 #include "../gfx/kh2_sequence.h"
 #include "../runtime/kh2_enemies/shell.h"
+#include "character_portraits.h"
+#include "kh2_font.h"
+#include "kh2_portrait.h"
 
 extern "C" {
 #include "elements.h"
 #include "parts.h"
+#include "../runtime/characters/characters.h"
+#include "../runtime/characters/forms.h"
 #include "../runtime/core/session_log.h"
+#include "../runtime/scripts/game_link.h"
+int khdays_settings_game_language(void);
 }
 
 #include "khdays/assets/image.h"
@@ -53,6 +61,80 @@ constexpr float kDot = 0.5F; // a KH2 dot in DS pixels: KH2's 512-dot screen the
 // 26, 27, 25; a counter's 36, 37, 35), its y below the open pieces before it in its column. KH2 moves its side columns
 // 85 dots out on a wide screen; the port's layout moves a piece on a side out as far as its screen widens
 constexpr int kTimerColumns[3] = {26, 27, 25}, kCounterColumns[3] = {36, 37, 35}, kGaugeColumns[3] = {16, 17, 15};
+// A side column's move on KH2 PC's wide screen (KH2's dots: the right one's out to the right, the left one's to the
+// left) and KH2's screen's middle. A piece whose column's point has that move taken off already (Luxord's two time
+// gauges, EH14_MS103: both in the right column at -85, Sora's half ending at the middle and Luxord's starting there,
+// "SORA [TIME GAUGE VS] LUXORD" whole) stands in the middle of the screen there: such a piece, whose base meets the
+// middle once moved, is laid out by the middle of the screen (its halves kept together), not by its column's side
+constexpr float kWideColumnMove = 85.0F, kKh2Middle = 256.0F;
+
+// The player's half of a two-sided piece, which draws KH2's own player (Luxord's time gauges, EH14_MS103's gauge 0:
+// Sora's face, its sequence's part 0, and "SORA" written on its bar, part 1), shows the player playing: his portrait
+// by his HP gauge (character_portraits.h), turned to face the middle, in the face's place, and his character's name
+// over the bar's, the bar's plain stretch beside it laid over that first -- where the name and the plain stretch lie
+// in the bar's part our measures of its HD picture, in its IMGD's dots
+struct PlayerSide final {
+    const char *mission;
+    int kind, index;
+    std::size_t face_part, bar_part;
+    std::array<float, 4> name, plain; // left, top, right, bottom
+};
+constexpr PlayerSide kPlayerSides[] = {{"EH14_MS103", 6, 0, 0, 1, {80, 46, 131, 61}, {20, 46, 71, 61}}};
+
+// Laid over a layer's quads once drawn (a player's half's portrait and name), KH2's dots: a picture (straight RGBA)
+// fitted in its box, its shape kept, at the box's bottom -- turned left for right when `mirror` -- or a text in KH2's
+// font from the box's left, as tall as `font` KH2 dots a font dot, in the middle of the box's height
+struct Overlay final {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    const std::vector<std::uint32_t> *texels = nullptr;
+    int w = 0, h = 0;
+    bool mirror = false;
+    float alpha = 1;
+    std::uint64_t key = 0;
+    std::u16string text;
+    float font = 1;
+};
+
+// The name of the character the player plays, in capitals as KH2's gauge writes its player's: his mod character's
+// own, else the game's character's (its portrait's name, its hood left out)
+std::u16string player_name()
+{
+    const int seat = khdays_link_hud_seat(0);
+    const KhdaysCharacter *c = seat >= 0 ? khdays_characters_seat_form_now(seat) : nullptr;
+    std::string utf8;
+    if (c != nullptr)
+        if (const char *n = khdays_characters_name(c, khdays_settings_game_language()))
+            utf8 = n;
+    if (utf8.empty()) {
+        int icon = -1, hp = 0, most = 0, low = 0;
+        if (khdays_link_hud_portrait(0, &icon, &hp, &most, &low) && icon >= 0 &&
+            std::size_t(icon) < khdays::ui::kh2::portrait_names.size()) {
+            utf8 = khdays::ui::kh2::portrait_names[std::size_t(icon)];
+            if (const auto hood = utf8.find("_Hood"); hood != std::string::npos)
+                utf8.erase(hood);
+            if (utf8 == "Saix")
+                utf8 = "Sa\xc3\xafx";
+        }
+    }
+    std::u16string out;
+    for (std::size_t i = 0; i < utf8.size();) {
+        const unsigned char b = static_cast<unsigned char>(utf8[i]);
+        char32_t cp = b;
+        std::size_t n = 1;
+        if (b >= 0xf0 && i + 3 < utf8.size())
+            cp = (b & 7u) << 18 | (utf8[i + 1] & 63u) << 12 | (utf8[i + 2] & 63u) << 6 | (utf8[i + 3] & 63u), n = 4;
+        else if (b >= 0xe0 && i + 2 < utf8.size())
+            cp = (b & 15u) << 12 | (utf8[i + 1] & 63u) << 6 | (utf8[i + 2] & 63u), n = 3;
+        else if (b >= 0xc0 && i + 1 < utf8.size())
+            cp = (b & 31u) << 6 | (utf8[i + 1] & 63u), n = 2;
+        i += n;
+        if ((cp >= u'a' && cp <= u'z') || (cp >= 0xe0 && cp <= 0xfe && cp != 0xf7))
+            cp -= 0x20;
+        if (cp < 0x10000)
+            out.push_back(char16_t(cp));
+    }
+    return out;
+}
 // Where a column's first piece starts, DS pixels down Days's upper screen: below Days's own pieces at its top, the rows
 // above it as KH2's INFORMATION window is above its pieces -- the hearts and the clock at the left (to 37), the
 // target's name and health at the right (to 24), the countdown and lock-on in the middle (to 20; ui/compositions/
@@ -126,6 +208,7 @@ struct Piece final {
     bool closing = false;
     float x = 0, y = 0; // its base's place in its column
     float top = 0;      // its highest dot below its place standing (its base's clip 4): its column's top in DS pixels
+    bool middle = false; // laid out by the middle of the screen (kWideColumnMove): its x KH2 PC's, moved
     std::array<Canvas, 2> canvases;
 };
 
@@ -274,6 +357,23 @@ void open(Piece &p)
         open_gauge(p);
     else
         open_counter(p);
+    // a side column's piece whose base, moved as KH2 PC moves its column, meets the middle of KH2's screen: laid out
+    // by the middle of the screen, at KH2 PC's place (kWideColumnMove)
+    p.middle = false;
+    const int column = column_of(p.kh2);
+    if (column != 2) {
+        const float moved = p.x + (column == 1 ? kWideColumnMove : -kWideColumnMove);
+        float left = std::numeric_limits<float>::max(), right = -left;
+        for (const seq::SequenceQuad &q : base.quads)
+            for (const seq::SequenceVertex &v : q.vertices) {
+                left = std::min(left, v.x + moved);
+                right = std::max(right, v.x + moved);
+            }
+        if (left <= kKh2Middle + 1.0F && right >= kKh2Middle - 1.0F) {
+            p.middle = true;
+            p.x = moved;
+        }
+    }
 }
 
 // dk::TIMER::close, dk::COUNTER::close: the base 5, its second 11, then gone (its children with it)
@@ -506,8 +606,59 @@ void stack()
     }
 }
 
-// A layer's quads (KH2's dots) as a HUD image: DS pixels a dot's kDot, `dy` further down; `slot` its element's
-void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads, float dy, std::uint32_t slot)
+// The overlays laid over `pixels` (`w` x `h` texels, KH2's dot at x * k + ox, y * k + oy)
+void draw_overlays(const std::vector<Overlay> &overlays, std::vector<std::uint32_t> &pixels, int w, int h, float k,
+                   float ox, float oy)
+{
+    for (const Overlay &o : overlays) {
+        const float bx0 = o.x0 * k + ox, by0 = o.y0 * k + oy, bx1 = o.x1 * k + ox, by1 = o.y1 * k + oy;
+        std::vector<std::uint32_t> top;
+        int tx0 = 0, ty0 = 0, tw = 0, th = 0;
+        if (!o.text.empty()) { // its glyphs, their dark edge, from the box's left
+            const float size = o.font * k; // texels a font dot
+            const float pen_y = (by0 + by1) / 2 - float(khdays::ui::kh2::SysFont::kCellH) * size / 2;
+            tx0 = int(std::floor(bx0)) - 4, ty0 = int(std::floor(pen_y)) - 4;
+            tw = int(std::ceil(khdays::ui::kh2::sys_font().width(o.text) * size)) + 8;
+            th = int(std::ceil(float(khdays::ui::kh2::SysFont::kCellH) * size)) + 8;
+            top.assign(std::size_t(tw) * std::size_t(th), 0);
+            khdays::ui::kh2::paint_text(o.text, top, tw, th, bx0 - float(tx0), pen_y - float(ty0), size);
+        } else if (o.texels != nullptr && o.w > 0 && o.h > 0) { // its picture fitted, at the box's bottom, nearest
+            const float scale = std::min((bx1 - bx0) / float(o.w), (by1 - by0) / float(o.h));
+            const float dw = float(o.w) * scale, dh = float(o.h) * scale;
+            const float px = bx0 + (bx1 - bx0 - dw) / 2, py = by1 - dh;
+            tx0 = int(std::floor(px)), ty0 = int(std::floor(py));
+            tw = int(std::ceil(px + dw)) - tx0, th = int(std::ceil(py + dh)) - ty0;
+            if (tw <= 0 || th <= 0 || scale <= 0.0F)
+                continue;
+            top.assign(std::size_t(tw) * std::size_t(th), 0);
+            for (int y = 0; y < th; ++y)
+                for (int x = 0; x < tw; ++x) {
+                    const int sx = int((float(tx0 + x) + 0.5F - px) / scale);
+                    const int sy = int((float(ty0 + y) + 0.5F - py) / scale);
+                    if (sx < 0 || sy < 0 || sx >= o.w || sy >= o.h)
+                        continue;
+                    top[std::size_t(y) * std::size_t(tw) + std::size_t(x)] =
+                        (*o.texels)[std::size_t(sy) * std::size_t(o.w) + std::size_t(o.mirror ? o.w - 1 - sx : sx)];
+                }
+        }
+        for (int y = 0; y < th; ++y)
+            for (int x = 0; x < tw; ++x) {
+                const int cx = tx0 + x, cy = ty0 + y;
+                std::uint32_t t = top[std::size_t(y) * std::size_t(tw) + std::size_t(x)];
+                if (cx < 0 || cy < 0 || cx >= w || cy >= h || (t >> 24) == 0)
+                    continue;
+                const unsigned alpha = unsigned(std::lround(float(t >> 24) * std::clamp(o.alpha, 0.0F, 1.0F)));
+                t = (t & 0xffffffu) | alpha << 24;
+                std::uint32_t &under = pixels[std::size_t(cy) * std::size_t(w) + std::size_t(cx)];
+                under = render::source_over(under, t);
+            }
+    }
+}
+
+// A layer's quads (KH2's dots) as a HUD image: DS pixels a dot's kDot, `dy` further down; `slot` its element's; the
+// overlays laid over them
+void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads, float dy, std::uint32_t slot,
+                const std::vector<Overlay> &overlays = {})
 {
     Canvas &c = p.canvases[std::size_t(layer)];
     if (quads.empty())
@@ -520,8 +671,19 @@ void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads
             x1 = std::max(x1, v.x * kDot);
             y1 = std::max(y1, v.y * kDot + dy);
         }
+    for (const Overlay &o : overlays) {
+        x0 = std::min(x0, o.x0 * kDot);
+        y0 = std::min(y0, o.y0 * kDot + dy);
+        x1 = std::max(x1, o.x1 * kDot);
+        y1 = std::max(y1, o.y1 * kDot + dy);
+    }
     float left = std::floor(x0) - 1, top = std::floor(y0) - 1;
     float right = std::ceil(x1) + 1, bottom = std::ceil(y1) + 1;
+    if (p.middle && layer == 0) { // as wide on both sides of the screen's middle: its middle the screen's
+        const float twice = 2.0F * kKh2Middle * kDot, l = left;
+        left = std::min(left, twice - right);
+        right = std::max(right, twice - l);
+    }
     const int r = khdays_ui_scale();
     const bool inside = c.image >= 0 && c.scale == r && left >= c.left && top >= c.top &&
                         right <= c.left + float(c.width) && bottom <= c.top + float(c.height);
@@ -541,17 +703,30 @@ void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads
     }
     if (c.image < 0)
         return;
-    if (const std::uint64_t h = hash_of(quads, c); h != c.drawn) {
+    std::uint64_t h = hash_of(quads, c);
+    for (const Overlay &o : overlays) { // (and its overlays: their places, pictures and texts)
+        const auto add = [&h](const void *data, std::size_t size) {
+            const auto *b = static_cast<const unsigned char *>(data);
+            for (std::size_t i = 0; i < size; ++i)
+                h = (h ^ b[i]) * 0x100000001b3ull;
+        };
+        add(&o.x0, sizeof o.x0), add(&o.y0, sizeof o.y0), add(&o.x1, sizeof o.x1), add(&o.y1, sizeof o.y1);
+        add(&o.key, sizeof o.key), add(&o.alpha, sizeof o.alpha), add(&o.font, sizeof o.font);
+        add(o.text.data(), o.text.size() * sizeof(char16_t));
+    }
+    if (h != c.drawn) {
         const Pictures &pc = *p.pictures;
         c.pixels.assign(std::size_t(c.width * r) * std::size_t(c.height * r), 0);
         render::draw_sequence(quads, pc.texture, pc.logical[0], pc.logical[1], c.pixels, c.width * r, c.height * r,
                               {-c.left * float(r), (dy - c.top) * float(r), kDot * float(r)});
+        draw_overlays(overlays, c.pixels, c.width * r, c.height * r, kDot * float(r), -c.left * float(r),
+                      (dy - c.top) * float(r));
         std::uint32_t *out = khdays_ui_image_begin(c.image);
         if (out == nullptr)
             return;
         std::copy(c.pixels.begin(), c.pixels.end(), out);
         khdays_ui_image_end(c.image);
-        c.drawn = h;
+        c.drawn = h == 0 ? 1 : h;
     }
     KhdaysUiElement e{};
     e.id = "hud.kh2_mission";
@@ -563,6 +738,91 @@ void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads
     e.h = float(c.height);
     e.image = c.image;
     khdays_ui_emit(KHDAYS_UI_HUD, &e);
+}
+
+// The PlayerSide this piece is, null none
+const PlayerSide *player_side_of(const Piece &p)
+{
+    const std::string stem = std::filesystem::path(std::u8string(file.begin(), file.end())).stem().string();
+    for (const PlayerSide &side : kPlayerSides)
+        if (stem == side.mission && p.kh2.kind == side.kind && p.kh2.index == side.index)
+            return &side;
+    return nullptr;
+}
+
+// The player's half of a two-sided piece (PlayerSide): its face's quad taken out for his portrait (where it stood,
+// as clear as it was), the bar's plain stretch laid over the bar's name (a quad of the bar's after it), his name over
+// that; KH2's own left where the portrait or the name is not known
+void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::SequenceQuad> &quads,
+                 std::vector<Overlay> &out)
+{
+    const auto &parts = p.pictures->sequence.parts;
+    if (side.face_part >= parts.size() || side.bar_part >= parts.size())
+        return;
+    struct Box {
+        float x0, y0, x1, y1, u0, v0, u1, v1;
+    };
+    const auto box_of = [](const seq::SequenceQuad &q) {
+        Box b{1e30F, 1e30F, -1e30F, -1e30F, 1e30F, 1e30F, -1e30F, -1e30F};
+        for (const seq::SequenceVertex &v : q.vertices) {
+            b.x0 = std::min(b.x0, v.x), b.y0 = std::min(b.y0, v.y), b.x1 = std::max(b.x1, v.x), b.y1 = std::max(b.y1, v.y);
+            b.u0 = std::min(b.u0, v.u), b.v0 = std::min(b.v0, v.v), b.u1 = std::max(b.u1, v.u), b.v1 = std::max(b.v1, v.v);
+        }
+        return b;
+    };
+    // (a part's quad's texels are its rectangle's, half a texel in: evaluate_sequence's)
+    const auto is_part = [](const Box &b, const seq::SequencePart &part) {
+        return std::abs(b.u0 - float(part.uv[0]) - 0.5F) < 0.25F && std::abs(b.v0 - float(part.uv[1]) - 0.5F) < 0.25F &&
+               std::abs(b.u1 - float(part.uv[2]) - 0.5F) < 0.25F && std::abs(b.v1 - float(part.uv[3]) - 0.5F) < 0.25F;
+    };
+    static std::vector<std::uint32_t> face;
+    static int face_w = 0, face_h = 0;
+    static std::uint64_t face_key = 0;
+    const bool has_face = khdays::ui::local_portrait(face, face_w, face_h, face_key);
+    const std::u16string name = khdays::ui::kh2::sys_font().get() ? player_name() : std::u16string();
+    for (std::size_t i = 0; i < quads.size(); ++i) {
+        const Box b = box_of(quads[i]);
+        if (has_face && is_part(b, parts[side.face_part])) {
+            Overlay o;
+            o.x0 = b.x0, o.y0 = b.y0, o.x1 = b.x1, o.y1 = b.y1;
+            o.texels = &face;
+            o.w = face_w, o.h = face_h;
+            o.mirror = true; // (the HUD's faces look left, to the screen's middle; here to the middle on its right)
+            o.alpha = float(quads[i].vertices[0].color >> 24) / 128.0F;
+            o.key = face_key;
+            out.push_back(o);
+            quads.erase(quads.begin() + std::ptrdiff_t(i));
+            --i;
+        } else if (!name.empty() && is_part(b, parts[side.bar_part]) && b.u1 > b.u0 && b.v1 > b.v0) {
+            const float ax = (b.x1 - b.x0) / (b.u1 - b.u0), ay = (b.y1 - b.y0) / (b.v1 - b.v0);
+            const auto x_at = [&](float u) { return b.x0 + (u - b.u0) * ax; };
+            const auto y_at = [&](float v) { return b.y0 + (v - b.v0) * ay; };
+            seq::SequenceQuad patch = quads[i];
+            for (seq::SequenceVertex &v : patch.vertices) {
+                const float fx = (v.u - b.u0) / (b.u1 - b.u0), fy = (v.v - b.v0) / (b.v1 - b.v0);
+                v.u = side.plain[0] + fx * (side.plain[2] - side.plain[0]);
+                v.v = side.plain[1] + fy * (side.plain[3] - side.plain[1]);
+                v.x = x_at(side.name[0]) + fx * (x_at(side.name[2]) - x_at(side.name[0]));
+                v.y = y_at(side.name[1]) + fy * (y_at(side.name[3]) - y_at(side.name[1]));
+            }
+            quads.insert(quads.begin() + std::ptrdiff_t(i) + 1, patch);
+            ++i;
+            Overlay o;
+            o.x0 = x_at(side.name[0]) + 1.0F, o.y0 = y_at(side.name[1]);
+            o.x1 = x_at(side.name[2]), o.y1 = y_at(side.name[3]);
+            // its capitals as tall as KH2's own name (the font's cell 1.6 times the box: seen beside "LUXORD",
+            // 2026-11-15), narrower where it would pass the bar's plain end (as far again as two fifths of the
+            // name's own stretch)
+            const float room = (x_at(side.name[2]) - x_at(side.name[0])) * 1.4F;
+            const float wide = khdays::ui::kh2::sys_font().width(name);
+            o.font = (o.y1 - o.y0) * 1.6F / float(khdays::ui::kh2::SysFont::kCellH);
+            if (wide > 0.0F && wide * o.font > room)
+                o.font = room / wide;
+            o.text = name;
+            o.alpha = float(quads[i].vertices[0].color >> 24) / 128.0F;
+            out.push_back(o);
+        }
+    }
 }
 
 void emit(Piece &p)
@@ -601,7 +861,13 @@ void emit(Piece &p)
     // (its image grows to all it drew: its bottom corner, the usual anchor, may pass that piece's edge); the large
     // figures in the middle of the screen, placed with the countdown above them
     constexpr std::uint32_t kImage = KES_DIRECT | KES_PICTURE | KES_FINE | KES_HUD | 3u;
-    emit_layer(p, 0, quads[0], kColumnTops[column_of(p.kh2)] - p.top * kDot, kImage | KES_BY_MIDDLE);
+    // (a piece laid out by the screen's middle: as the piece at the top in the middle is, its image as wide on both
+    // sides of the middle -- the halves of one, each its own image, so placed alike)
+    std::vector<Overlay> overlays;
+    if (const PlayerSide *side = player_side_of(p))
+        player_side(p, *side, quads[0], overlays);
+    emit_layer(p, 0, quads[0], kColumnTops[column_of(p.kh2)] - p.top * kDot,
+               kImage | (p.middle ? KES_UNDER_TOP : KES_BY_MIDDLE), overlays);
     emit_layer(p, 1, quads[1], 0.0F, kImage | KES_UNDER_TOP);
 }
 } // namespace

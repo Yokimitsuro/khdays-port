@@ -12,6 +12,7 @@ extern "C" {
 #include "../runtime/characters/characters.h"
 #include "../runtime/characters/forms.h"
 #include "../runtime/core/session_log.h"
+#include "../runtime/core/window.h"
 #include "../runtime/scripts/game_link.h"
 }
 #include <algorithm>
@@ -330,3 +331,88 @@ extern "C" void khdays_ui_character_portraits_emit(void)
         if (slot.shown)
             khdays_ui_emit_extended(KHDAYS_UI_HUD, &slot.element, &slot.box);
 }
+
+namespace khdays::ui {
+bool local_portrait(std::vector<std::uint32_t> &rgba, int &width, int &height, std::uint64_t &key)
+{
+    static std::vector<std::uint32_t> last;
+    static int last_w = 0, last_h = 0;
+    static std::uint64_t last_key = 0;
+    const auto give = [&] {
+        if (last.empty())
+            return false;
+        rgba = last;
+        width = last_w;
+        height = last_h;
+        key = last_key;
+        return true;
+    };
+    // a mod's character's own picture
+    const int seat = khdays_link_hud_seat(0);
+    const KhdaysCharacter *c = seat >= 0 ? khdays_characters_seat_form_now(seat) : nullptr;
+    if (const Picture *p = c != nullptr ? picture(c, false) : nullptr) {
+        last.assign(std::size_t(p->width) * std::size_t(p->height), 0);
+        for (std::size_t i = 0; i < last.size(); ++i)
+            std::memcpy(&last[i], &p->rgba[i * 4u], 4);
+        last_w = p->width;
+        last_h = p->height;
+        last_key = std::uint64_t(reinterpret_cast<std::uintptr_t>(p));
+        return give();
+    }
+    // the game's cells: 8 x 8 characters of 4 bits, their 16 colours (BGR555, 0 clear) the entry's palette of the
+    // upper screen's BG palette, turned as the entry turns them
+    KhdaysBgLayer layer;
+    if (!khdays_bg_text_layer(0, 3, &layer) || layer.colors256)
+        return give();
+    struct Cell {
+        int x, y;
+        unsigned entry;
+    };
+    std::vector<Cell> cells;
+    int x0 = 1 << 30, y0 = 1 << 30, x1 = -1, y1 = -1;
+    for (int y = 0; y < 25; ++y)
+        for (int x = 0; x < 33; ++x) {
+            const int cx = ((layer.hofs >> 3) + x) % layer.wt, cy = ((layer.vofs >> 3) + y) % layer.ht;
+            const unsigned entry = khdays_bg_map_entry(0, &layer, cx, cy);
+            if (khdays::ui::kh2::portrait_tile_slot((entry & 0x3ffu) * 32u) != 0)
+                continue;
+            const char *origin = khdays_bg_origin(0, layer.chars + (entry & 0x3ffu) * 32u);
+            if (origin != nullptr && (!std::strstr(origin, "UI/btl/") || !std::strstr(origin, "main.p2")))
+                continue; // (where the names are followed: the game's HUD file's)
+            cells.push_back({x, y, entry});
+            x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x), y1 = std::max(y1, y);
+        }
+    if (cells.empty())
+        return give();
+    const int w = (x1 - x0 + 1) * 8, h = (y1 - y0 + 1) * 8;
+    std::vector<std::uint32_t> out(std::size_t(w) * std::size_t(h), 0);
+    const auto *palette = static_cast<const std::uint8_t *>(KHDAYS_W(0x05000000));
+    for (const Cell &cell : cells) {
+        const std::uint8_t *chars = khdays_bg_memory(0, layer.chars + (cell.entry & 0x3ffu) * 32u);
+        if (chars == nullptr)
+            continue;
+        const unsigned bank = cell.entry >> 12;
+        for (int py = 0; py < 8; ++py)
+            for (int px = 0; px < 8; ++px) {
+                const int sx = (cell.entry & 0x400u) ? 7 - px : px, sy = (cell.entry & 0x800u) ? 7 - py : py;
+                const unsigned index = (chars[sy * 4 + sx / 2] >> ((sx & 1) * 4)) & 0xfu;
+                if (index == 0)
+                    continue;
+                std::uint16_t bgr = 0;
+                std::memcpy(&bgr, palette + bank * 32u + index * 2u, 2);
+                const auto five = [](unsigned v) { return (v << 3) | (v >> 2); };
+                out[std::size_t((cell.y - y0) * 8 + py) * std::size_t(w) + std::size_t((cell.x - x0) * 8 + px)] =
+                    five(bgr & 31u) | five((bgr >> 5) & 31u) << 8 | five((bgr >> 10) & 31u) << 16 | 0xffu << 24;
+            }
+    }
+    std::uint64_t k = 0xcbf29ce484222325ull; // FNV-1a over its texels
+    for (const std::uint32_t t : out)
+        for (int b = 0; b < 4; ++b)
+            k = (k ^ ((t >> (b * 8)) & 0xffu)) * 0x100000001b3ull;
+    last = std::move(out);
+    last_w = w;
+    last_h = h;
+    last_key = k == 0 ? 1 : k;
+    return give();
+}
+} // namespace khdays::ui

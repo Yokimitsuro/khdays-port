@@ -855,7 +855,12 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   below): 1:242 and 1:243, 6:27 to 6:30, and 4:56 (`YS::EVENT::ContinueControlOff`, reached only while a KH2 event
   runs: none of the shell's). He turns the player when the card game is lost (`rc_card_failure`: the card when his
   gauge's phase is past the first and the script's `pp + 0x6c` is set, else the die) and turns him back before his
-  final attack once he can be hit (0x2f85: 6:2 is 12 and 1:225 is 0).
+  final attack once he can be hit (0x2f85: 6:2 is 12 and 1:225 is 0). His battle is KH2's "Battle for Time": his and
+  the player's time gauges (his mission's, "KH2's missions and signals") drain by the hits each takes and his card
+  games, and he stands (his damage pattern 9) till his own is out; then his script takes it off and leaves him 1. His
+  cards end in KH2's "leave" (`all_card_vanish` and their own): an object a script made (1:0) has no spawner to bring
+  it back, so its Days enemy is sent away then (`khdays_enemies_remove`: no defeat, no reward) -- before, each came
+  back as a wave's enemy does, dozens of them lying on the floor (the maintainer's screenshot, 2026-11-15).
 - **Not yet**: Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures, `1:281`-`1:316`), Xemnas's final
   form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
 
@@ -863,8 +868,9 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
 
 KH2's `YS::CHANGEFORM::Capture` (1:242, the PS3 build's names) turns Sora into an object entry's form -- his form 12 --
 and `CaptureEnd` (1:243) gives his form before back; 6:2 (`Ts::trap_player_get_form`) answers 12 meanwhile. The port
-makes the form's object an ally (no Days enemy stands for it) at the player's place, hides his Days model (+ 0x694 bit
-0, which `Ov022_ActorUpdate` reads before it draws) and puts him where the form stands each frame; his Days control
+makes the form's object an ally (no Days enemy stands for it) at the player's place, hides his Days model (his node's
+flag 0x20, which `Ov022_ActorUpdate` reads before it draws; RUNTIME_MAP.md section 37) and his weapons, and puts him
+where the form stands each frame; his Days control
 is locked as Days's own lock locks a player (`Ov022_TranslateCommandToAction`, prepare.py), his pad read first for the
 form (`khdays_kh2_enemies_captured`: + 0x18 pressed, 1 the command and 0x800 the jump; the D-pad's heading,
 `Ov022_HeadingFromHeldDpad` -- the stick's with analog movement -- plus the camera's + 0x478). On the host, as every
@@ -881,7 +887,8 @@ player's control: a guest's pad turns his own form.
   alone, the wiki's "unable to move normally"); its jump (`ACTION_DICEJUMP`, KH2's jump at 40 cm) goes along the way
   at the form's run speed (prty 55's 8), its command the same jump 3.5 times as far (`party_jump`: Dice Attack).
   Its jump and fall motions (3, 4) strike with atkp 1309. KH2's `prepare_jump` arc is not read: a plain throw to the
-  height, its way kept in the air.
+  height, its velocity along the ground the jump's through the air (it had only gone up and down: the maintainer
+  saw it as Roxas never turned, 2026-11-15). Without a way held it jumps where it stands.
 - **Its time** is a form's: `YS::SORA`'s constructor for form 12 starts two of the drive gauge's bars
   (`SHEET::start_drive(2, -1)`, 600 ticks each: 03system.bin's sstm + 0x68), down a tick each tick
   (`PLAYER::_OVR_pre_exec`) and by each landed blow's AddDrive (atkp + 0x29, 10 for both) times sstm + 0x74 (15)
@@ -890,6 +897,14 @@ player's control: a guest's pad turns his own form.
 - **Their blows** are the player's: the forms' attacks are of team 0, their own -- KH2's player -- so the port strikes
   the KH2 enemies with them (`strike_enemies`, the player's blow: power 25 of 100, the wiki's x0.25), never the
   players.
+- **Out of the hands that held him** (2026-11-15): the card game holds the player (Luxord's motions 252-254) when it
+  turns him; `CHANGEFORM` makes KH2's player anew, so the port lets the hold go as the form is made -- the die's
+  script let him go itself (1:11), the card's did not, and he stood held, unable to act, after the card was over.
+- **Kept off the enemies, back when he falls, his weapons hidden** (2026-11-15): the form stands out of every KH2
+  enemy's Days sphere by the player's own body (`keep_off_enemies`, as Days's collision keeps its players off its
+  enemies -- the card game holds him in front of Luxord, and the die was drawn inside him); a player whose HP runs
+  out while a form is himself again, so that Days's fall and game over show him; and his two weapon slots, which the
+  hidden bit does not reach, are left undrawn (RUNTIME_MAP.md section 37).
 
 ### Bosses bound to their rooms
 
@@ -1090,6 +1105,15 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   was made -- times the image's size, in 16ths of a pixel, the picture repeating within the part's own rectangle, the
   GS's `REGION_REPEAT`); the port's CPU drawing does the same. Its top standing is its second's last frame's (Saïx's
   opens with a flash far above it).
+  Luxord's two (`EH14_MS103`, the player's and his: "SORA [TIME GAUGE VS] LUXORD") stand in the right column at -85,
+  which KH2 PC's wide screen moves 85 dots out: the port lays a side piece so met by the middle by the middle of the
+  screen, both halves alike. The player's half shows the player playing, the maintainer's wish (2026-11-15): his
+  portrait by his HP gauge (his mod character's own, else the game's cells), turned to face the middle, in Sora's
+  face's place (its part 0), and his character's name in KH2's font over "SORA" (written on its bar, part 1: the
+  bar's plain stretch at 20 to 71 laid over 80 to 131, rows 46 to 61 of its IMGD). They move with the mission's
+  trigger 6 (KH2's damage, `YS::UNITSCRIPT::DamageCallback`): the player's by 100 x damage / 4000, Luxord's by 100 x
+  damage / 3000, and his card games' results (his script's 4:9); his damage pattern 9 keeps him standing till his own
+  runs out (RUNTIME_MAP.md section 37).
 - **The port's mission**: its script's main thread (trigger 3) runs at KH2's 60 ticks a second, its timer counts
   while its bar is up, its count as `MISSION_COUNT::set` keeps it; its bar is up from its start (as KH2's after its
   start camera; whether trigger 2 is its start or its end is not known: the port runs it as it ends), its cameras and

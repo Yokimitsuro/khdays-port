@@ -5998,6 +5998,38 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   (`nAngleBias`, the camera's turn) and moves along (-sin, -cos) of the sum. Its lock (`bLocked`) zeroes both and the
   command, so a player locked there makes no way and no command. + 0x694 bit 0 (`bSuppressDraw`) keeps
   `Ov022_ActorUpdate` from drawing the model (it returns before `Scene_DrawNode`).
+- **The weapons of a hidden player** (seen 2026-11-15, Luxord's die in a window run, the maintainer's screenshot the
+  same): with + 0x694 bit 0 set Roxas's body was gone and his keyblade still drawn beside the die. His two weapon
+  slots (+ 0xda8, 0x164 each) are drawn by `func_ov022_0209c9fc` (gated on + 0x694 bit 2, each slot's + 0xda9) at his
+  hand's place, which bit 0 does not reach; `Ov022_TickSubObjectChain` draws its sub objects (the ground mark, the
+  anim records) only *with* bit 0 set -- with it set the next run showed Roxas's body in its rest pose over the die
+  (an anim record's node). Bit 0 is no plain "not drawn": the port hides the player by his node's flag 0x20 instead
+  (read by `Ov022_ActorUpdate`, `Ov022_ActorSetState` and `Ov022_RunReplayFrame` before `Scene_DrawNode`, set on an
+  actor's node by nothing of the game's) and leaves his weapon slots undrawn while he is a form
+  (`khdays_kh2_enemies_turned`, prepare.py's join there).
+- **A KH2 mission's damage trigger** (read 2026-11-15, the PS3 build): `YS::UNITSCRIPT::DamageCallback(OBJ *, DAMAGE
+  *)` runs trigger 6 of the unit scripts (a mission's: `VM::callback(6, {obj, damage}, 2)`), the routine's first pop
+  the damage. `trap_damage_damage` (2:46) is `YS::DAMAGE + 0x28` (the damage, an int), `trap_damage_is_cure` (2:72)
+  whether its attack's record (+ 0x20) has the type byte (+ 4) 5 or 6; `trap_sysobj_is_player` (1:309) takes the
+  object's + 4, `trap_obj_part` (1:213) the object entry's + 0x4c (Luxord's 4005, KH2's player's and his forms' 1).
+  Luxord's `EH14_MS103` drains its gauges there: the player's (0) by 100 x damage / 4000, Luxord's (1, part 4005) by
+  100 x damage / 3000; his signal 136 (a gauge out) takes his damage pattern 9 off (`1:324`, `trap_obj_pattern_reset`:
+  + 0xabc's bit) and sets his health to 1 (`1:155` by `1 - 1:228`). Pattern 9 is `BTLOBJ::is_withstand`'s first test
+  ((+ 0xabc | + 0xac0) & ~+ 0xac4, bit 9): `BTLOBJ::add_damage` then leaves a hit that would take the health to its
+  least or below one over it -- he cannot fall while his time lasts (`1:211(self, 9)` at his start). The port runs the
+  mission's trigger 6 on a KH2 enemy's hit (its damage in its health's measure) and on a player's HP lost (in the
+  measure of the mission's boss's health against what Days shows of it: Days has no KH2 player's health), answers
+  2:46, 2:72 and 1:213 so, and keeps a withstanding enemy's health one over its least. Seen (2026-11-15, a window run):
+  Luxord's health kept at 1 by it and Days's stand-in defeated all the same by the same hit -- each Days enemy class's
+  own hit handler (`Ov120_Actor_OnHit` and the rest) works the damage out again (`Ov107_CalcHitDamage`) and takes
+  that off its HP, never the amount `Ov107_AiState_ApplyHit` kept; the kept amount now goes to that second working
+  out too (`khdays_kh2_enemies_dealt`, prepare.py's join on `Ov107_CalcHitDamage`), once, in its frame.
+- **KH2 PC's wide move of the mission pieces' side columns** (2026-11-15): KH2's HD pieces place a piece by its
+  column's clip (16, 17, 15 for a gauge) as the PS3 build's `MISSION_GAUGE::create` does; the HD data's right column
+  of Luxord's two time gauges (`EH14_MS103`'s "gage" SEQDs, clip 17) is at x -85 -- every other mission's right column
+  is inside the 512 dots (296 to 376) -- so that with the side columns' 85 dots out on the wide screen the two halves
+  meet in the middle ("SORA [TIME GAUGE VS] LUXORD", 3.5 to 503.5 dots). Laid out by its side the port had cut it at
+  the screen's left edge.
 
 ## 38. Days's commands on KH2's reaction command bar
 
