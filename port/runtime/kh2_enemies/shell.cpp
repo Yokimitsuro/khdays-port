@@ -597,7 +597,9 @@ Mod &mod()
 
 std::string motion_set_name(const std::string &name);
 
-KindFiles *files_of(const std::string &name)
+// A kind's files, read once. `form`: a form a script turns the player into (1:242: Luxord's card and die), which has no
+// script of its own -- read whatever its coverage, with an empty script
+KindFiles *files_of(const std::string &name, bool form = false)
 {
     Mod &m = mod();
     auto it = m.files.find(name);
@@ -607,7 +609,7 @@ KindFiles *files_of(const std::string &name)
     const Kind *kind = find_kind(m.kinds, name);
     if (kind == nullptr) {
         khdays_log("kh2 enemies: %s is in no mod's list: its stand-in plays", name.c_str());
-    } else if (!kind->covered) {
+    } else if (!kind->covered && !form) {
         khdays_log("kh2 enemies: %s's script makes calls the port does not answer yet (%s): its stand-in plays",
                    name.c_str(), kind->missing.c_str());
     } else {
@@ -618,14 +620,15 @@ KindFiles *files_of(const std::string &name)
             // object with no motion set of its own (the Thresholder's Possessor: its entry names none)
             const auto mset = read_file(kh2_file("obj/" + motion_set_name(kind->name), kind->folder));
             const auto scripts = ai::scripts_in(mdlx.data(), mdlx.size());
-            if (scripts.empty())
+            if (scripts.empty() && !form)
                 throw std::runtime_error("its .mdlx holds no script");
             k = std::make_unique<KindFiles>();
             k->name = kind->name;
             k->folder = kind->folder;
             const std::u8string p8 = (obj / (kind->name + ".mdlx")).u8string();
             k->mdlx.assign(p8.begin(), p8.end());
-            k->script = std::make_shared<const ai::Script>(scripts.front().second);
+            k->script = scripts.empty() ? std::make_shared<const ai::Script>()
+                                        : std::make_shared<const ai::Script>(scripts.front().second);
             k->set = mset.empty() ? std::make_shared<const kh2::MotionSet>()
                                   : std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
             // (no bones for an object with no model of its own: the Possessor, drawn by its effects alone)
@@ -953,6 +956,42 @@ struct Held final {
     std::uint32_t trail = 0;   // his weapon's swing's trail running (its handle), 0 none
 };
 std::map<unsigned, Held> held; // by the Days player's object
+
+// A Days player a KH2 script turned into a form (1:242, YS::CHANGEFORM::Capture: KH2's player's form 12 -- Luxord's
+// card M_EX950_CARD and die M_EX950_DICE): the form's object made an ally (allies) at his place and drawn in his stead
+// (his Days model hidden), moved by his own pad as KH2's actions move it (capture_tick: Ts::ACTION_CARD and
+// Ts::ACTION_DICE); Days's control of him is locked meanwhile, his pad read first (khdays_kh2_enemies_captured), and
+// he is put where the form is (khdays_kh2_enemies_holding). Its time is a form's: two of the drive gauge's bars (YS::SORA's constructor for form 12:
+// SHEET::start_drive(2, -1), sstm + 0x68 a bar), less a tick each tick (PLAYER::_OVR_pre_exec; half outside a battle,
+// sstm + 0x6c, which a KH2 enemy's field never is)
+// and his landed blows' AddDrive x sstm + 0x74 (PLAYER::_OVR_attack_callback); he turns back once it is out and he
+// stands on the ground (SORA::_OVR_exec: Revert decidable -- not in the air: a die that keeps jumping stays one), or
+// when a script turns him back (1:243)
+struct Capture final {
+    unsigned anchor = 0; // the Days enemy whose script turned him (its room's collision)
+    unsigned form = 0;   // the form's ally (allies)
+    unsigned actor = 0;  // his Days actor (khdays_kh2_enemies_holding's), 0 not seen yet
+    int entry = 0;
+    int action = 0; // 0x2b the die's, 0x2c its jump, 0x2e the card's; 0 none given yet
+    Vec3 inertia{}; // the card's velocity (YS::OBJ + 0x20, KH2's cm a tick)
+    float time = 0.0F; // the form's left (SHEET + 0x1b4, ticks)
+    // this frame's pad (his actor's, as Days's control reads it): the way held (KH2's yaw), none when not; presses
+    std::optional<float> heading;
+    bool jump = false, command = false;
+    bool hidden = false;
+    std::map<unsigned, std::size_t> struck; // the enemies his form's attack ranges struck (their count told)
+};
+std::map<unsigned, Capture> captures; // by the Days player's object
+// the actions' numbers as the scripts last gave them (6:28, 6:30), else KH2's own (the PS3 build's: those in its
+// .bss are 0 till a script gives them): the die's -- its move on the ground's share, its turn (radians a tick), its
+// jump's height, its party jump's -- and the card's -- its walk and run speeds, its turn, its inertia's kept share
+// moving and its loss still, its height over the floor and its climb toward it a tick
+std::vector<float> dice_spec = {0.0F, 0.0F, 50.0F, 5.0F};
+std::vector<float> card_spec = {4.0F, 4.0F, 0.0F, 0.95F, 0.01F, 100.0F, 3.0F};
+constexpr int kCaptureForm = 12;              // YS::PLAYER + 0xb50's form 12: a capture
+constexpr float kDriveBarTime = 600.0F;       // sstm + 0x68: a drive bar's time (ticks)
+constexpr float kLandedBlowDrive = 15.0F;     // sstm + 0x74
+constexpr float kFormRunSpeed = 8.0F;         // prty 55 and 56 (the die's and the card's entries' + 0x4e): RunSpeed
 
 // a KH2 enemy or room object by its handle (its Days actor; kAllyIds and on for those not enemies); null gone
 Enemy *enemy_or_ally(unsigned days)
@@ -2153,6 +2192,14 @@ public:
     void carry(Actor &carried, Object &by, int bone, int flags) override;
     void uncarry(Actor &carried) override;
     void event(Actor &a, const std::string &name, Object *target) override;
+    void capture_form(Actor &by, int entry) override;
+    void capture_end(Actor &by) override;
+    int player_form(Actor &by) override;
+    void form_action(Actor &by, int action) override;
+    void form_spec(int action, const std::vector<float> &numbers) override
+    {
+        (action == 0x2b ? dice_spec : card_spec) = numbers;
+    }
 };
 
 Field &the_field()
@@ -2961,6 +3008,7 @@ const kh2::MotionSkeleton *player_skeleton()
 struct AttackParam final {
     int power = 0, team = 0, reaction = 0;
     int hitback = 0x7fff; // + 0xc, a short: how far its hit throws (KH2's cm), 0x7fff the battle constant's
+    int add_drive = 0;    // + 0x29 (the PS3 build's ATTACKPARAM::AddDrive): what a landed one takes off a form's time
 };
 const AttackParam &attack_param(int atkp)
 {
@@ -2981,7 +3029,8 @@ const AttackParam &attack_param(int atkp)
                         std::memcpy(&value, battle.data() + e.offset + 8 + 48 * i + 6, 2);
                         std::memcpy(&back, battle.data() + e.offset + 8 + 48 * i + 0xc, 2);
                         power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8],
-                                                          battle[e.offset + 8 + 48 * i + 10], back});
+                                                          battle[e.offset + 8 + 48 * i + 10], back,
+                                                          battle[e.offset + 8 + 48 * i + 0x29]});
                     }
                 }
         } catch (const std::exception &x) {
@@ -5389,6 +5438,197 @@ void ghosts_close()
     }
 }
 
+// ------------------------------------------------------------------------------------------- a player turned (Capture)
+
+// The capture whose form is the ally `form`, null none
+Capture *capture_of_form(unsigned form)
+{
+    for (auto &[object, c] : captures)
+        if (c.form == form)
+            return &c;
+    return nullptr;
+}
+
+// A turned player given back (CHANGEFORM::CaptureEnd, a script's 1:243, or his form's time out): his form's ally goes
+// (released: allies_close lets it go), his Days model is drawn again where the form stood
+void end_capture(unsigned object, const char *why)
+{
+    const auto c = captures.find(object);
+    if (c == captures.end())
+        return;
+    if (const auto f = allies.find(c->second.form); f != allies.end())
+        f->second->released = true;
+    if (c->second.actor != 0 && c->second.hidden)
+        khdays_kh2_shell_player_hidden(c->second.actor, 0);
+    if (tracing())
+        khdays_log("kh2 enemies: player %08x turned back (%s)", object, why);
+    captures.erase(c);
+}
+
+void Field::capture_form(Actor &by, int entry)
+{
+    Object *p = player(by);
+    const auto maker = by_actor.find(&by);
+    const unsigned object = p != nullptr ? days_object(*p) : 0u;
+    if (object == 0 || maker == by_actor.end())
+        return;
+    end_capture(object, "turned into another form"); // (a CHANGEFORM takes the form there was)
+    const std::string name = entry_name(std::uint32_t(entry));
+    KindFiles *k = name.empty() ? nullptr : files_of(name, true);
+    if (k == nullptr) {
+        khdays_log("kh2 enemies: the player's form %s (object entry %#x) is not in the mod: he stays himself",
+                   name.empty() ? "?" : name.c_str(), unsigned(entry));
+        return;
+    }
+    const Enemy &m = *maker->second;
+    Capture c;
+    c.anchor = m.anchor != 0 ? m.anchor : m.days;
+    c.entry = entry;
+    c.time = 2.0F * kDriveBarTime;
+    Enemy *f = start_ally(*k, p->place(), p->yaw(), c.anchor);
+    c.form = f->days;
+    f->actor->play(0, 0.0F, 0.0F); // its idle (motion 0, as KH2's player's)
+    captures[object] = c;
+    if (tracing())
+        khdays_log("kh2 enemies: player %08x turned into %s (%08x) by %08x's script", object, name.c_str(), c.form,
+                   m.days);
+}
+
+void Field::capture_end(Actor &by)
+{
+    if (Object *p = player(by))
+        end_capture(days_object(*p), "a script turned him back");
+}
+
+int Field::player_form(Actor &by)
+{
+    Object *p = player(by);
+    return p != nullptr && captures.count(days_object(*p)) != 0 ? kCaptureForm : 0;
+}
+
+void Field::form_action(Actor &by, int action)
+{
+    Object *p = player(by);
+    const auto c = p != nullptr ? captures.find(days_object(*p)) : captures.end();
+    if (c == captures.end())
+        return;
+    c->second.action = action;
+    c->second.inertia = {}; // (Ts::ACTION_CARD::start: its inertia made 0)
+    if (const auto f = allies.find(c->second.form); f != allies.end()) // the card floats (MainteHeightFromFloor)
+        f->second->actor->set_bits(field::kStatus, kNoGravity, action == 0x2e);
+}
+
+// A turned player's form moved on a tick (KH2's actions as the PS3 build has them): his pad's way, his jump and his
+// command. The card (Ts::ACTION_CARD): turned toward the way held by its turn a tick, its velocity eased toward the
+// way at its run speed by its kept share (YS::OBJ::calc_inertia: lerp; none held, times 1 less its loss), swept
+// against the room's walls, kept its height over the floor at its climb a tick (Ts::ACTION_LIB::MainteHeightFromFloor);
+// its command its spin (motion 201, whose range 10 strikes with atkp 1310). The die (Ts::ACTION_DICE, an idle): turned
+// toward the way, moved along it only by its share (0 for Luxord's: it moves by jumping alone); its jump
+// (Ts::ACTION_DICE::jump -> ACTION_DICEJUMP, KH2's jump at its height) along the way at the form's run speed, its
+// command the same jump that far again times its party jump's number (ACTION_DICE::party_jump: Dice Attack); its jump
+// and fall motions (3, 4) strike with atkp 1309. KH2's prepare_jump arc is not read: a plain throw to the height, its
+// way kept in the air. Its time down a tick; out on the ground, he turns back
+void capture_tick(Capture &c, Enemy &e, Vec3 &place)
+{
+    Actor &a = *e.actor;
+    const bool aloft = a.jump.on || e.aloft;
+    c.time -= 1.0F;
+    const auto turn_to = [&](float most) {
+        if (!c.heading)
+            return;
+        float d = *c.heading - a.yaw();
+        while (d > kPi)
+            d -= 2.0F * kPi;
+        while (d < -kPi)
+            d += 2.0F * kPi;
+        a.set_yaw(a.yaw() + std::clamp(d, -most, most));
+    };
+    const Vec3 way = c.heading ? Vec3{std::sin(*c.heading), 0.0F, std::cos(*c.heading)} : Vec3{};
+    if (c.action == 0x2e) {
+        turn_to(card_spec[2]);
+        const float speed = c.heading ? card_spec[1] : 0.0F;
+        for (int i = 0; i < 3; i += 2)
+            c.inertia[std::size_t(i)] = speed > 0.0F
+                                            ? c.inertia[std::size_t(i)] +
+                                                  (way[std::size_t(i)] * speed - c.inertia[std::size_t(i)]) * card_spec[3]
+                                            : c.inertia[std::size_t(i)] * (1.0F - card_spec[4]);
+        Vec3 step = c.inertia;
+        wall_sweep(c.anchor, place, kWallRadius, step, true);
+        place[0] += step[0];
+        place[2] += step[2];
+        if (e.floor_known) {
+            const float off = (e.floor - place[1]) - card_spec[5]; // over its height (KH2's y points down)
+            if (std::abs(off) > card_spec[6])
+                place[1] += off >= 0.0F ? card_spec[6] : -card_spec[6];
+        }
+        if (c.command && a.motion.id != 201)
+            a.play(201, 2.0F, 0.0F);
+        else if (a.motion.id == 201 && a.motion.ended)
+            a.play(0, 2.0F, 0.0F);
+    } else if (c.action == 0x2b) {
+        if (!aloft) {
+            turn_to(dice_spec[1]);
+            Vec3 step = {way[0] * kFormRunSpeed * dice_spec[0], 0.0F, way[2] * kFormRunSpeed * dice_spec[0]};
+            if (std::hypot(step[0], step[2]) > 0.0F) {
+                wall_sweep(c.anchor, place, kWallRadius, step, true);
+                place[0] += step[0];
+                place[2] += step[2];
+            }
+            if (c.jump || c.command) {
+                const float far = kFormRunSpeed * (c.command ? dice_spec[3] : 1.0F);
+                if (tracing())
+                    khdays_log("kh2 enemies: the die %08x jumps (%s), %.0f cm a tick along", e.days,
+                               c.command ? "its command: party jump" : "the jump button", double(far));
+                a.jump = {};
+                a.jump.on = true;
+                a.jump.up = -std::sqrt(2.0F * kKh2Pull * dice_spec[2]);
+                a.jump.along = {way[0] * far, 0.0F, way[2] * far};
+                a.set_bits(field::kFlags, bit::kInAir, true);
+                a.play(3, 2.0F, 0.0F);
+                a.motion.after = 4;
+                a.motion.landing = 5;
+            } else if (a.motion.id != 0 && a.motion.ended)
+                a.play(0, 2.0F, 0.0F);
+        } else if (a.jump.on) { // its way in the air swept against the walls: stopped at one
+            Vec3 along = a.jump.along;
+            if (wall_sweep(c.anchor, place, kWallRadius, along, false))
+                a.jump.along = {};
+        }
+    }
+    c.jump = c.command = false; // (each press taken once)
+}
+
+// A turned player's form's attack ranges this tick (10 and 33, as attack reads an enemy's): his blows on the KH2
+// enemies they reach (strike_enemies) -- the form is KH2's player, so its attacks of team 0, its own (atkp 1309, 1310:
+// power 25, the wiki's x0.25), are his -- and each new blow's AddDrive x sstm + 0x74 off its time
+// (PLAYER::_OVR_attack_callback, his drive kind 2)
+void capture_blows(Capture &c, Enemy &e, const KhdaysKh2Shell &s)
+{
+    const Actor &a = *e.actor;
+    if (a.motion.id != e.attack_motion || a.motion.time < e.attack_time) {
+        e.struck.clear(); // another motion, or this one over again
+        c.struck.clear();
+    }
+    e.attack_motion = a.motion.id;
+    e.attack_time = a.motion.time;
+    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
+    if (attr == nullptr || e.pose.empty())
+        return;
+    for (std::size_t r = 0; r < attr->ranges.size(); ++r) {
+        const auto &range = attr->ranges[r];
+        if ((range.id != 10 && range.id != 33) || range.params.size() < 2 || a.motion.time < float(range.start) ||
+            a.motion.time >= float(range.end))
+            continue;
+        const int atkp = std::int16_t(range.params[0]);
+        strike_enemies(e, s, r, std::int16_t(range.params[1]), atkp);
+        const std::size_t hit = e.struck[r].size();
+        std::size_t &told = c.struck[unsigned(r)];
+        if (hit > told)
+            c.time -= float(hit - told) * float(attack_param(atkp).add_drive) * kLandedBlowDrive;
+        told = hit;
+    }
+}
+
 // The allies moved on (KH2's 60 ticks a second, as the frames went) and drawn, in their battle's Days enemy's
 // projection, as the 3D list closes; those whose battle is over (its Days enemy gone and its end played) go
 void allies_close()
@@ -5446,10 +5686,15 @@ void allies_close()
             e.floor_known = true;
         }
         put_on_carrier(e, place);
+        Capture *turned = capture_of_form(e.days);
         for (unsigned t = 0; t < run; ++t) {
+            if (turned != nullptr)
+                capture_tick(*turned, e, place); // a player's form: his pad moves it (KH2's action)
             one_tick(e, s, place);
             put_on_carrier(e, place); // on what carries it (1:18)
             pose(e);
+            if (turned != nullptr)
+                capture_blows(*turned, e, s); // its attack ranges' blows, his
         }
         to_days(place, e.place);
         e.given = e.actor->place();
@@ -6114,12 +6359,62 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
             khdays_log("kh2 enemies: player %08x's HP %d", object, hp);
         seen[object] = hp;
     }
+    if (const auto c = captures.find(object); c != captures.end()) {
+        // turned into a form (Capture): put where the form stands, his model hidden; back when its time is out and
+        // it stands on the ground (Revert decided), or when the form is gone with its battle
+        Capture &cap = c->second;
+        cap.actor = unsigned(KHDAYS_REF(actor));
+        const auto f = allies.find(cap.form);
+        if (f == allies.end() || f->second->released) {
+            end_capture(object, "its form gone with its battle");
+            return 0;
+        }
+        const Enemy &form = *f->second;
+        if (cap.time <= 0.0F && !(form.actor->jump.on || form.aloft)) {
+            end_capture(object, "its time out");
+            return 0;
+        }
+        if (!cap.hidden) {
+            khdays_kh2_shell_player_hidden(cap.actor, 1);
+            cap.hidden = true;
+        }
+        khdays_kh2_shell_put_player(cap.actor, form.place, form.actor->yaw());
+        if (tracing() && khdays_link_frame() % 30u == 0u)
+            khdays_log("kh2 enemies: player %08x as %s (action %#x): its time %.0f, way %s%.2f, at %.2f %.2f %.2f%s",
+                       object, form.kind->name.c_str(), unsigned(cap.action), double(cap.time),
+                       cap.heading ? "" : "none ", double(cap.heading.value_or(0.0F)), double(form.place[0]),
+                       double(form.place[1]), double(form.place[2]),
+                       form.actor->jump.on ? ", in a jump" : "");
+        return 0; // (Days's control goes on, locked: khdays_kh2_enemies_captured)
+    }
     const auto h = held.find(object);
     if (h == held.end())
         return 0;
     float at[3];
     to_days(h->second.place, at);
     khdays_kh2_shell_put_player(unsigned(KHDAYS_REF(actor)), at, h->second.yaw);
+    return 1;
+}
+
+// Ov022_TranslateCommandToAction (prepare.py), before its lock: whether this player is turned into a form (Capture),
+// locked then as Days's own lock locks a player -- no Days command, no Days way; his pad this frame first taken for his
+// form (its buttons pressed, + 0x18: 1 the command, 0x800 the jump; the way his D-pad holds, from the camera's turn)
+extern "C" int khdays_kh2_enemies_captured(void *actor)
+{
+    const unsigned at = unsigned(KHDAYS_REF(actor));
+    const unsigned object = khdays_kh2_shell_player_object(at, nullptr, nullptr);
+    const auto c = object != 0 ? captures.find(object) : captures.end();
+    if (c == captures.end())
+        return 0;
+    unsigned pressed = 0;
+    int heading = -1;
+    if (khdays_kh2_shell_player_pad(at, &pressed, &heading)) {
+        // Days's heading a moves him along (-sin a, -cos a): KH2's yaw (sin y, cos y) of the same way is a + half a turn
+        c->second.heading = heading >= 0 ? std::optional<float>(float(heading) / 65536.0F * 2.0F * kPi + kPi)
+                                         : std::nullopt;
+        c->second.jump |= (pressed & 0x800u) != 0;
+        c->second.command |= (pressed & 1u) != 0;
+    }
     return 1;
 }
 
@@ -6418,6 +6713,24 @@ extern "C" int khdays_kh2_enemies_untouched(void *actor)
 {
     const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
     return e != nullptr && !e->dying && !e->dead_marked && (e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0;
+}
+
+// Ov107_AiState_ApplyHit (prepare.py's join): no hit on a KH2 enemy from a player KH2 lets make none now -- turned into
+// a form (Capture: CHANGEFORM puts a new object in his place, so a swing his Days self began lands not) or his control
+// taken (1:42 of type 0, YS::OBJ::ControlOff: Days's lock stops his next command, not a combo under way). Luxord's die:
+// Roxas's swing begun before landed two frames after he turned, Luxord's revenge cut the routine before its 1:43 and the
+// players' control stayed taken
+extern "C" int khdays_kh2_enemies_disarmed(void *enemy, void *source)
+{
+    const Enemy *e = find(unsigned(KHDAYS_REF(enemy)));
+    if (source == nullptr || e == nullptr || e->blow_landing) // (a KH2 blow of his landing: his form's own)
+        return 0;
+    const unsigned from = unsigned(KHDAYS_REF(source));
+    const bool disarmed = captures.count(from) != 0 || (controls_off.count(0) != 0 && players.count(from) != 0);
+    if (disarmed && tracing())
+        khdays_log("kh2 enemies: %08x's hit from player %08x lands not (%s)", unsigned(KHDAYS_REF(enemy)), from,
+                   captures.count(from) != 0 ? "turned into a form" : "his control taken");
+    return disarmed ? 1 : 0;
 }
 
 extern "C" int khdays_kh2_enemies_no_contact(void *actor)

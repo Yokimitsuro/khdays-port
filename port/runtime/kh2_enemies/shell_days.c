@@ -14,6 +14,7 @@ extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
 extern void NNSi_FndFreeFromDefaultHeap(KhdaysRef block);
 extern int Session_GetLocalPlayerIndex(void);
 extern void Actor_SetVecAndSyncChild(KhdaysRef node, KhdaysRef pos);
+extern int Ov022_HeadingFromHeldDpad(int actor);
 extern KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
 extern KhdaysRef Collision_RunSphereCast(KhdaysRef world, KhdaysRef params);
 extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
@@ -46,6 +47,9 @@ extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
 #define PLAYER_NODE 0x20u   /* its model's node */
 #define PLAYER_POS 0x48cu   /* its place (fx32 x3) */
 #define PLAYER_FIELD 0x4ecu /* its field object, the players' list's */
+#define PLAYER_PRESSED 0x18u /* u16: Days's buttons pressed this frame (1 the command, 0x800 the jump) */
+#define PLAYER_ANGLE_BIAS 0x478u /* s16: the camera's turn its D-pad's heading is made from (nAngleBias) */
+#define PLAYER_DRAW 0x694u /* bit 0: bSuppressDraw -- Ov022_ActorUpdate draws no model */
 #define NODE_ANGLE 0x80u    /* u16: the way its model looks, (sin, 0, cos) of it (Ov022_StepGlideState: the heading
                                + 0x8000, its way (-sin, -cos) of the heading) */
 
@@ -385,4 +389,24 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
 int khdays_kh2_shell_player_hp(unsigned actor)
 {
     return actor != 0 && khdays_game_ram(actor + PLAYER_HP) ? (int)rd16(actor + PLAYER_HP) : -1;
+}
+
+int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
+{
+    if (actor == 0 || !khdays_game_ram(actor + PLAYER_ANGLE_BIAS + 1u) || pressed == NULL || heading == NULL) {
+        return 0;
+    }
+    const int dpad = Ov022_HeadingFromHeldDpad((int)actor);
+    *pressed = rd16(actor + PLAYER_PRESSED);
+    *heading = dpad < 0 ? -1 : (int)(((unsigned)dpad + (unsigned)(short)rd16(actor + PLAYER_ANGLE_BIAS)) & 0xffffu);
+    return 1;
+}
+
+void khdays_kh2_shell_player_hidden(unsigned actor, int hidden)
+{
+    if (actor == 0 || !khdays_game_ram(actor + PLAYER_DRAW)) {
+        return;
+    }
+    unsigned char *draw = (unsigned char *)KHDAYS_W(actor + PLAYER_DRAW);
+    *draw = (unsigned char)(hidden ? (*draw | 1u) : (*draw & ~1u));
 }

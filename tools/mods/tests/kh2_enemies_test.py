@@ -352,6 +352,19 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertEqual(kh2_enemies.made_numbers(mdlx), {956, 7})
         self.assertEqual(kh2_enemies.made_numbers(bar([(3, b"b_nm", script(syscall(1, 6) + [0x0049]))])), set())
 
+    def test_form_numbers(self):
+        # the forms a script turns the player into (1:242's argument: Luxord's card 0x601 and die 0x602), apart from
+        # the objects it makes (1:0)
+        def push_int(n: int) -> list[int]:
+            return [0x0000, n & 0xFFFF, n >> 16]
+
+        main = push_int(0x601) + syscall(1, 242) + push_int(0x602) + syscall(1, 242) + push_int(5) + syscall(1, 0)
+        mdlx = bar([(3, b"b_ex", script(main + [0x0049]))])
+        # (1:242's shape, one argument and nothing back, as KH2's executable gives it: the walk reads past it)
+        with mock.patch.dict(kh2_bdx.SHAPES, {(1, 242): (1, 0), (1, 0): (1, 1)}):
+            self.assertEqual(kh2_enemies.form_numbers(mdlx), {0x601, 0x602})
+            self.assertEqual(kh2_enemies.made_numbers(mdlx), {5})
+
     def test_companions(self):
         # 00objentry.bin: the Hydra (a large enemy, 0xc), the player (0), Phil and Megara (friends, 9), a Soldier (4)
         def entry(number: int, kind: int, model: bytes) -> bytes:

@@ -2936,13 +2936,53 @@ void add_world(ai::Calls &calls)
         self_of(m, a[0])->muted_effects.erase(std::int32_t(a[1].bits));
     });
     // 1:319 whether an object is Sora (trap_sysobj_is_sora, FUN_14042b2a0: + 0x6cb bit 0): Days's players stand in for
-    // KH2's player, so they are; 6:2 the player's form (trap_player_get_form: KH2's player's + 0xde0, 0 his own): his own
-    // in Days's field
+    // KH2's player, so they are; 6:2 the player's form (trap_player_get_form: KH2's player's + 0xde0, 0 his own): 12
+    // while a script turned him into a card or a die (1:242), else his own
     calls.set(1, 319, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         a[0] = ai::Value::of_int(o != nullptr && (is_player(o) || (o->u32(field::kFlags6c8) & (1u << 24)) != 0) ? 1 : 0);
     });
-    calls.set(6, 2, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    calls.set(6, 2, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = running(m);
+        a[0] = ai::Value::of_int(x->world != nullptr ? x->world->player_form(*x) : 0);
+    });
+    // 1:242 KH2's player turned into an object entry's form (YS::trap_player_capture_form -> YS::CHANGEFORM::Capture
+    // on SORA::Get(): a CHANGEFORM of form 12 and that entry; Luxord's card 0x601 and die 0x602, M_EX950_CARD and
+    // M_EX950_DICE) and back (1:243, trap_player_capture_form_end -> CHANGEFORM::CaptureEnd: the form before)
+    calls.set(1, 242, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->capture_form(*x, a[0].i());
+    });
+    calls.set(1, 243, [](ai::Machine &m, std::span<ai::Value>) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->capture_end(*x);
+    });
+    // 6:27 / 6:29 the turned player's action (Ts::trap_player_dice / trap_player_card: YS::OBJ::change_action of
+    // SORA::Get() to 0x2b ACTION_DICE / 0x2e ACTION_CARD); 6:28 / 6:30 their numbers (Ts::trap_dice_set_spec /
+    // trap_card_set_spec: Ts::ACTION_DICE::SetSpec(f1..f4) / Ts::ACTION_CARD::SetSpec(f1..f7), kept for every one after)
+    calls.set(6, 27, [](ai::Machine &m, std::span<ai::Value>) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->form_action(*x, 0x2b);
+    });
+    calls.set(6, 29, [](ai::Machine &m, std::span<ai::Value>) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->form_action(*x, 0x2e);
+    });
+    calls.set(6, 28, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->form_spec(0x2b, {a[0].f(), a[1].f(), a[2].f(), a[3].f()});
+    });
+    calls.set(6, 30, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->form_spec(0x2e, {a[0].f(), a[1].f(), a[2].f(), a[3].f(), a[4].f(), a[5].f(), a[6].f()});
+    });
+    // 4:56 the control left off after the event that runs (trap_event_continue_control_off -> YS::EVENT::
+    // ContinueControlOff): scripts call it only while one runs (1:34), which no KH2 event of the shell's is -- nothing
+    calls.set(4, 56, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:122 its state printed for KH2's debugging (trap_obj_dump, FUN_140430540: empty in the game)
     calls.set(1, 122, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:207 KH2's reaction camera on an object (trap_camera_watch, FUN_140430b80: a target record of the object's actor,

@@ -145,6 +145,10 @@ KINDS = {
     "B_EX370": "Zexion",
     "B_EX380": "Zexion's book",
     "B_EX410": "Zexion's illusion",
+    # his data battle (FINAL MIX's Limit Cut, _LV99); his card and die (M_EX950_CARD, M_EX950_DICE) are the forms his
+    # games turn the player into (1:242)
+    "B_EX150_LV99": "Luxord (Data)",
+    "B_EX210": "Luxord's card",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -170,6 +174,7 @@ VOICES = {
     "B_EX390": "n_roxas",
     "B_EX400": "n_larxene",
     "B_EX370": "n_zexion",
+    "B_EX150_LV99": "n_gambler",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -237,6 +242,15 @@ def made_numbers(bar: bytes) -> set[int]:
     out = set()
     for _, s in kh2_bdx.scripts_in(bar):
         out |= kh2_bdx.argument_values(s, kh2_bdx.walk(s), (1, 0), 1, 0)
+    return out
+
+
+def form_numbers(bar: bytes) -> set[int]:
+    """The object entries' numbers a BAR's scripts turn the player into (1:242, trap_player_capture_form: KH2's
+    YS::CHANGEFORM::Capture, its one argument; Luxord's card 0x601 and die 0x602, M_EX950_CARD and M_EX950_DICE)."""
+    out = set()
+    for _, s in kh2_bdx.scripts_in(bar):
+        out |= kh2_bdx.argument_values(s, kh2_bdx.walk(s), (1, 242), 1, 0)
     return out
 
 
@@ -848,7 +862,7 @@ def make(
         script = kh2 / "original" / "obj" / f"{name}.mdlx"
         if not script.is_file():
             continue
-        for number in sorted(made_numbers(script.read_bytes())):
+        for number in sorted(made_numbers(script.read_bytes()) | form_numbers(script.read_bytes())):
             made = numbered.get(number, ("", -1))[0]
             if made and made not in making:
                 making[made] = f"{made} ({making[name]}'s)"
@@ -862,7 +876,8 @@ def make(
             script = kh2 / "original" / "obj" / f"{name}.mdlx"
             if not script.is_file():
                 continue
-            needs = {numbered[n][0] for n in made_numbers(script.read_bytes()) if n in numbered}
+            needs = {numbered[n][0] for n in made_numbers(script.read_bytes()) | form_numbers(script.read_bytes())
+                     if n in numbered}
             needs |= {c[0] for c in companions(areas, numbered, name, set(KINDS))}
             for other in sorted(needs - set(making)):
                 left_out.append(f"{name} makes or brings {other}, not asked for (--only): its script finds none")

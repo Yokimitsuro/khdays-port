@@ -2634,10 +2634,14 @@ HOOKS["ov022@020a2978"] += [
 ]
 HOOKS["ov022@020a31b4"] = [
     (  # Ov022_TranslateCommandToAction: a KH2 enemy's script took the players' control away (1:42, YS::OBJ::ControlOff
-        # of type 0: Zexion as he dies): locked as Days's own lock locks them -- no buttons, no command, no way
+        # of type 0: Zexion as he dies): locked as Days's own lock locks them -- no buttons, no command, no way. A
+        # player a KH2 script turned into a form (1:242: Luxord's card and die) is locked so too, his pad this frame
+        # read first: his form's (runtime/kh2_enemies, capture_tick)
         "    if (bLocked != 0) {\n        pActor->nButtons = 0;\n",
         "    { extern int khdays_kh2_enemies_control_off(void);\n"
-        "      if (khdays_kh2_enemies_control_off()) {\n          bLocked = 1;\n      } }\n"
+        "      extern int khdays_kh2_enemies_captured(void *actor);\n"
+        "      if (khdays_kh2_enemies_control_off() || khdays_kh2_enemies_captured(pActor)) {\n"
+        "          bLocked = 1;\n      } }\n"
         "    if (bLocked != 0) {\n        pActor->nButtons = 0;\n",
     ),
     (  # Ov022_TranslateCommandToAction: a primary command from the reaction button only talks, examines ...; the
@@ -2745,7 +2749,10 @@ HOOKS["ov107@020c5cfc"] = [
         # 1:70: the Mole Driller under the ground), as an enemy whose + 0x1ac bit 0 is set
         "    if (obj->field_1ac & 1) return 0;\n",
         "    if (obj->field_1ac & 1) return 0;\n"
-        "    { extern int khdays_kh2_enemies_untouched(void *enemy); if (khdays_kh2_enemies_untouched(obj)) return 0; }\n",
+        "    { extern int khdays_kh2_enemies_untouched(void *enemy); if (khdays_kh2_enemies_untouched(obj)) return 0; }\n"
+        # nor from a player KH2 lets make no attack now (turned into a form, or his control taken: 1:242, 1:42)
+        "    { extern int khdays_kh2_enemies_disarmed(void *enemy, void *source);\n"
+        "      if (khdays_kh2_enemies_disarmed(obj, source)) return 0; }\n",
     ),
     (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out (a KH2 enemy's: its kinds, the packet's high
         # flags -- Days's element bits -- go with it)

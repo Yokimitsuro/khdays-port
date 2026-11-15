@@ -848,9 +848,48 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   "Spirit", 732 "Ruse", 768 "Bounty" ...; 714 "Turn" the reaction command) stay on the menu after his illusion lets
   the player go: the deck showed them only while an enemy held the player (Roxas's duel), so free the player saw
   Attack, Magic and Items and A attacked (2026-11-14); now held or free ("A command menu given by a script").
-- **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
-  `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
-  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
+- **Luxord** `B_EX150_LV99` (his data battle; voice bank `n_gambler`, his KH2 mission `EH14_MS103` and its gauges),
+  with his cards `B_EX210` (1:0) and the two forms his games turn the player into: his card `M_EX950_CARD` (object
+  entry 0x601) and his die `M_EX950_DICE` (0x602), carried by the mod tool as what his script turns the player into
+  (`form_numbers`: 1:242's argument). His last seven calls are the player's forms ("A player turned into a form",
+  below): 1:242 and 1:243, 6:27 to 6:30, and 4:56 (`YS::EVENT::ContinueControlOff`, reached only while a KH2 event
+  runs: none of the shell's). He turns the player when the card game is lost (`rc_card_failure`: the card when his
+  gauge's phase is past the first and the script's `pp + 0x6c` is set, else the die) and turns him back before his
+  final attack once he can be hit (0x2f85: 6:2 is 12 and 1:225 is 0).
+- **Not yet**: Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures, `1:281`-`1:316`), Xemnas's final
+  form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
+
+### A player turned into a form
+
+KH2's `YS::CHANGEFORM::Capture` (1:242, the PS3 build's names) turns Sora into an object entry's form -- his form 12 --
+and `CaptureEnd` (1:243) gives his form before back; 6:2 (`Ts::trap_player_get_form`) answers 12 meanwhile. The port
+makes the form's object an ally (no Days enemy stands for it) at the player's place, hides his Days model (+ 0x694 bit
+0, which `Ov022_ActorUpdate` reads before it draws) and puts him where the form stands each frame; his Days control
+is locked as Days's own lock locks a player (`Ov022_TranslateCommandToAction`, prepare.py), his pad read first for the
+form (`khdays_kh2_enemies_captured`: + 0x18 pressed, 1 the command and 0x800 the jump; the D-pad's heading,
+`Ov022_HeadingFromHeldDpad` -- the stick's with analog movement -- plus the camera's + 0x478). On the host, as every
+player's control: a guest's pad turns his own form.
+
+- **The card** (6:29: `change_action(0x2e)`, `Ts::ACTION_CARD`; 6:30 its seven numbers, Luxord's 4, 8, 0.069813, 0.95,
+  0.03, 50, 3): its walk and run speeds and turn a tick (its start; the bit 12 of its damage pattern set -- the wiki's
+  "hits from behind deflected", which Days's hits on a player do not read: not done), its velocity eased toward the
+  way at its run speed by 0.95 a tick (`YS::OBJ::calc_inertia`: a lerp; none held, kept 0.97), swept against the
+  walls, and kept 50 cm over the floor, 3 cm a tick toward it (`Ts::ACTION_LIB::MainteHeightFromFloor`). Its command
+  is its spin, motion 201 (its range 10 strikes with atkp 1310).
+- **The die** (6:27: `change_action(0x2b)`, `Ts::ACTION_DICE`, an idle; 6:28 its four, Luxord's 0, 0.087266, 40,
+  3.5): it turns toward the way and moves on the ground only by its first number's share (0: it moves by jumping
+  alone, the wiki's "unable to move normally"); its jump (`ACTION_DICEJUMP`, KH2's jump at 40 cm) goes along the way
+  at the form's run speed (prty 55's 8), its command the same jump 3.5 times as far (`party_jump`: Dice Attack).
+  Its jump and fall motions (3, 4) strike with atkp 1309. KH2's `prepare_jump` arc is not read: a plain throw to the
+  height, its way kept in the air.
+- **Its time** is a form's: `YS::SORA`'s constructor for form 12 starts two of the drive gauge's bars
+  (`SHEET::start_drive(2, -1)`, 600 ticks each: 03system.bin's sstm + 0x68), down a tick each tick
+  (`PLAYER::_OVR_pre_exec`) and by each landed blow's AddDrive (atkp + 0x29, 10 for both) times sstm + 0x74 (15)
+  (`PLAYER::_OVR_attack_callback`). `SORA::_OVR_exec` turns him back once it is out and Revert (command 5) can be
+  decided -- not in the air: the wiki's die that keeps jumping stays one.
+- **Their blows** are the player's: the forms' attacks are of team 0, their own -- KH2's player -- so the port strikes
+  the KH2 enemies with them (`strike_enemies`, the player's blow: power 25 of 100, the wiki's x0.25), never the
+  players.
 
 ### Bosses bound to their rooms
 

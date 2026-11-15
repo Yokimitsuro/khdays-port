@@ -556,6 +556,19 @@ public:
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:112 on a player: a script's routine as the player's thread (the one before ended)
     virtual void player_thread(Object & /*player*/, ai::Machine & /*machine*/, std::uint32_t /*thread*/) {}
+    // 1:242: KH2's player turned into the form of the object entry `entry` (YS::trap_player_capture_form ->
+    // YS::CHANGEFORM::Capture: his form 12; Luxord's card 0x601 and die 0x602), the player `by`'s script plays against;
+    // 1:243 turned back (CHANGEFORM::CaptureEnd); 6:2 his form (Ts::trap_player_get_form: 12 while turned, else 0)
+    virtual void capture_form(Actor & /*by*/, int /*entry*/) {}
+    virtual void capture_end(Actor & /*by*/) {}
+    virtual int player_form(Actor & /*by*/)
+    {
+        return 0;
+    }
+    // 6:27 and 6:29: the turned player's action (YS::OBJ::change_action: 0x2b ACTION_DICE, 0x2e ACTION_CARD); 6:28
+    // and 6:30 their numbers (Ts::ACTION_DICE::SetSpec's four, Ts::ACTION_CARD::SetSpec's seven), as the script gives them
+    virtual void form_action(Actor & /*by*/, int /*action*/) {}
+    virtual void form_spec(int /*action*/, const std::vector<float> & /*numbers*/) {}
     // 1:18: `carried` put on `by` (FUN_1403d9fe0: + 0x6a0 its carrier, + 0x6a4 the bone -- 0x4000 its place, not a
     // bone -- + 0x6a6 flags, its own place on it made 0, class 3); 1:102 taken off again (FUN_1403da250)
     virtual void carry(Actor & /*carried*/, Object & /*by*/, int /*bone*/, int /*flags*/) {}

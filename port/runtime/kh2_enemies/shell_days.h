@@ -89,6 +89,15 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
 /* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */
 int khdays_kh2_shell_player_hp(unsigned actor);
 
+/* A player's actor's pad this frame, as Ov022_TranslateCommandToAction reads it before it locks him: the buttons pressed
+ * (+0x18: 1 the command, 0x800 the jump) in `pressed`, the way his D-pad holds in `heading` -- the game's own heading
+ * (Ov022_HeadingFromHeldDpad, the stick's angle with analog movement) turned by the camera's (+0x478 nAngleBias), Days's
+ * 0x10000 a turn, along (-sin, -cos) of it; -1 none held. Whether it is in the game's memory. */
+int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading);
+
+/* A player's actor's model left undrawn or drawn again (+0x694 bit 0, bSuppressDraw: Ov022_ActorUpdate draws it not). */
+void khdays_kh2_shell_player_hidden(unsigned actor, int hidden);
+
 #ifdef __cplusplus
 }
 #endif

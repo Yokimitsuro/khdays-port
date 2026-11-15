@@ -5989,6 +5989,15 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   the book will stand this VBlank. During the Lexicon the reaction command "Turn" (714) is offered every frame, so X
   never reaches the deck's cursor; Down in that walk moved Roxas, not the cursor. Between his books the deck is
   Days's own: A on its Items row opened the list, as Days's A does.
+- **A player's pad and model for a form of KH2's** (2026-11-15, read from the decompilation for Luxord's card and
+  die): the host runs every player's `Ov022_ActorUpdate` (`Session_GetLocalPlayerIndex() == 0`), and at the start of
+  `Ov022_TranslateCommandToAction` the actor's + 0x18 holds this frame's pressed buttons (1 the command -- `nButtons &
+  1` triggers it --, 0x800 the jump, as `Ov022_StepJumpState` and the partner's AI read it) and + 0x1a the held ones
+  (0x40 up, 0x80 down, 0x20 left, 0x10 right, 0x800 the jump), a guest's too; `Ov022_HeadingFromHeldDpad` makes the
+  heading from + 0x1a (Up 0, Left 0x3fff, Down 0x8000, Right 0xbfff), `Ov022_StepWalkState` adds + 0x478
+  (`nAngleBias`, the camera's turn) and moves along (-sin, -cos) of the sum. Its lock (`bLocked`) zeroes both and the
+  command, so a player locked there makes no way and no command. + 0x694 bit 0 (`bSuppressDraw`) keeps
+  `Ov022_ActorUpdate` from drawing the model (it returns before `Scene_DrawNode`).
 
 ## 38. Days's commands on KH2's reaction command bar
 
