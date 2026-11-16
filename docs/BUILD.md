@@ -344,7 +344,11 @@ never belong in the repository.
   and a one-screen picture of three made-up shapes (a corner, a strip turned
   over and repeated past its rectangle, a piece shrunk) must be the same with
   only the parts they read composed as with the screens whole, each time after
-  the screens were composed whole in other colours.
+  the screens were composed whole in other colours; and at 4x both screens,
+  a one-screen picture of the whole upper screen over the card's 3D, and that
+  picture with engine A showing its 3D's layer alone, must be the same
+  composed once a DS dot as at each pixel
+  (`docs/RENDERING.md`, "The 2D once a DS dot").
 - `save_test.c`: the save written so a crash cannot corrupt it: a child process
   writes two 64 KB images in turn as fast as it can and is stopped at a random
   moment, 100 times; the file must be one of the two, whole.

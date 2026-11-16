@@ -592,6 +592,8 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   read back each frame and compared -- at 1x with the 2D engines' (the
   software's 3D on, under both), at N x with the old composition -- every
   300 frames how many pixels differed.
+- `KHDAYS_2D_ONCE=0` -- every output pixel of the 2D composed, not each DS dot
+  once (`docs/RENDERING.md`, "The 2D once a DS dot").
 - `KHDAYS_PARTS_2D=0` -- on one screen, both screens composed whole, not only
   the parts the picture reads (`docs/RENDERING.md`, "One screen: the parts
   read").

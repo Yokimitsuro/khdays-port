@@ -399,6 +399,34 @@ width (`capture.hlsl`: the blend, `gfx_render.c` `take_capture`), and shows its
 copy of the bank instead of the DS's 256x192 one (RUNTIME_MAP, "The screen
 blends at the port's resolution").
 
+**The 2D once a DS dot.** `compose2d.hlsl` composed every output pixel from
+scratch, so a screen at N x cost N x N times the DS's. Most DS dots are the
+same at every place inside them: only a replacement's or an element's texel
+(finer than a dot) and the card's 3D (read at the output pixel's own place) can
+differ within one. So from 3x up a screen is composed in two passes of the same
+shader (`part`'s pass bits):
+
+- `PASS_DOTS`, a thread a DS dot: the dot composed at its first place, and a
+  verdict left in a 512 x 192 texture with its colour. `PRE_SAME`: nothing asked
+  for a place inside the dot (`compose.h` says `KD_PLACE_USED` where a
+  replacement's texel is read or an element reaches the dot) nor for the 3D.
+  `PRE_NOTHING`: the one-screen picture's source (`kd_split`) with only the 3D
+  at the dot (`KD_STACK_SEEN`: no other layer, no sprite, no window sprite) and
+  a backdrop that is not a blend's second target -- the 3D or the backdrop is
+  then on top at every place, and the source shows neither. `PRE_EACH`: any
+  other.
+- `PASS_READ`, a thread an output pixel: a `PRE_SAME` dot's pixels take its
+  colour, a `PRE_NOTHING` dot's are 0, and only a `PRE_EACH` dot's are composed,
+  as before.
+
+The pixels are the same as composing each one. It is used where most dots can
+be told so: a screen that reads no 3D (engine B's; engine A's with no 3D drawn)
+and the one-screen picture's sources. A screen with the card's 3D in it (engine
+A on two screens) reads the 3D at every dot and is composed as before, as is
+one wider than the DS's 256 columns, and any screen on a card that cannot read
+and write the verdicts' texture through one binding. `KHDAYS_2D_ONCE=0`
+composes every pixel.
+
 **One screen: the parts read.** The one-screen picture reads the two screens
 only through its shapes, often a few corners of them (the HUD's pieces, the
 lower screen's map), so only those parts are composed (`gfx_render.c`
@@ -406,7 +434,7 @@ lower screen's map), so only those parts are composed (`gfx_render.c`
 source rectangle can fall on -- wider by what a repeated or mirrored shape
 reads past it, and a dot each side for the sampling -- and each row's runs of
 marked tiles, joined downward, are dispatched one after another in the
-screen's pass from an origin in the composition's parameters. The parts are
+screen's passes from an origin in the composition's parameters. The parts are
 whole dispatch groups and never overlap; the rest of the screen's texture
 holds nothing and is not read. A screen no shape reads is not composed at all.
 Composed whole as before: engine A while it is shown whole or kept as the

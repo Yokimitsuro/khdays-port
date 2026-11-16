@@ -299,6 +299,76 @@ static int parts_as_whole(KhdaysFramePackage *p, const char *name)
     return same;
 }
 
+/* What `engine` (0, 1, or 2 the one-screen picture) holds after `p` is drawn at 4x, two screens or (`one`) as
+ * the one-screen picture, with its 3D from the card when `raster`; NULL when it could not be drawn. */
+static uint32_t *drawn_at_4x(const KhdaysFramePackage *p, const KhdaysOneScreenDraw *one, int raster, int engine,
+                             int *w, int *h)
+{
+    const int drawn =
+        one != NULL ? khdays_gfx_render_draw_one(p, 4, 4, raster, one) : khdays_gfx_render_draw(p, 4, 4, raster);
+    return drawn ? khdays_gfx_render_read(engine, w, h) : NULL;
+}
+
+/* The screens composed once a DS dot (compose2d.hlsl PASS_DOTS) hold the pixels composing every output pixel
+ * gives: both screens at 4x; the one-screen picture of the whole upper screen over the card's 3D with a corner
+ * of the lower one; and that picture with engine A showing its first layer alone, unmoved and without
+ * elements, where its source's dots are left to the 3D (PRE_NOTHING). 1 when all are the same. */
+static int once_as_each(KhdaysFramePackage *p, const char *name, int with3d)
+{
+    static const float all[4] = {0, 0, 256, 192}, corner_src[4] = {160, 120, 96, 72}, corner_dst[4] = {8, 8, 104, 80};
+    static const char *const what[4] = {"engine A's screen", "engine B's screen", "the one-screen picture",
+                                        "the one-screen picture of the 3D alone"};
+    const uint32_t flags = p->desc2d[0][KD_FLAGS], blend = p->desc2d[0][KD_BLEND], hofs = p->desc2d[0][KD_HOFS3D];
+    const uint32_t elements = p->elements[0].count;
+    uint32_t shapes[2 * KO_WORDS], no_key = 0;
+    KhdaysOneScreenDraw one;
+    SDL_GPUTexture *color = NULL, *attr = NULL;
+    int same = 1, columns = KHDAYS_FRAME_W;
+    put_shape(shapes, KOF_LOWER, corner_src, corner_dst, 1.0f);
+    put_shape(shapes + KO_WORDS, 0u, all, all, 1.0f);
+    shapes[KO_WORDS + KO_FLAGS] &= ~KOF_FORCE; /* (the upper screen's texels as its source shows them) */
+    SDL_zero(one);
+    one.shapes = shapes;
+    one.shape_count = 2;
+    one.keys = &no_key;
+    one.frame = (int)KOS_UPPER;
+    if (with3d && !(khdays_raster3d_rasterize(p, 4, 0) && khdays_raster3d_targets(&color, &attr, &columns))) {
+        fprintf(stderr, "%s: its 3D could not be drawn on the card for the one-screen picture: %s\n", name,
+                SDL_GetError());
+        return 0;
+    }
+    one.columns = columns;
+    for (int k = 0; k < (with3d ? 4 : 3) && same; ++k) {
+        uint32_t *pictures[2] = {NULL, NULL};
+        int w[2] = {0, 0}, h[2] = {0, 0};
+        if (k == 3) {
+            /* no layer but the first (the 3D's), no sprite, no blend */
+            p->desc2d[0][KD_FLAGS] = flags & ~((14u << KDF_BG_ON_SHIFT) | KDF_OBJ_ON);
+            p->desc2d[0][KD_BLEND] = 0u;
+            p->desc2d[0][KD_HOFS3D] = 0u;
+            p->elements[0].count = 0u;
+        }
+        for (int once = 0; once < 2; ++once) {
+            khdays_gfx_render_set_once(once);
+            pictures[once] = drawn_at_4x(p, k >= 2 ? &one : NULL, k >= 2 && with3d, k >= 2 ? 2 : k, &w[once], &h[once]);
+        }
+        khdays_gfx_render_set_once(1);
+        p->desc2d[0][KD_FLAGS] = flags;
+        p->desc2d[0][KD_BLEND] = blend;
+        p->desc2d[0][KD_HOFS3D] = hofs;
+        p->elements[0].count = elements;
+        same = pictures[0] != NULL && pictures[1] != NULL && w[0] == w[1] && h[0] == h[1] &&
+               memcmp(pictures[0], pictures[1], sizeof(uint32_t) * (size_t)w[0] * (size_t)h[0]) == 0;
+        if (!same) {
+            fprintf(stderr, "%s: %s composed once a DS dot is not the one composed at each pixel (%s)\n", name, what[k],
+                    pictures[0] == NULL || pictures[1] == NULL ? SDL_GetError() : "its pixels differ");
+        }
+        SDL_free(pictures[0]);
+        SDL_free(pictures[1]);
+    }
+    return same;
+}
+
 int main(int argc, char **argv)
 {
     char dir[1024];
@@ -573,11 +643,13 @@ int main(int argc, char **argv)
             ++kept_checked;
             failures += !kept_as_composed(recorded, names[f]);
             failures += !parts_as_whole(recorded, names[f]);
+            failures += !once_as_each(recorded, names[f], (p->wants & KHDAYS_WANT_3D) != 0 && p->info[0].is3d);
         }
         SDL_free(data);
     }
     if (gpu2d) {
-        printf("%d packages' screens kept and composed anew, and their one-screen picture in parts and whole\n",
+        printf("%d packages' screens kept and composed anew, their one-screen picture in parts and whole, and "
+               "both once a DS dot and at each pixel\n",
                kept_checked);
     }
     if (timed > 0) {

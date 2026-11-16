@@ -304,6 +304,7 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
     notice = tell;
     profile = SDL_getenv("KHDAYS_PROFILE") != NULL;
     khdays_gfx_render_set_keep(SDL_getenv("KHDAYS_KEEP_2D") == NULL || SDL_atoi(SDL_getenv("KHDAYS_KEEP_2D")) != 0);
+    khdays_gfx_render_set_once(SDL_getenv("KHDAYS_2D_ONCE") == NULL || SDL_atoi(SDL_getenv("KHDAYS_2D_ONCE")) != 0);
     /* the screens whole on one screen too: asked for, or read back whole by the check (port2d_compare) */
     khdays_gfx_render_set_parts(port2d_wanted() != 2 && (SDL_getenv("KHDAYS_PARTS_2D") == NULL ||
                                                          SDL_atoi(SDL_getenv("KHDAYS_PARTS_2D")) != 0));
