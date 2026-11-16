@@ -15,6 +15,7 @@ static struct {
     uint64_t hash;
 } drawn[DRAWN_SLOTS];
 static uint32_t drawn_count;
+static uint32_t draws; /* khdays_sequence_gpu_draws */
 
 static uint64_t hash_of(const void *data, uint32_t bytes)
 {
@@ -45,6 +46,11 @@ void khdays_sequence_gpu_close(void)
 void khdays_sequence_gpu_forget(void)
 {
     drawn_count = 0;
+}
+
+uint32_t khdays_sequence_gpu_draws(void)
+{
+    return draws;
 }
 
 int khdays_sequence_gpu_open(SDL_GPUDevice *d)
@@ -121,6 +127,7 @@ int khdays_sequence_gpu_draw(SDL_GPUDevice *d, SDL_GPUCommandBuffer *cmd, const 
     SDL_GPUStorageBufferReadWriteBinding target;
     SDL_zero(target);
     target.buffer = khdays_gpu_hd_buffer();
+    ++draws;
     SDL_GPUComputePass *pass = SDL_BeginGPUComputePass(cmd, NULL, 0, &target, 1);
     SDL_BindGPUComputePipeline(pass, pipeline);
     SDL_BindGPUComputeStorageBuffers(pass, 0, &commands, 1);

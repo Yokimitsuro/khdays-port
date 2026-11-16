@@ -4,10 +4,16 @@
  * each package drawn N times more at KHDAYS_RENDER_SCALE (8) x. Recordings hold the
  * player's data, so they live in saves/frames; without any the test is skipped (exit 77). What each
  * part checks and its limits: docs/BUILD.md, "The port's tests". */
+#include "../host/render/gfx_render.h"
 #include "../host/render/gpu_raster3d.h"
 #include "../gfx/g3d_interp.h"
 #include "../runtime/display/frame_package.h"
 #include "../runtime/mods/textures.h"
+/* the window's KH2 pause: none in a recording (gfx_render.c asks) */
+int khdays_game_pause_kh2_showing(void)
+{
+    return 0;
+}
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -162,10 +168,78 @@ static int finished_same(const KhdaysG3dList *l)
            (l->nverts == 0 || memcmp(rebuilt.verts, l->verts, sizeof(KhdaysG3dVertex) * (size_t)l->nverts) == 0);
 }
 
+/* A screen that reads no 3D is kept while nothing it is made of changes (gfx_render.c kept_screen): the same
+ * package drawn again keeps both, with the pixels composing them anew gives; a colour changed composes it again. */
+static int kept_as_composed(KhdaysFramePackage *p, const char *name)
+{
+    uint32_t *kept_pixels[2] = {NULL, NULL}, *anew[2] = {NULL, NULL};
+    int w[2] = {0, 0}, h[2] = {0, 0}, w2 = 0, h2 = 0, same = 1;
+    unsigned before[2], after[2];
+    khdays_gfx_render_set_keep(1);
+    if (!khdays_gfx_render_draw(p, 2, 2, 0)) {
+        fprintf(stderr, "%s: the port's 2D could not be drawn: %s\n", name, SDL_GetError());
+        return 0;
+    }
+    for (int e = 0; e < 2; ++e) {
+        before[e] = khdays_gfx_render_kept(e);
+    }
+    same = khdays_gfx_render_draw(p, 2, 2, 0);
+    for (int e = 0; e < 2 && same; ++e) {
+        /* engine A reads the package's 3D when it has one, and is then composed each time */
+        const int reads3d = e == 0 && (p->wants & KHDAYS_WANT_3D) != 0;
+        after[e] = khdays_gfx_render_kept(e);
+        kept_pixels[e] = khdays_gfx_render_read(e, &w[e], &h[e]);
+        if (after[e] - before[e] != (reads3d ? 0u : 1u)) {
+            fprintf(stderr, "%s: engine %c's screen drawn again was kept %u times\n", name, e == 0 ? 'A' : 'B',
+                    after[e] - before[e]);
+            same = 0;
+        }
+    }
+    khdays_gfx_render_set_keep(0);
+    same = same && khdays_gfx_render_draw(p, 2, 2, 0);
+    for (int e = 0; e < 2 && same; ++e) {
+        anew[e] = khdays_gfx_render_read(e, &w2, &h2);
+        if (kept_pixels[e] == NULL || anew[e] == NULL || w2 != w[e] || h2 != h[e] ||
+            memcmp(kept_pixels[e], anew[e], sizeof(uint32_t) * (size_t)w2 * (size_t)h2) != 0) {
+            fprintf(stderr, "%s: engine %c's kept screen is not the one composed anew\n", name, e == 0 ? 'A' : 'B');
+            same = 0;
+        }
+    }
+    khdays_gfx_render_set_keep(1);
+    same = same && khdays_gfx_render_draw(p, 2, 2, 0);
+    if (same) {
+        /* engine B's backdrop another colour: composed again, to the pixels composing it anew gives */
+        const uint32_t was = p->desc2d[1][KD_BACKDROP];
+        uint32_t *with_keep, *without = NULL;
+        before[1] = khdays_gfx_render_kept(1);
+        p->desc2d[1][KD_BACKDROP] = was ^ 0x7fffu;
+        same = khdays_gfx_render_draw(p, 2, 2, 0) && khdays_gfx_render_kept(1) == before[1];
+        with_keep = khdays_gfx_render_read(1, &w[1], &h[1]);
+        khdays_gfx_render_set_keep(0);
+        if (khdays_gfx_render_draw(p, 2, 2, 0)) {
+            without = khdays_gfx_render_read(1, &w2, &h2);
+        }
+        khdays_gfx_render_set_keep(1);
+        p->desc2d[1][KD_BACKDROP] = was;
+        if (!same || with_keep == NULL || without == NULL || w2 != w[1] || h2 != h[1] ||
+            memcmp(with_keep, without, sizeof(uint32_t) * (size_t)w2 * (size_t)h2) != 0) {
+            fprintf(stderr, "%s: engine B's screen was kept though its description changed\n", name);
+            same = 0;
+        }
+        SDL_free(with_keep);
+        SDL_free(without);
+    }
+    for (int e = 0; e < 2; ++e) {
+        SDL_free(kept_pixels[e]);
+        SDL_free(anew[e]);
+    }
+    return same;
+}
+
 int main(int argc, char **argv)
 {
     char dir[1024];
-    int failures = 0, packages = 0, composed = 0, gpu = 0;
+    int failures = 0, packages = 0, composed = 0, gpu = 0, gpu2d = 0, kept_checked = 0;
     Distance distance[6] = {{1, 0, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0, 0},
                             {1, 1, 0, 0, 0, 0, 0, 0}, {2, 1, 0, 0, 0, 0, 0, 0}, {4, 1, 0, 0, 0, 0, 0, 0}};
     int native = 0; /* the card's own rasterizer can draw */
@@ -205,6 +279,10 @@ int main(int argc, char **argv)
             : SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL,
                                   SDL_getenv("KHDAYS_GPU_DEBUG") != NULL, NULL);
     if (device != NULL && khdays_raster3d_open(device)) {
+        gpu2d = khdays_gfx_render_open(device);
+        if (!gpu2d) {
+            printf("the port's 2D cannot be drawn (%s): its part is skipped\n", SDL_GetError());
+        }
         gpu = 1;
         khdays_raster3d_set_native(1);
         native = khdays_raster3d_native();
@@ -428,7 +506,14 @@ int main(int argc, char **argv)
                 }
             }
         }
+        if (gpu2d && (p->wants & KHDAYS_WANT_2D)) {
+            ++kept_checked;
+            failures += !kept_as_composed(recorded, names[f]);
+        }
         SDL_free(data);
+    }
+    if (gpu2d) {
+        printf("%d packages' screens kept and composed anew\n", kept_checked);
     }
     if (timed > 0) {
         printf("drawn %d times each at %dx: %.3f ms a picture on average\n", times, timed_scale, timed_ms / timed);
@@ -471,6 +556,9 @@ int main(int argc, char **argv)
             fprintf(stderr, "GPU (%s) at %dx: the mean difference is beyond the limit\n", by, d->scale);
             ++failures;
         }
+    }
+    if (gpu2d) {
+        khdays_gfx_render_close();
     }
     if (gpu) {
         khdays_raster3d_close();

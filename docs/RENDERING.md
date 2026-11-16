@@ -399,6 +399,19 @@ width (`capture.hlsl`: the blend, `gfx_render.c` `take_capture`), and shows its
 copy of the bank instead of the DS's 256x192 one (RUNTIME_MAP, "The screen
 blends at the port's resolution").
 
+**A screen kept.** A screen whose composition reads no 3D (engine B's always;
+engine A's while no 3D is drawn) comes out the same when everything it reads is
+the same, so its pass is left out and its texture stays as the picture before
+left it (`gfx_render.c` `kept_screen`): the lower screen under a field while it
+stands still, a menu at rest, and every picture drawn between two game frames.
+What is compared, whole and not by a hash: the bytes the card is sent for the
+engine (its description, palettes, elements and left-out cells), whether a page
+of its memory or of its tile maps changed (the bank a VRAM display shows counts
+for both engines), the replacements' buffer (its generation, the images drawn
+into it), the composition's parameters and the texture itself.
+`KHDAYS_KEEP_2D=0` composes every screen every time; `KHDAYS_PROFILE` says how
+often each screen was kept.
+
 Testing knobs: `KHDAYS_SHOTS_HD=DIR` (the `KHDAYS_SHOTS` frames as presented,
 at the resolution drawn; each at the first frame presented from it on, named
 by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);

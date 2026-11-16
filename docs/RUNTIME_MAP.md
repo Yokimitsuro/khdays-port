@@ -592,6 +592,8 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   read back each frame and compared -- at 1x with the 2D engines' (the
   software's 3D on, under both), at N x with the old composition -- every
   300 frames how many pixels differed.
+- `KHDAYS_KEEP_2D=0` -- every screen composed for every picture, also one
+  nothing changed in (`docs/RENDERING.md`, "A screen kept").
 - `KHDAYS_GFX_CHECK=N` -- at one VBlank in N, the port's 2D composed on the
   CPU (`port/gfx/compose_cpu.c`, the code the GPU runs) and compared with
   the 2D engines', even headless; the first differing frames written out as

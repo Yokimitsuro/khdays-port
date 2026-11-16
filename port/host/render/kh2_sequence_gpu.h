@@ -7,4 +7,6 @@ int khdays_sequence_gpu_open(SDL_GPUDevice *device);
 void khdays_sequence_gpu_close(void);
 /* Forgets what was drawn (its command buffer cancelled): every image is drawn again next time. */
 void khdays_sequence_gpu_forget(void);
+/* Counts the images drawn into the HD buffer: what was composed from the buffer is as good while it stays. */
+uint32_t khdays_sequence_gpu_draws(void);
 #endif
