@@ -839,6 +839,7 @@ struct Enemy final {
     // Days's first hit gave its health
     std::int64_t record_most = 0;
     double start_share = 1.0;
+    int battle_level = 0; // its battle entry's level (enmp + 2: YS::LEVELPARAM's for its attacks), 0 none known
     bool held_at_least = false; // the last Days hit's damage kept off by its least health (1:231): a hit all the same
     // what the last hit's damage was kept to (khdays_kh2_enemies_damage) and the frame it was, for its class's own
     // working out of it (khdays_kh2_enemies_dealt); -1 none
@@ -1388,6 +1389,10 @@ struct LaserDome final {
     int hum = 0;                       // its looping sound (374040)
 };
 std::optional<LaserDome> laser_dome;
+// The map hidden (8:6, LAST_XEMNUS_LASER::Optimize: dk::Map::setHideGroup(0), hideSky, Glow::off -- every draw entry
+// of its arena's map, eh20, is in group 0, its floor too: the world black but for the objects) till 8:7 shows it again;
+// the port leaves the room's models out (khdays_kh2_enemies_map_hidden), whatever room the battle is in
+bool map_hidden = false;
 void laser_tick();
 
 // ------------------------------------------------------------------------------------------------- a party member
@@ -1474,12 +1479,36 @@ struct Friend final {
     std::uint32_t watched = 0;
     int use_mp = 0;
     float mp = 100.0F, mp_most = 100.0F;
+    // its sheet's health (YS::SHEET::AllocFriend: its character's, character_health, full; 0 none known: no enemy's
+    // attack reaches it), its character (its part number), whether it lies knocked out (+ 0x7f8 bit 4,
+    // BTLOBJ::_OVR__dead) and for how many ticks still (+ 0xb40), the motions of the damage reaction it plays (none:
+    // -1) -- its states under 300 held while it plays, KH2's party AI waiting
+    int character = 0;
+    int hp = 0, hp_most = 0;
+    bool knocked = false;
+    float knocked_for = 0.0F;
+    int hurt_motion = -1;
     std::map<std::size_t, std::size_t> struck;
     std::shared_ptr<PartyWeapon> weapon; // its weapon, none when its kind names none
 };
 std::map<unsigned, Friend> friends; // by their ally's number
 const FriendAction *friend_action(const Friend &f, int id);
 void friend_start(Enemy &e);
+bool member_stun(Friend &f, Enemy &e);
+bool member_hurting(Friend &f, Enemy &e);
+void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp);
+bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up = 0.0F);
+
+// The party members an enemy's attacks may reach: each standing, its health known
+template <typename F> void each_member(F &&f)
+{
+    for (auto &[id, member] : friends) {
+        const auto it = allies.find(id);
+        if (it == allies.end() || !it->second || it->second->released || !it->second->actor || member.hp_most <= 0)
+            continue;
+        f(*it->second, member);
+    }
+}
 
 // KH2's object pictures (1:285: YS::STDOBJ::show_picture, a dk::Layout of its archive's first entry of type 0x2e) by
 // handle: the object, its kind (the archive: kh2/obj/<name>.a.us, its pictures' HD pages after its effects'), the
@@ -1594,12 +1623,16 @@ constexpr int kDaysShownMost = 32767;
 // measure of every KH2 enemy's health there; 0 until then
 int reference_blow = 0;
 
-// A battle entry's health (00battle.bin's enmp, OpenKH's 00battle page: a u32 count at + 4, then 92-byte records, + 0
-// the entry's number, + 4 its 32 health values, the first its own -- KH2 times it by LVPM's for the level, which the
-// share between two entries leaves out); 0 when the mod's file has no such entry
-int battle_health(int entry)
+// A battle entry (00battle.bin's enmp, OpenKH's 00battle page: a u32 count at + 4, then 92-byte records, + 0 the
+// entry's number, + 2 its level -- the Data Organization's 99 --, + 4 its 32 health values, the first its own: KH2
+// times it by LVPM's for the level, which the share between two entries leaves out); zeros when the mod's file has
+// no such entry
+struct BattleRow final {
+    int health = 0, level = 0;
+};
+const BattleRow &battle_row(int entry)
 {
-    static std::map<int, int> healths;
+    static std::map<int, BattleRow> rows;
     static bool read = false;
     if (!read) {
         read = true;
@@ -1613,14 +1646,89 @@ int battle_health(int entry)
                 std::memcpy(&count, file.data() + e.offset + 4, 4);
                 for (std::uint32_t i = 0; i < count && 8 + 92 * std::size_t(i + 1) <= e.size; ++i) {
                     const std::uint8_t *r = file.data() + e.offset + 8 + 92 * std::size_t(i);
-                    healths.emplace(int(r[0] | (r[1] << 8)), int(r[4] | (r[5] << 8)));
+                    rows.emplace(int(r[0] | (r[1] << 8)), BattleRow{int(r[4] | (r[5] << 8)), int(r[2] | (r[3] << 8))});
                 }
             }
         } catch (const std::exception &) {
         }
     }
-    const auto it = healths.find(entry);
-    return it != healths.end() ? it->second : 0;
+    static const BattleRow none;
+    const auto it = rows.find(entry);
+    return it != rows.end() ? it->second : none;
+}
+
+int battle_health(int entry)
+{
+    return battle_row(entry).health;
+}
+
+// One of 00battle.bin's tables (its BAR entry of that name) out of the mod's file: empty when it has none
+std::vector<std::uint8_t> battle_table(const char *name)
+{
+    const std::vector<std::uint8_t> file = read_file(kh2_file("00battle.bin"));
+    try {
+        for (const kh2::BarEntry &e : kh2::bar_entries(file.data(), file.size()))
+            if (e.name == name)
+                return {file.begin() + std::ptrdiff_t(e.offset), file.begin() + std::ptrdiff_t(e.offset + e.size)};
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: the mod's kh2/00battle.bin cannot be read (%s)", x.what());
+    }
+    return {};
+}
+
+// KH2's level parameters (00battle.bin's lvpm, YS::LEVELPARAM: 12 bytes a level from 1 -- + 0 its health's
+// percentage, + 2 strength, + 4 defence, + 6 the most and + 8 the least of an enemy's strength over a defence, + 10
+// experience); none past its levels or without the file
+struct LevelParam final {
+    int health = 0, strength = 0, defence = 0, most = 0, least = 0;
+};
+std::optional<LevelParam> level_param(int level)
+{
+    static const std::vector<std::uint8_t> table = battle_table("lvpm");
+    if (level < 1 || std::size_t(level) * 12 > table.size())
+        return std::nullopt;
+    const std::uint8_t *r = table.data() + 12 * std::size_t(level - 1);
+    const auto u16 = [r](int o) { return int(r[o] | (r[o + 1] << 8)); };
+    return LevelParam{u16(0), u16(2), u16(4), u16(6), u16(8)};
+}
+
+// A party member's health as a new game starts it (00battle.bin's plrp: a u32 version and count, then 0x80 bytes a
+// record -- + 2 its character, Sora 1 to Riku 13, the party members' part numbers; + 3 its health --, the first of
+// that character: the record YS::SHEET::AllocFriend loads it from); 0 none
+int character_health(int character)
+{
+    static const std::vector<std::uint8_t> table = battle_table("plrp");
+    std::uint32_t count = 0;
+    if (table.size() >= 8)
+        std::memcpy(&count, table.data() + 4, 4);
+    for (std::uint32_t i = 0; i < count && 8 + 0x80 * std::size_t(i + 1) <= table.size(); ++i) {
+        const std::uint8_t *r = table.data() + 8 + 0x80 * std::size_t(i);
+        if (r[2] == character && r[3] != 0)
+            return r[3];
+    }
+    return 0;
+}
+
+// A party member's defence at a level (00battle.bin's lvup, YS::LEVELUP::Get: a u32 version and count, a word, then
+// each character's table's offset in words, Sora's first; a table a u32 count of levels, then 16 bytes a level from
+// 1: + 4 strength, + 5 magic, + 6 defence, + 7 AP); its last level's past them, 0 none
+int character_defence(int character, int level)
+{
+    static const std::vector<std::uint8_t> table = battle_table("lvup");
+    std::uint32_t count = 0, at = 0, levels = 0;
+    if (table.size() >= 12)
+        std::memcpy(&count, table.data() + 4, 4);
+    if (character < 1 || std::uint32_t(character) > count || 12 + 4 * std::size_t(character) > table.size())
+        return 0;
+    std::memcpy(&at, table.data() + 8 + 4 * std::size_t(character), 4);
+    const std::size_t from = 4 * std::size_t(at);
+    if (at == 0 || from + 4 > table.size())
+        return 0;
+    std::memcpy(&levels, table.data() + from, 4);
+    if (levels == 0)
+        return 0;
+    const std::size_t row = std::size_t(std::clamp(level, 1, int(levels)) - 1);
+    return from + 4 + 16 * (row + 1) <= table.size() ? table[from + 4 + 16 * row + 6] : 0;
 }
 
 // The share of its health Days's fields show: up to shown_most, at least 1 while it has any (Days defeats it at 0)
@@ -1791,6 +1899,7 @@ public:
         if (it == by_actor.end() || it->second->health_share > 0.0)
             return;
         Enemy &e = *it->second;
+        e.battle_level = battle_row(entry).level;
         const int own = battle_health(entry), soldier = battle_health(kSoldierEntry);
         if (own <= 0 || soldier <= 0)
             return;
@@ -2270,6 +2379,7 @@ public:
     }
     void laser_optimize(bool on) override
     {
+        map_hidden = on;
         if (tracing())
             khdays_log("kh2 enemies: the room's map group 0, sky and glow %s (8:%c)", on ? "hidden" : "shown",
                        on ? '6' : '7');
@@ -3462,6 +3572,13 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
                 if (took)
                     landed(e, p.object, std::int16_t(range.params[0]));
             }
+            // the party members it reaches (the player's team's: KH2's attack strikes every team but its owner's)
+            each_member([&](Enemy &m, Friend &f) {
+                if (e.struck[r].count(m.days) != 0 || !member_reached(m, to_kh2(c), sh.radius))
+                    return;
+                e.struck[r].insert(m.days);
+                member_hurt(e, m, f, int(std::int16_t(range.params[0])));
+            });
         }
         if (tracing() && e.windows_told.count(r) == 0) {
             // every attack sphere's place along its facing then (forward, up), what each group reaches
@@ -3768,6 +3885,9 @@ struct AttackParam final {
     int hitback = 0x7fff; // + 0xc, a short: how far its hit throws (KH2's cm), 0x7fff the battle constant's
     int add_drive = 0;    // + 0x29 (the PS3 build's ATTACKPARAM::AddDrive): what a landed one takes off a form's time
     int revenge = 0;      // + 0x2a (RevengeDamage): the karma a landed one adds (YS::ENEMY::_OVR_exec_damage)
+    int kind = 0;         // + 4 (Type): 5 and 6 a cure's (YS::SHEET::calc_damage, BTLOBJ::add_damage), else damage
+    int element = 0;      // + 9: 0 physical, 1 fire, 2 blizzard, 3 thunder ...
+    int blow_along = 0;   // + 0xe, a short: a blow's speed along (YS::DAMAGE::get_blow; + 0xc then its speed up)
 };
 const AttackParam &attack_param(int atkp)
 {
@@ -3783,14 +3903,17 @@ const AttackParam &attack_param(int atkp)
                     std::memcpy(&count, battle.data() + e.offset + 4, 4);
                     for (std::uint32_t i = 0; i < count && 8 + 48 * (i + 1) <= e.size; ++i) {
                         std::uint16_t number = 0, value = 0;
-                        std::int16_t back = 0;
+                        std::int16_t back = 0, along = 0;
                         std::memcpy(&number, battle.data() + e.offset + 8 + 48 * i + 2, 2);
                         std::memcpy(&value, battle.data() + e.offset + 8 + 48 * i + 6, 2);
                         std::memcpy(&back, battle.data() + e.offset + 8 + 48 * i + 0xc, 2);
+                        std::memcpy(&along, battle.data() + e.offset + 8 + 48 * i + 0xe, 2);
                         power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8],
                                                           battle[e.offset + 8 + 48 * i + 10], back,
                                                           battle[e.offset + 8 + 48 * i + 0x29],
-                                                          battle[e.offset + 8 + 48 * i + 0x2a]});
+                                                          battle[e.offset + 8 + 48 * i + 0x2a],
+                                                          battle[e.offset + 8 + 48 * i + 4],
+                                                          battle[e.offset + 8 + 48 * i + 9], along});
                     }
                 }
         } catch (const std::exception &x) {
@@ -5187,6 +5310,15 @@ void attack_objects(Enemy &e)
                         strike(o, *who);
                     }
                 }
+                // the party members (their bodies against its sphere, or its cylinder from its place up)
+                const Vec3 centre = to_kh2(c);
+                each_member([&](Enemy &m, Friend &f) {
+                    if (o.struck.count(m.days) != 0 ||
+                        !member_reached(m, centre, radius, radius == height ? 0.0F : height))
+                        return;
+                    o.struck.insert(m.days);
+                    member_hurt(e, m, f, o.atkp);
+                });
             }
         }
         o.before = o.at;
@@ -6153,6 +6285,8 @@ void friend_start(Enemy &e)
     const int part = int(mod().memory.u32(record + 0x4c) & 0xffff), weapon = int(mod().memory.u32(record + 0x4c) >> 16);
     Friend f;
     f.ally = e.days;
+    f.character = part;
+    f.hp = f.hp_most = character_health(part);
     f.params = friend_params(friend_index(part, weapon));
     f.spec = party_spec(weapon);
     f.table = part == 13 ? &kRikuActions : nullptr;
@@ -6161,10 +6295,15 @@ void friend_start(Enemy &e)
         khdays_log("kh2 enemies: %s's party AI not known (part %d): it stands where it is", e.kind->name.c_str(), part);
         return;
     }
+    if (f.hp_most <= 0)
+        khdays_log("kh2 enemies: %s's health not known (the mod's kh2/00battle.bin has no plrp record of character "
+                   "%d): no enemy's attack reaches it",
+                   e.kind->name.c_str(), part);
     if (tracing())
-        khdays_log("kh2 enemies: %08x (%s) is KH2's party member %d (params %d): walk %.1f run %.1f, %zu actions",
+        khdays_log("kh2 enemies: %08x (%s) is KH2's party member %d (params %d): walk %.1f run %.1f, %zu actions, "
+                   "health %d",
                    e.days, e.kind->name.c_str(), part, friend_index(part, weapon), double(f.spec.walk),
-                   double(f.spec.run), f.params->actions.size());
+                   double(f.spec.run), f.params->actions.size(), f.hp_most);
     friends[e.days] = f;
 }
 
@@ -6237,6 +6376,14 @@ void friend_tick(Friend &f, Enemy &e, Vec3 &place)
     const FriendParams &p = *f.params;
     // its set's mode (YS::MOTION::id_to_num): 1 in battle, 2 out of it, turned over with its weapon
     e.motions->mode = (the_field().in_battle() ? 1 : 2) ^ (f.weapon != nullptr ? 1 : 0);
+    // knocked out, his time runs out (YS::FRIEND::exec_stun, his pre_exec) and his damage reaction plays out: the
+    // party AI waits meanwhile (he cannot be controlled)
+    if (member_stun(f, e) || member_hurting(f, e)) {
+        f.attacking = false;
+        f.speed = 0.0F;
+        f.action = -1;
+        return;
+    }
     // KH2's party AI stands aside while a script's thread holds him (YS::OBJ::is_hook: Final Xemnas's grab moves him
     // by the player's pad, 1:113 and 1:111) and while an event plays (YS::EVENT's ControlOff of the party): his motions
     // and place are the script's then
@@ -6524,6 +6671,239 @@ void friend_blows(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
     (void)f;
 }
 
+// ------------------------------------------------------------------------------------------------- a party member hurt
+
+// A party member's body (its kind's cylinder, shape 0x300: its radius round, its height up from its place and offset;
+// KH2's cm) reached by an attack's sphere, or its cylinder `up` high from it (its centre in KH2's world: its foot, y
+// down): YS::COLLISION::check of the attack on its collision 1
+bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up)
+{
+    if (!m.actor)
+        return false;
+    for (const Shape &sh : m.kind->shapes) {
+        if (sh.kind != 0x300 || sh.radius <= 0.0F)
+            continue;
+        const Vec3 p = m.actor->place();
+        const float base = p[1] + sh.at[1], top = base - sh.height; // (KH2's y down)
+        const float dx = centre[0] - p[0] - sh.at[0], dz = centre[2] - p[2] - sh.at[2];
+        const float gap = std::max(0.0F, std::max(top, centre[1] - up) - std::min(base, centre[1]));
+        return std::sqrt(dx * dx + dz * dz + gap * gap) < radius + sh.radius;
+    }
+    return false;
+}
+
+// KH2's damage of an enemy's attack on a party member (YS::DAMAGE::set -> SHEET::calc_damage for an attacker with no
+// sheet, from the current level's parameters: the attacker's battle entry's level). A cure's kinds: 5 its most health
+// x the level's strength x the power over 10000, 6 strength x power over 100. The others: the level's strength less
+// the member's defence (lvup at that level: KH2 takes Sora's, whom the port has not) kept to the level's most (and
+// 99999, the sheet's) and its least (and 1), x the power x the member's element rates (100 and 100: no armour) over a
+// million, rounded up; then its difficulty's (SHEET::adjust_game_level, the player's side: Beginner 50%, Proud and
+// Critical 200% -- Days's story difficulty). The rest of calc_damage leaves an enemy's blow on him as it is: no
+// ability of his, no combo of the attacker's, the debug configuration's rates 1
+int member_damage(const Enemy &by, const Friend &f, const AttackParam &ap)
+{
+    const std::optional<LevelParam> lv = level_param(by.battle_level);
+    if (!lv)
+        return 0;
+    if (ap.kind == 5)
+        return int((std::int64_t(f.hp_most) * lv->strength * ap.power + 9999) / 10000);
+    if (ap.kind == 6)
+        return int((std::int64_t(lv->strength) * ap.power + 99) / 100);
+    int v = lv->strength - character_defence(f.character, by.battle_level);
+    v = std::min(v, std::min(lv->most, 99999));
+    v = std::max(v, std::max(lv->least, 1));
+    std::int64_t damage = (std::int64_t(v) * ap.power * 100 * 100 + 999999) / 1000000;
+    if (damage > 0) {
+        const int d = khdays_kh2_shell_difficulty();
+        const int percent = d == 0 ? 50 : d >= 2 ? 200 : 100;
+        damage = (damage * percent + 99) / 100;
+    }
+    return int(std::min<std::int64_t>(damage, 0x7fffffff));
+}
+
+// Health given to a party member (YS::PARTY::_OVR_add_hp -> BTLOBJ::_OVR_add_hp): knocked out, it gets up
+// (YS::FRIEND::stun_recov: its getting up, motion 55, from its lying, 54; its idle after) with the health given x
+// sstm + 0x54 (a half); else its health grows, to its most
+void member_add_hp(Friend &f, Enemy &m, int amount)
+{
+    if (amount <= 0 || f.hp_most <= 0)
+        return;
+    if (f.knocked) {
+        f.knocked = false;
+        Actor &a = *m.actor;
+        if (a.motion.id == 54 && a.play(55, 0.0F, 0.0F)) {
+            a.motion.queued.clear();
+            a.motion.queued.push_back({0, 0.0F});
+            f.hurt_motion = 55;
+            a.damage_motion = true;
+        }
+        amount = int(float(amount) * the_field().system_value(0x54, 0.5F));
+    }
+    f.hp = std::min(f.hp_most, f.hp + amount);
+    if (tracing())
+        khdays_log("kh2 enemies: %08x (partner) gets %d health: %d of %d", m.days, amount, f.hp, f.hp_most);
+}
+
+// YS::FRIEND::exec_stun (its pre_exec, a tick): knocked out, its time runs out -- 8 times as fast outside a battle
+// (sstm + 0x5c: STATUS::GetMode 0) -- and it gets up with its most health x sstm + 0x58 (member_add_hp halves it
+// again); lying (motion 54) as soon as it may move (not in its damage reaction, not in the air, not held by a script
+// nor playing another's set's motion). Whether it lies
+bool member_stun(Friend &f, Enemy &e)
+{
+    if (!f.knocked)
+        return false;
+    Actor &a = *e.actor;
+    f.knocked_for -= the_field().in_battle() ? 1.0F : the_field().system_value(0x5c, 8.0F);
+    if (f.knocked_for <= 0.0F) {
+        member_add_hp(f, e, int(float(f.hp_most) * the_field().system_value(0x58, 0.5F)));
+        return f.knocked;
+    }
+    if (a.motion.id != 54 && !member_hurting(f, e) && !a.jump.on && !a.hooked() && e.motions->capture_id() < 0 &&
+        a.play(54, 0.0F, 0.0F)) { // MOTION::change(54), not while a script holds him or his set takes another's
+        a.motion.queued.clear();
+        a.damage_motion = true;
+    }
+    return true;
+}
+
+// Its damage reaction's motion still playing (YS::BTLOBJ's damage motions: the reaction's, its landing's after a
+// blow) -- its states under priority 300 held meanwhile, as KH2's ACT holds an object's in a damage motion
+bool member_hurting(Friend &f, Enemy &e)
+{
+    Actor &a = *e.actor;
+    if (f.hurt_motion < 0)
+        return false;
+    const bool landing = a.motion.id == f.hurt_motion + 1 && (f.hurt_motion == 16 || f.hurt_motion == 18);
+    if ((a.motion.id == f.hurt_motion || landing || a.jump.on) && !(a.motion.ended && !a.jump.on)) {
+        a.damage_motion = true;
+        return true;
+    }
+    f.hurt_motion = -1;
+    a.damage_motion = f.knocked && a.motion.id == 54;
+    return false;
+}
+
+// BTLOBJ::_OVR_exec_damage_reaction on a party member, by the reaction's kind (DAMAGE::GetReactionType): 1 a slide,
+// 2 a small hit on the spot (10 from the front, 12 from behind, unturned), 3 a small one (the same and its slide; in
+// the air 14 and 15, turned), 4 a blow (16 from the front facing it, 18 from behind turned away; thrown up by the
+// attack's + 0xc and along by its + 0xe -- sstm + 0x28 and + 0x24 when both are 0 --, landing in the motion after),
+// 14 a large one (23 from the front facing it, 24 from behind, its slide); the slides as far as the attack's hitback
+// (+ 0xc; at 0x7fff sstm + 0x30, + 0x34 for a small one; half for reactions 12 and 13), a tenth of it a tick. Kind 5
+// (a tornado) is not played. Its idle after each motion
+void member_reaction(Enemy &by, Enemy &m, Friend &f, int reaction, const AttackParam &ap)
+{
+    Actor &a = *m.actor;
+    int kind = reaction;
+    if (reaction == 1 || reaction == 12)
+        kind = 1;
+    else if (reaction == 3 || reaction == 6 || reaction == 8 || reaction == 10 || reaction == 13 || reaction == 16 ||
+             reaction == 18)
+        kind = 3;
+    else if (reaction == 4 || reaction == 7 || reaction == 9 || reaction == 11 || reaction == 15 || reaction == 17)
+        kind = 4;
+    if (kind <= 0 || kind == 5)
+        return;
+    // the hit's way (DAMAGE::set_dir): from the attacker to it along the ground
+    const Vec3 to = a.place(), from = by.actor->place();
+    Vec3 way = {to[0] - from[0], 0.0F, to[2] - from[2]};
+    const float flat = std::sqrt(way[0] * way[0] + way[2] * way[2]);
+    if (flat > 0.0F)
+        way = {way[0] / flat, 0.0F, way[2] / flat};
+    else
+        way = facing_of(by.actor->yaw());
+    const Vec3 face = facing_of(a.yaw());
+    const bool back = way[0] * face[0] + way[2] * face[2] >= 0.0F; // its facing along the hit's: struck from behind
+    const auto turn = [&] { a.set_yaw(back ? std::atan2(way[0], way[2]) : std::atan2(-way[0], -way[2])); };
+    const auto own = [&a](int motion) { return a.motions != nullptr && !a.motions->has(motion) ? motion ^ 1 : motion; };
+    const auto start = [&](int motion) {
+        if (!a.play(motion, 0.0F, 0.0F))
+            return;
+        a.motion.queued.clear();
+        a.motion.queued.push_back({0, 0.0F});
+        f.hurt_motion = motion;
+        a.damage_motion = true;
+    };
+    const auto slide = [&] {
+        float cm = float(ap.hitback);
+        if (ap.hitback == 0x7fff)
+            cm = the_field().system_value(kind == 3 ? 0x34 : 0x30, 200.0F);
+        if (reaction == 12 || reaction == 13)
+            cm *= 0.5F;
+        a.slide = way;
+        a.slide_speed = cm * 0.1F;
+    };
+    const bool air = a.jump.on || (a.u32(field::kFlags) & bit::kInAir) != 0;
+    if (kind == 1) {
+        slide();
+    } else if (kind == 2 || (kind == 3 && !air)) {
+        start(own(back ? 12 : 10));
+        if (kind == 3)
+            slide();
+    } else if (kind == 3) {
+        turn();
+        start(own(back ? 15 : 14));
+    } else if (kind == 4) {
+        float up = float(ap.hitback), along = float(ap.blow_along);
+        if (ap.hitback == 0 && ap.blow_along == 0) {
+            up = the_field().system_value(0x24, 0.0F);
+            along = the_field().system_value(0x28, 0.0F);
+        }
+        turn();
+        start(back ? 18 : 16);
+        thrown(a, way[0], way[2], along, -up);
+    } else if (kind == 14) {
+        turn();
+        start(back ? 24 : 23);
+        slide();
+    }
+}
+
+// An enemy's attack (its atkp) on a party member (kn::Friend::_OVR_exec_damage -> YS::FRIEND -> YS::PARTY ->
+// BTLOBJ::add_damage, _OVR_exec_damage_reaction): none while it lies knocked out (but a cure's), its damage
+// (member_damage) off its health -- a cure's on it --, its pinch told to its script on reaching a quarter (signal 9:
+// trigger 10), its target the attacker; its reaction (member_reaction, after its damage patterns) unless a script
+// holds it; at no health it is knocked out (FRIEND::_OVR__dead: its script told, signal 2; its time the spec's stun
+// time, PREF_PARTY + 0x18, x its ability's 1)
+void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp)
+{
+    if (f.hp_most <= 0 || !m.actor)
+        return;
+    Actor &a = *m.actor;
+    const AttackParam &ap = attack_param(atkp);
+    const bool cure = ap.kind == 5 || ap.kind == 6;
+    if (f.knocked && !cure)
+        return;
+    const int damage = member_damage(by, f, ap);
+    if (cure) {
+        member_add_hp(f, m, damage);
+        return;
+    }
+    const bool pinch = f.hp <= f.hp_most / 4;
+    f.hp = std::max(0, f.hp - damage);
+    if (!pinch && f.hp <= f.hp_most / 4) {
+        const ai::Value told[2] = {ai::Value::of_int(9), ai::Value::of_int(0)};
+        a.event(10, told);
+    }
+    if (!by.dying && !by.released && enemies.count(by.days) != 0)
+        f.target = by.days;
+    const int first = ap.reaction == 255 ? 0 : ap.reaction;
+    const int reaction = hit_pattern_reaction(a, first, true);
+    if (!a.hooked() && m.motions->capture_id() < 0)
+        member_reaction(by, m, f, reaction, ap);
+    if (tracing())
+        khdays_log("kh2 enemies: %08x's attack (atkp %d, power %d, level %d) hits %08x (partner): %d damage, %d of %d "
+                   "health, reaction %d",
+                   by.days, atkp, ap.power, by.battle_level, m.days, damage, f.hp, f.hp_most, reaction);
+    if (f.hp == 0) {
+        f.knocked = true;
+        f.knocked_for = f.spec.stun_time;
+        const ai::Value told[2] = {ai::Value::of_int(2), ai::Value::of_int(0)};
+        a.event(10, told);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x (partner) knocked out for %.0f ticks", m.days, double(f.knocked_for));
+    }
+}
+
 // ------------------------------------------------------------------------------------------------- the laser dome
 
 // KH2's pick of one of n (ryj::LAST_XEMNUS_LASER's: its chance over (2^32 + n - 1) / n)
@@ -6561,14 +6941,13 @@ void laser_setup(LaserDome &d, Enemy &caster)
             l.start_way = l.way = w;
             d.lasers.push_back(l);
         }
-    int role = 1;
-    for (const int element : {14, 70, 69, 70}) {
-        const std::uint32_t h = cast(caster, element);
+    const std::array<int, 4> elements = {14, 70, 69, 70};
+    for (std::size_t i = 0; i < elements.size() && i < d.fx.size(); ++i) {
+        const std::uint32_t h = cast(caster, elements[i]);
         for (Enemy::Running &r : caster.fx)
             if (r.handle == h && h != 0)
-                r.dome = role;
-        d.fx[std::size_t(role - 1)] = h;
-        ++role;
+                r.dome = int(i) + 1;
+        d.fx[i] = h;
     }
     if (tracing())
         khdays_log("kh2 enemies: %08x's laser dome set up: %zu lasers, effects %08x %08x %08x %08x", caster.days,
@@ -6586,14 +6965,59 @@ void dome_point(std::vector<kh2::EffectPoint> &list, const Vec3 &at, std::array<
         }
 }
 
-// LASER::attack: the laser turned to its target's middle (KH2's: the player's, or his partner's when the player
-// plays 270 or 271, or either by chance; the port has no partner yet: the nearest player's), flying
+// The dome's party member (LASER's FRIEND::Get(0): the first party member standing), none
+Enemy *dome_member(Friend **f = nullptr)
+{
+    Enemy *found = nullptr;
+    each_member([&](Enemy &m, Friend &x) {
+        if (found == nullptr) {
+            found = &m;
+            if (f != nullptr)
+                *f = &x;
+        }
+    });
+    return found;
+}
+
+// The motion a dome's target plays in the caster's set (+ 0x154: a player's the caster's script gives him, the
+// member's the one his set takes from it), -1 none
+int dome_motion(Enemy &caster, Object *player, Enemy *member)
+{
+    if (member != nullptr)
+        return member->motions->capture_id() >= 0 && member->actor->motion.id == member->motions->capture_id()
+                   ? member->motions->capture_id()
+                   : -1;
+    if (player == nullptr)
+        return -1;
+    const auto h = held.find(days_object(*player));
+    return h != held.end() && h->second.enemy == shell_of(caster) && !h->second.ended ? h->second.slot : -1;
+}
+
+// LASER::attack: the laser turned to its target's middle (OBJ::get_target_pos) -- the party member's while the
+// player plays the dome's 270 or 271 (knocked about by it), the player's while the member does, else either by KH2's
+// chance (its sign the player) -- flying. The player the caster's nearest; the member none when none stands (the
+// player then)
 void laser_fire(LaserDome &d, LaserDome::Laser &l, Enemy &caster)
 {
     Vec3 target = l.at;
-    if (Object *p = the_field().player(*caster.actor)) {
+    Object *p = the_field().player(*caster.actor);
+    Enemy *member = dome_member();
+    const int mine = dome_motion(caster, p, nullptr), its = dome_motion(caster, nullptr, member);
+    bool at_member = false;
+    if (member != nullptr && p != nullptr) {
+        if (mine == 270 || mine == 271)
+            at_member = true;
+        else if (its == 270 || its == 271)
+            at_member = false;
+        else
+            at_member = (kh2_chance() & 0x80000000u) == 0;
+    } else {
+        at_member = member != nullptr;
+    }
+    Object *o = at_member ? static_cast<Object *>(member->actor.get()) : p;
+    if (o != nullptr) {
         Vec3 aim{};
-        target = the_field().aim_point(*p, aim) ? aim : p->place();
+        target = the_field().aim_point(*o, aim) ? aim : o->place();
     }
     Vec3 w = {target[0] - l.at[0], target[1] - l.at[1], target[2] - l.at[2]};
     const float n = std::sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
@@ -6640,7 +7064,30 @@ bool laser_hits(LaserDome &d, LaserDome::Laser &l, Enemy &caster)
             return true;
         }
     }
-    return false;
+    // then the party member's (check_obj_hit(FRIEND::Get(0))): his body against the 2 m sphere in a Reflect of his --
+    // the caster's set's 254 to 256 his set takes, not yet in its loop -- bounces it (374066: no player's flag,
+    // + 0x588 bit 0x80), against the 50 cm one strikes him (LASER::strike: atkp 1143, the caster's)
+    // (knocked out he stops it all the same, unhurt: PARTY::_OVR_exec_damage takes nothing then)
+    Friend *f = nullptr;
+    Enemy *m = dome_member(&f);
+    if (m == nullptr)
+        return false;
+    const int motion = dome_motion(caster, nullptr, m);
+    const float loop = motion >= 0 ? m->actor->motions->loop_from(motion) : 0.0F;
+    const bool in_loop = loop > 0.0F && loop < m->actor->motions->length(motion) && m->actor->motion.time >= loop;
+    if (motion >= 254 && motion <= 256 && !in_loop && member_reached(*m, l.at, 200.0F)) {
+        dome_point(d.bounces, l.at, {0x80, 0, 0, 0x1e});
+        sound(caster, 374066);
+        l.phase = 6;
+        return true;
+    }
+    if (!member_reached(*m, l.at, 50.0F))
+        return false;
+    member_hurt(caster, *m, *f, 1143);
+    dome_point(d.hits, l.at, {0x80, 0, std::uint8_t(kh2_chance() >> 24), 0x1e});
+    sound(caster, 374047);
+    l.phase = 6;
+    return true;
 }
 
 // LASER::exec
@@ -7611,6 +8058,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     watched = 0;
     camera_warped = false;
     lights.clear();
+    map_hidden = false;
     the_field().force_leave = false;
 }
 
@@ -8202,6 +8650,15 @@ extern "C" int khdays_kh2_enemies_camera_warp(void)
     const bool warped = camera_warped;
     camera_warped = false;
     return warped ? 1 : 0;
+}
+
+// Whether the room's models are left out: a KH2 enemy's script hid the map (8:6) and has not shown it again (8:7); with
+// none of its enemies left (its battle over before 8:7) it is shown
+extern "C" int khdays_kh2_enemies_map_hidden(void)
+{
+    if (map_hidden && enemies.empty() && ghosts.empty())
+        map_hidden = false;
+    return map_hidden ? 1 : 0;
 }
 
 extern "C" int khdays_kh2_enemies_light(float room[3], float objects[3])

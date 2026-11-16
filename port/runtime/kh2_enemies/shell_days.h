@@ -79,6 +79,9 @@ int khdays_kh2_shell_face_normal(unsigned face, float normal[3]);
 int khdays_kh2_shell_wall(unsigned actor, const float from[3], const float to[3], float radius, float hit[3],
                           float normal[3]);
 
+/* The story's difficulty (the game state's field 0x40a, two bits: 0 Beginner, 1 Standard, 2 Proud, 3 Critical). */
+int khdays_kh2_shell_difficulty(void);
+
 /* Its first attack slot with a power (Ov107_SetAttackPower's, +0x290 + 6 n), 0 when none has. */
 int khdays_kh2_shell_attack_slot(unsigned actor);
 

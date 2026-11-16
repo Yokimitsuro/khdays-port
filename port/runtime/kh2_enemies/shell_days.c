@@ -18,6 +18,7 @@ extern int Ov022_HeadingFromHeldDpad(int actor);
 extern KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
 extern KhdaysRef Collision_RunSphereCast(KhdaysRef world, KhdaysRef params);
 extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
+extern int GameState_GetField(int a, int b);
 
 #define ACTOR_SCENE 0x4u
 #define ACTOR_MODE 0x50u    /* 1: this game's own */
@@ -220,6 +221,11 @@ int khdays_kh2_shell_players(unsigned actor, KhdaysKh2Player *out, int room)
         ++n;
     }
     return n;
+}
+
+int khdays_kh2_shell_difficulty(void)
+{
+    return GameState_GetField(0x40a, 2) & 3;
 }
 
 int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3])

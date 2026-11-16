@@ -10,6 +10,7 @@
 
 extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj); // runtime/kh2_enemies
 extern "C" int khdays_kh2_enemies_light(float room[3], float objects[3]);                   // runtime/kh2_enemies
+extern "C" int khdays_kh2_enemies_map_hidden(void);                                         // runtime/kh2_enemies
 extern "C" {
 #include "../../host/app/host.h" // [video] culling (KHDAYS_HOST_NO_CULLING)
 }
@@ -21,6 +22,9 @@ bool corridor_drawn = false;
 // The draw is a Days enemy standing in for a KH2 enemy, whose model was drawn in its place (runtime/kh2_enemies): its
 // shapes left out.
 bool kh2_enemy_drawn = false;
+// The draw is the room's (a mission world's model, the game's or a mod's in its place) while a KH2 enemy's script hides
+// the map (Final Xemnas's laser dome, 8:6 to 8:7): its shapes left out, the room black.
+bool room_hidden = false;
 
 // A KH2 model drawn in a pose of the port's (khdays_models_draw_posed): its bones' model-space matrices, KH2's
 // centimetres; null for every other draw.
@@ -1042,6 +1046,10 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     if (!khdays_origin_of_ram(KHDAYS_REF(resource), &file, &offset, &run)) { // its DS address
         return;
     }
+    if (std::strstr(file, "mi/wd/wd_") != nullptr && khdays_kh2_enemies_map_hidden() != 0) {
+        room_hidden = true;
+        return; /* the map hidden by a KH2 enemy's script: its matrices sent, nothing drawn */
+    }
     if (lit && std::strstr(file, "mi/wd/wd_") != nullptr)
         light_tint(light_room);
     // HD off: only a mission world's rooms and the mods' characters (their own folders, ba/ch/c<number>/)
@@ -1282,7 +1290,7 @@ int matrices_only(const void *list, unsigned int size)
 extern "C" int khdays_models_shape(const void *list, unsigned int size)
 {
     if (active == nullptr) {
-        if (kh2_enemy_drawn && depth == 1)
+        if ((kh2_enemy_drawn || room_hidden) && depth == 1)
             return matrices_only(list, size);
         if (!corridor_drawn || depth != 1)
             return 0; /* the game's own (or a draw inside the oval's) */
@@ -1341,6 +1349,7 @@ extern "C" void khdays_models_draw_end(void)
     active = nullptr;
     corridor_drawn = false;
     kh2_enemy_drawn = false;
+    room_hidden = false;
 }
 
 namespace {

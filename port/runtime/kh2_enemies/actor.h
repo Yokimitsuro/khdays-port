@@ -281,6 +281,11 @@ struct Playing final {
 // KH2's pull on a jump, centimetres a tick a tick (DAT_1405ce184)
 constexpr float kKh2Pull = 0.408163F;
 
+class Actor;
+// A throw (1:129, 2:1's blow; calls.cpp): along the ground way (way_x, way_z) `speed` cm a tick, `up` its vertical
+// speed (KH2's y: negative up), landing in the motion after the one playing
+void thrown(Actor &x, float way_x, float way_z, float speed, float up);
+
 // A jump (1:55, 1:168, 1:156, a throw): its vertical speed (KH2's y points down: up is negative) and along the ground.
 struct Jump final {
     bool on = false;

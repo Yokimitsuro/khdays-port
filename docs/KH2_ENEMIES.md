@@ -913,11 +913,18 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   attack ranges his blows on Xemnas (the damage patterns' 2 applies to them: the attacker not the player). His AI
   stands aside while a script's thread holds him (`PARTY::exec_hook`) or an event plays.
 - **The laser dome** (`atk_crowd_laser`, `rc_crowd_laser`; `ryj::LAST_XEMNUS_LASER`, 8:3 to 8:7): 405 lasers on 15
-  rings; it fires (8:4) once his camera "60" is over (1:34), each laser at the player, bouncing off him in a Reflect
-  motion (650, offered by 1:165 every tick -- "Reflect", Sora's 254 to 256) or striking him; it ends 1800 ticks after
-  (a timer his offers' thread counts, his player threads' check: `crowd_laser_finish`, 8:5) and he dies
-  (`rc_crowd_laser_finish`, `dead`). Its sounds (374040 the hum, 374047, 374065, 374066) are the engine's own: the
-  tool copies them (`ENGINE_SOUNDS`).
+  rings; it fires (8:4) once his camera "60" is over (1:34), each laser at the player or Riku (`LASER::attack`: Riku
+  while the player plays the dome's 270 or 271, the player while Riku does, else KH2's chance, its sign the player),
+  bouncing off one in a Reflect motion (650, offered by 1:165 every tick -- "Reflect", Sora's 254 to 256 and Riku's
+  in the same slots, not yet in their loop: `LASER::check_obj_hit`'s 2 m sphere; 374065 for the player, 374066 for
+  Riku) or striking him (its 50 cm sphere: `LASER::strike`, atkp 1143); it ends 1800 ticks after (a timer his offers'
+  thread counts, his player threads' check: `crowd_laser_finish`, 8:5) and he dies (`rc_crowd_laser_finish`, `dead`).
+  Its sounds (374040 the hum, 374047, 374065, 374066) are the engine's own: the tool copies them (`ENGINE_SOUNDS`).
+  While it plays **the map is hidden** (8:6, `LAST_XEMNUS_LASER::Optimize`: `dk::Map::setHideGroup(0)` -- every one
+  of eh20's 450 draw entries is in group 0, its floor too --, `hideSky`, `Glow::off`; 8:7 shows them again): the
+  world black but for the characters and the lasers. The port leaves the room's models out from 8:6 to 8:7
+  (`khdays_kh2_enemies_map_hidden`, the models' draws: whatever room the battle is in, a mod's too), or till his
+  battle is over.
 - **His grab** (`atk_dark`, motion 224, its trigger 7 with 200 at frame 100 -> trigger 17): the player within a metre
   in front is bound (`rc_invitation_to_dark2`, his HP drained), Sora's puppet (`P_EX100_LAST`) made, the player hidden
   (1:133) and put on Riku (1:18), and Riku hooked (1:112 1652) -- the pad moves him (1:113 -> 1:111, 0:81 the jump)
@@ -928,10 +935,33 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   `RC_SEARCHER::get_command_elem`) -- his AQ50.
 - **His air fight** (`atk_air_fight`, `rc_air_fight`): Riku rides in Xemnas's AQ10 (1:29: his own part, "0190") till
   it ends, then his AI takes him back.
-- **What the port does not do yet**: Riku takes no hits (no health of his, no stun, no KO) and the lasers aim at the
-  player alone (KH2's `LASER::attack` picks Riku by chance or when the player plays 270 or 271); 8:6's hiding of the
-  arena's map (KH2's own map group 0, sky and glow) has no Days room to hide; his event cameras ("50", "60", "61") are
-  placed for KH2's arena and look elsewhere in Days's rooms.
+- **Riku hurt** (`kn::Friend::_OVR_exec_damage` -> `YS::FRIEND` -> `YS::PARTY::_OVR_exec_damage` ->
+  `BTLOBJ::add_damage`, `_OVR_exec_damage_reaction`): Xemnas's blows, his attacks' objects and the lasers reach his
+  body (his shape 0x300's cylinder). His health is his character's in `00battle.bin`'s plrp (13: 100), full
+  (`SHEET::AllocFriend`). The damage (`SHEET::calc_damage` for an attacker with no sheet: the current level's
+  `LEVELPARAM`, lvpm, at the attacker's battle entry's level -- enmp + 2, 99): the level's strength less his defence
+  (lvup's at that level: 54 at 99), kept between the level's least and most (10 and 30 at 99), x the attack's power
+  x his element rates (100) over a million, rounded up -- 30 x the power over 100 at level 99: a laser (1143, 25) 8,
+  a blow of 150 45 --, then the difficulty's for the player's side (`SHEET::adjust_game_level`: the save's
+  difficulty -- Beginner 50%, Proud and Critical 200%; the port takes Days's story difficulty). At a quarter of his
+  health his script is told (signal 9: trigger 10, `OBJ::_OVR_signal_callback`); he targets his attacker. His
+  reaction by its kind (`DAMAGE::GetReactionType`): a slide, a small hit (10 front, 12 back; 14, 15 in the air), a blow
+  (16 / 18, thrown up by the attack's + 0xc and along by its + 0xe -- `BTLOBJ::blow`: the way times its w, its y
+  less the vector's y --, landing in 17 / 19), a large hit (23 / 24); none while a script holds him. At no health he
+  is **knocked out** (`FRIEND::_OVR__dead`: his script told, signal 2; `BTLOBJ::_OVR__dead`: + 0x7f8 bit 4) for his
+  spec's stun time (`PREF_PARTY` + 0x18: 1800 ticks for weapon part 65) times his ability's (1), 8 times as fast
+  outside a battle (sstm + 0x5c), taking no damage (an attack still stops on him), then gets up (`FRIEND::stun_recov`)
+  with his most health x sstm + 0x58 x sstm + 0x54 (a quarter: 25); a cure on him meanwhile wakes him with half of it.
+  A party member lies in 54 meanwhile and gets up in 55 (`exec_stun`'s `MOTION::change(0x36)`, `stun_recov`'s 0x37),
+  but this Riku's set (`P_EH000_LAST.mset`) has neither (entries 216 to 223 are DUMM): he stands. His abilities
+  (plrp's 0x1b4, 0x1b6, 0xbb: ability flags 150, 152 and 46, his cure's) hold none that keeps him from falling (flag
+  127, `PARTY::_OVR_is_withstand`). KH2's party AI waits for him meanwhile in the port (whether `kn::Friend` acts while
+  knocked out is not read: `normal_exec` tests the knock-out only for its mode 0xc).
+- **What the port does not do yet**: his health is shown nowhere (KH2's party gauge has no Days place); the PAX
+  effect over his head while he lies (the system PAX's 14) is not played; Sora's level, which KH2 gives his party
+  (lvup), is the battle's (at level 99 his defence would change the damage only past 56, which his 54 never reaches:
+  the same at any level); his event cameras
+  ("50", "60", "61") are placed for KH2's arena and look elsewhere in Days's rooms.
 
 ### The scope, the pictures and the screen's shake
 

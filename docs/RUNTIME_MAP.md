@@ -6055,6 +6055,14 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   held by 0:66 and then faded by 0:52 (12 ticks, `EFFECT::fadeout_kill`); the port ended an effect by its age, which a
   held one's does not move on, and the thorns stayed drawn where they fell for the rest of the fight (found with
   KHDAYS_KH2_HIDE_ELEMENTS and the slivers KHDAYS_TRACE_KH2_ENEMIES=2 tells).
+- **The dome on black, Riku hurt** (2026-11-16, a window run in the coliseum, the player kept unhurt by a local
+  switch to reach the dome): 8:6 came 2.3 s after 8:3 and 8:7 6 s after 8:5; between them the room's models were
+  left out and the 405 lasers stood all round on black, as KH2 shows them with its map's group 0 and sky hidden; the
+  room came back at 8:7. A green triangle that flashes in some frames is the reaction command's appearance (its pulse
+  from "Reflect"), not the room. Riku: 100 health (plrp), Xemnas's blows at level 99 on a Proud save -- power 150 90,
+  100 60, a laser (25) 16 (30 x the power over 100, x 2 for Proud) --, knocked out at 0 four times in 300 s, up 1800
+  ticks (30 s) after with 25; the lasers struck him twice in the dome. Knocked out he stood: this Riku's set has no
+  54 nor 55 (DUMM entries 216 to 223), so KH2's MOTION::change finds nothing to lie in.
 
 ## 38. Days's commands on KH2's reaction command bar
 
