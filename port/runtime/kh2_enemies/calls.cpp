@@ -806,8 +806,15 @@ void add_actor_fields(ai::Calls &calls)
             x->world->event(*x, name_at(m.memory(), a[1].bits), object_of(m, a[2]));
     });
     // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
-    calls.set(1, 133, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(1, 134, [](ai::Machine &, std::span<ai::Value>) {});
+    // (on a player: World::player_hide)
+    calls.set(1, 133, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o) && running(m)->world != nullptr)
+            running(m)->world->player_hide(*o, true);
+    });
+    calls.set(1, 134, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o) && running(m)->world != nullptr)
+            running(m)->world->player_hide(*o, false);
+    });
     // 1:201 its facing as a direction (FUN_1403b56e0)
     calls.set(1, 201, [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v;
@@ -1232,7 +1239,9 @@ void add_motions(ai::Calls &calls)
         Object *o = object_of(m, a[1]);
         Actor *other = o != nullptr ? o->actor() : nullptr;
         bool played = other != nullptr;
-        if (other != nullptr) {
+        if (other != nullptr && x->world != nullptr && x->world->capture_motion(*other, *x, a[2].i(), a[3].f())) {
+            // (its own part of the slot: Final Xemnas's air fight carries Riku in his AQ10, "0190")
+        } else if (other != nullptr) {
             other->motions = x->motions;
             other->play(std::int32_t(a[2].bits), a[3].f(), 0.0F);
         } else if (is_player(o) && x->world != nullptr) { // one of Days's players: the shell plays it
@@ -2666,6 +2675,11 @@ void add_world(ai::Calls &calls)
     // routine to run when it is taken off (none in the scripts read: 0). 1:102 taken off (FUN_1403da250: put where
     // it was carried, its facing its own again)
     calls.set(1, 18, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o)) { // a player: World::player_carry
+            if (running(m)->world != nullptr)
+                running(m)->world->player_carry(*o, object_of(m, a[1]));
+            return;
+        }
         Actor *carried = self_of(m, a[0]);
         Object *by = object_of(m, a[1]);
         if (by == nullptr || by == carried)
@@ -2675,6 +2689,11 @@ void add_world(ai::Calls &calls)
             carried->world->carry(*carried, *by, std::int32_t(a[2].bits & 0xffff), std::int32_t(a[3].bits & 0xffff));
     });
     calls.set(1, 102, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o)) {
+            if (running(m)->world != nullptr)
+                running(m)->world->player_carry(*o, nullptr);
+            return;
+        }
         Actor *carried = self_of(m, a[0]);
         if (carried->u32(field::kCarrier) == 0)
             return;

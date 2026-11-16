@@ -252,6 +252,10 @@ void StateMachine::tick(Actor &a)
     }
     if (current_ && waiting_)
         wait_or_begin(a);
+    // YS::ACT::exec: a begun state under priority 300 skips the ticks a damage motion plays (its thread held)
+    if (current_ && !waiting_)
+        if (ai::Thread *t = find_thread(a.machine().main_thread(), thread_id_))
+            t->held = a.damage_motion && current_->priority < 300 && (current_->flags & 2) == 0;
     while (!current_ && !queued_.empty()) {
         const Queued q = queued_.front();
         queued_.erase(queued_.begin());
@@ -272,6 +276,11 @@ bool Actor::hooked() const
         return false;
     const ai::Thread *t = find_thread(side_machine->main_thread(), side_thread);
     return t != nullptr && t->status != ai::Status::Done && t->status != ai::Status::Stopped;
+}
+
+bool StateMachine::can_control(const Actor &a) const
+{
+    return current_ && !waiting_ && (current_->flags & 2) == 0 && !(a.damage_motion && current_->priority < 300);
 }
 
 void Actor::attach_thread(ai::Machine &m, std::uint32_t id)

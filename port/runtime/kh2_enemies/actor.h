@@ -128,6 +128,10 @@ public:
     // machine's handle and the shouter's, whatever the state is now; whether it has one
     bool shout(Actor &a, const std::string &name, std::uint32_t from);
     const StateEntry *current() const { return current_ ? &*current_ : nullptr; }
+    // YS::ACT::can_control: a state runs (its routine begun) and is not held by a damage motion -- one whose priority
+    // is under 300 waits each tick a damage motion plays (YS::ACT::exec: is_damage_motion), unless its flag 1 lets it
+    // run on (+ 0x9c bit 0)
+    bool can_control(const Actor &a) const;
     std::uint32_t handle() const
     {
         return handle_;
@@ -673,6 +677,13 @@ public:
     {
         return false;
     }
+    // 1:29 on one of KH2's actors: its own part of `by`'s slot (the slot's variant named for its character, its object
+    // entry's + 7: "0190" Riku's body, "0191" his weapon) played on it, its own set kept for its own motions: false
+    // when the slot has no part of its (the call then plays `by`'s set on it as before)
+    virtual bool capture_motion(Actor & /*target*/, Actor & /*by*/, int /*slot*/, float /*blend*/)
+    {
+        return false;
+    }
     // 1:13 on a player: a motion of its own asked for (FUN_1403c8310), 0 its idle -- the script gives it back
     virtual void player_own_motion(Object & /*player*/, int /*id*/) {}
     // 1:11, 1:12, 1:61 on a player: a motion of its own started at once (start_motion, not the queue): given back now
@@ -689,6 +700,11 @@ public:
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
+    // 1:18 / 1:102 on a player: carried by one of KH2's actors (`by`, none: let down) -- he stands where it does, the
+    // camera with him (Final Xemnas's grab puts Sora on Riku, whom the pad then moves); 1:133 / 1:134 on a player his
+    // model hidden and shown (YS::OBJ::hide, show)
+    virtual void player_carry(Object & /*player*/, Object * /*by*/) {}
+    virtual void player_hide(Object & /*player*/, bool /*hidden*/) {}
     // 1:227 on a player: KH2's jump at once (YS::ACTION::jump: his own action, the jump, taken back) -- an enemy that
     // holds him lets him go to his own control then (Final Xemnas's throw's thread ends so)
     virtual void player_let_go(Object & /*player*/, const char * /*why*/) {}
@@ -845,6 +861,9 @@ public:
     void attach_thread(ai::Machine &m, std::uint32_t id);
     // whether that thread still runs (YS::OBJ::is_hook: + 0xd48 set; 6:61): a party member's AI stands aside then
     bool hooked() const;
+    // a damage motion of its plays (YS::ACT::is_damage_motion: a hit's reaction motion, 10 to 39): its states under
+    // priority 300 wait each tick it does (StateMachine::tick)
+    bool damage_motion = false;
     // its fading (+ 0xa08, FUN_1403b7810: a value and its change a tick; 1:19, 1:20, 1:28): 1 seen, 0 gone
     float fade = 1.0F, fade_step = 0.0F;
     // its model's parts in stealth (1:194, 1:195: kn::ModelObj::setStealth, resetStealth on + 0x7b0's model, a bit a
