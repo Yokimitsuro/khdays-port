@@ -159,6 +159,23 @@ int main(void)
                 CHECK(extra->e.x == 100 && extra->e.y == -56);
         }
     }
+    {
+        /* an image a frame's elements were given with is written into another replacement: the frame's own keeps
+         * its texels; one whose replacement a part asked for by number stays in it */
+        const int given = images[base_image].replacement;
+        uint32_t *texels = khdays_ui_image_begin(base_image);
+        CHECK(texels != NULL && images[base_image].replacement != given);
+        if (texels != NULL) {
+            texels[0] = 7;
+            khdays_ui_image_end(base_image);
+            CHECK(textures[given].rgba[0] == 0 && textures[images[base_image].replacement].rgba[0] == 7);
+        }
+        const int fixed = khdays_ui_image_replacement(extra_image);
+        khdays_ui_collect(64, 0);
+        texels = khdays_ui_image_begin(extra_image);
+        CHECK(texels == textures[fixed].rgba && images[extra_image].replacement == fixed);
+        khdays_ui_image_end(extra_image);
+    }
     for (int i = 0; i < texture_count; ++i)
         free((void *)textures[i].rgba);
     free(images);
