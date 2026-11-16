@@ -266,6 +266,14 @@ void StateMachine::tick(Actor &a)
     }
 }
 
+bool Actor::hooked() const
+{
+    if (side_machine == nullptr || side_thread == 0)
+        return false;
+    const ai::Thread *t = find_thread(side_machine->main_thread(), side_thread);
+    return t != nullptr && t->status != ai::Status::Done && t->status != ai::Status::Stopped;
+}
+
 void Actor::attach_thread(ai::Machine &m, std::uint32_t id)
 {
     if (side_machine != nullptr && side_thread != 0)

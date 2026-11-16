@@ -532,6 +532,47 @@ public:
     // PLAYER_COMMAND::set_special_command(n, its archive's 'comd' pictures, the object)) and taken off
     virtual void special_command(Object & /*o*/, int /*number*/) {}
     virtual void special_command_off(Object & /*o*/) {}
+    // KH2's party member's AI (kn::Friend; the shell's Friend) as its script reaches it: 1:244 whether the field
+    // fights (YS::STATUS::IsBattleMode); 10:14 its target set (Friend::setTarget: a mode, an object); 7:24 / 7:25 its
+    // own turning on and off (Friend::enable / disableSystemWishDir); 10:39 its action dropped (Friend::actionClear);
+    // 10:35 one of its actions' parameters (kn::FriendActionParam, 0x80 bytes) in the scripts' memory, 0 none; 10:24
+    // whether it has an ability (Friend::equipedAbility); its magic points (10:50 YS::SHEET's, 1:276 its use's spent,
+    // 10:43 that use set); 10:53 / 10:54 an effect it watches and whether it still plays; 2:56 the player's lock-on's
+    // target (YS::BTLOBJ::lockon_target); 6:61 whether a script's thread holds an object (YS::OBJ::is_hook)
+    virtual bool in_battle()
+    {
+        return false;
+    }
+    virtual void friend_target(Actor & /*a*/, int /*mode*/, Object * /*target*/) {}
+    virtual void friend_turning(Actor & /*a*/, bool /*own*/) {}
+    virtual void friend_action_clear(Actor & /*a*/) {}
+    virtual std::uint32_t friend_action_param(Actor & /*a*/, int /*id*/)
+    {
+        return 0;
+    }
+    virtual bool friend_ability(Actor & /*a*/, int /*ability*/)
+    {
+        return false;
+    }
+    virtual float magic_points(Object & /*o*/)
+    {
+        return 0.0F;
+    }
+    virtual void magic_use(Object & /*o*/) {}
+    virtual void magic_use_set(Object & /*o*/, int /*points*/) {}
+    virtual void friend_watch(Actor & /*a*/, std::uint32_t /*effect*/) {}
+    virtual bool friend_watching(Actor & /*a*/, std::uint32_t /*effect*/)
+    {
+        return false;
+    }
+    virtual Object *lockon_target(Object & /*o*/)
+    {
+        return nullptr;
+    }
+    virtual bool hooked(Object & /*o*/)
+    {
+        return false;
+    }
     // A way along the ground (`way`, KH2's cm) from `place` swept by a body's sphere of `radius` (KH2's cm; 0 the actor's
     // own) against the room's walls (Days's: its wall list, which its ray never meets): up to the first wall, the rest
     // slid along it when `slide`; the way made back in `way`, whether a wall stopped it
@@ -673,6 +714,11 @@ public:
     // 1:157: the event sequence of that name in the actor's .a.us (its entries of type 0x16, FUN_1403db2f0), played by
     // KH2's one event player (FUN_1402cc4b0, the one before ended), its camera placed from `target` (FUN_1403ad270)
     virtual void event(Actor & /*actor*/, const std::string & /*name*/, Object * /*target*/) {}
+    // whether one of KH2's events plays now (1:34: an object's camera sequence, 1:164's)
+    virtual bool event_playing() const
+    {
+        return false;
+    }
     // 1:17: it made to leave the field at once (its class's leave)
     virtual void leave(Actor & /*actor*/) {}
     // 6:46: a stop (its number) put on every object of the field but two (none when null); 6:47: that stop taken off
@@ -797,6 +843,8 @@ public:
     ai::Machine *side_machine = nullptr;
     std::uint32_t side_thread = 0;
     void attach_thread(ai::Machine &m, std::uint32_t id);
+    // whether that thread still runs (YS::OBJ::is_hook: + 0xd48 set; 6:61): a party member's AI stands aside then
+    bool hooked() const;
     // its fading (+ 0xa08, FUN_1403b7810: a value and its change a tick; 1:19, 1:20, 1:28): 1 seen, 0 gone
     float fade = 1.0F, fade_step = 0.0F;
     // its model's parts in stealth (1:194, 1:195: kn::ModelObj::setStealth, resetStealth on + 0x7b0's model, a bit a

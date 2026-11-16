@@ -218,6 +218,7 @@ struct KindFiles final {
     std::string folder; // the mod whose list gives it (Kind::folder): its own files there first
     std::shared_ptr<const ai::Script> script;
     std::shared_ptr<const kh2::MotionSet> set;
+    bool player_set = false; // its set a player's or a party member's (its BAR header's + 0xc bit 0: SetMotions)
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
     std::vector<Shape> shapes;
     std::uint32_t default_groups = 1; // the groups on unless the motion or the script says (the shapes' header's + 4)
@@ -467,23 +468,43 @@ void read_events(KindFiles &k, const std::string &folder)
         khdays_log("kh2 enemies: %s's %zu event sequences read", k.name.c_str(), k.events.size());
 }
 
-// A motion set as an actor's Motions: motion N is slot N (an enemy's mset maps them in order: OpenKH's MSET page)
+// A motion set as an actor's Motions: motion N is slot N (an enemy's mset maps them in order: OpenKH's MSET page); a
+// player's or party member's set (its header's flag, YS::MOTIONSET::is_player) holds four of each, motion N at 4 N plus
+// the first of its mode's order that it has (YS::MOTION::id_to_num, YS::ModeTable: 0 1 3 2, 1 0 2 3, 2 3 1 0, 3 2 0
+// 1; the mode 2 out of battle, 1 in it, turned over -- x 1 -- for a party member with his weapon)
 class SetMotions final : public Motions {
 public:
-    explicit SetMotions(std::shared_ptr<const kh2::MotionSet> set) : set_(std::move(set)) {}
+    explicit SetMotions(std::shared_ptr<const kh2::MotionSet> set, bool player = false)
+        : set_(std::move(set)), player_(player)
+    {
+    }
+    int mode = 2; // a player set's (above): its member's AI sets it
     // motion `id`: the hooked slot's entry of that number when it has one (YS::MOTION::get_motion: the hook's set
     // first, MOTIONSET::get_motion), else the set's own
     const kh2::Motion *motion(int id) const
     {
         if (const kh2::MotionSet::Variant *v = hooked_variant(id); v != nullptr)
             return v->motion.get();
-        return id >= 0 ? set_->motion(std::size_t(id)) : nullptr;
+        const int n = number(id);
+        return n >= 0 ? set_->motion(std::size_t(n)) : nullptr;
     }
     const kh2::MotionAttributes *attributes(int id) const
     {
         if (const kh2::MotionSet::Variant *v = hooked_variant(id); v != nullptr)
             return v->attributes.get();
-        return id >= 0 ? set_->attributes(std::size_t(id)) : nullptr;
+        const int n = number(id);
+        return n >= 0 ? set_->attributes(std::size_t(n)) : nullptr;
+    }
+    // its entry's number in the set (id_to_num)
+    int number(int id) const
+    {
+        if (!player_ || id < 0)
+            return id;
+        static constexpr int kOrder[4][4] = {{0, 1, 3, 2}, {1, 0, 2, 3}, {2, 3, 1, 0}, {3, 2, 0, 1}};
+        for (const int k : kOrder[mode & 3])
+            if (set_->motion(std::size_t(4 * id + k)) != nullptr)
+                return 4 * id + k;
+        return -1;
     }
     bool has(int id) const override
     {
@@ -532,6 +553,7 @@ private:
         return std::size_t(id) < entries.size() && entries[std::size_t(id)].motion ? &entries[std::size_t(id)] : nullptr;
     }
     std::shared_ptr<const kh2::MotionSet> set_;
+    bool player_ = false;
     mutable int hook_ = -1; // the hooked slot (1:75), -1 none
 };
 
@@ -632,6 +654,7 @@ KindFiles *files_of(const std::string &name, bool form = false)
                                         : std::make_shared<const ai::Script>(scripts.front().second);
             k->set = mset.empty() ? std::make_shared<const kh2::MotionSet>()
                                   : std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
+            k->player_set = mset.size() >= 16 && (mset[12] & 1) != 0;
             // (no bones for an object with no model of its own: the Possessor, drawn by its effects alone)
             const auto bar = kh2::bar_entries(mdlx.data(), mdlx.size());
             const bool model = std::any_of(bar.begin(), bar.end(), [](const kh2::BarEntry &e) { return e.type == 4; });
@@ -721,7 +744,11 @@ struct Enemy final {
         bool scaled = false, coloured = false;
         Vec3 scale{};
         std::array<float, 4> colour{1.0F, 1.0F, 1.0F, 1.0F};
-        float end_age = -1.0F; // ended once this old (0:52), -1 when not
+        // its fading out (0:52: ryj::EFFECT::fadeout_kill / fadeout_free -- its colour's alpha a share, + 0x20, that
+        // falls by + 0x24 a tick, EFFECT::fade, which runs while it is held too; at 0 the effect is freed): its share
+        // now and its fall a tick, 0 none. Xemnas's thorns are held (0:66) and faded so; until 2026-11-16 the port
+        // ended them by their age, which a held effect's does not move on, and they stayed drawn for ever)
+        float fade = 1.0F, fade_step = 0.0F;
         bool paused = false;   // held where it is (0:66, ryj::EFFECT::stop(true)): drawn as it stands, not run
         int dome = 0; // one of the laser dome's (LaserDome): 1 its lasers', 2 hits', 3 bounces', 4 bursts' -- 0 none
         // its two points when last drawn (a swing trail's base and tip): the ticks between two draws take theirs
@@ -797,6 +824,9 @@ struct Enemy final {
     // that blow's reaction (its attacks' atkp + 10, the strongest; YS::DAMAGE's REACTION_*: 0 none, 255 ignored as
     // none) and the one of the blow landing now
     int blow_reaction = 0, landing_reaction = 0;
+    // that blow's striker when a party member's (his actor's address: Riku's weapon, weapon_tick), 0 the player's; and
+    // the one of the blow landing now
+    std::uint32_t blow_party = 0, landing_party = 0;
     double pending_blows = 0.0; // KH2 player's blows that landed before the area's first Days hit measured a blow
 };
 
@@ -1273,6 +1303,97 @@ struct LaserDome final {
 std::optional<LaserDome> laser_dome;
 void laser_tick();
 
+// ------------------------------------------------------------------------------------------------- a party member
+
+// KH2's party AI's parameters (the mod's kh2/friend_param.bin: kn::friend_param_data, little-endian, which the tool
+// takes out of KINGDOM HEARTS II FINAL MIX.exe -- its first 19 words each member's record's offset; a record
+// kn::FriendParam, 0xe0 bytes: its follow ranges, its battle's, its ratios and distances, its actions', hops' and
+// specials' counts and offsets from the record)
+struct FriendAction final { // kn::FriendActionParam (0x80 bytes)
+    int id = 0, motion = 0, need_mp = 0;
+    std::uint32_t flag = 0;
+    float range_zx[2]{}, range_y[2]{}, jump = 0.0F;
+    float check_y[2]{}, disable_y_range = 0.0F, disable_y = 0.0F, cure = 0.0F;
+    std::array<std::uint8_t, 0x80> raw{}; // as read: 10:35 gives the scripts a copy
+};
+struct FriendHop final { // kn::FriendHopParam
+    float angle = 0.0F, height = 0.0F, speed = 0.0F, accel = 0.0F, time = 0.0F;
+};
+struct FriendParams final {
+    float follow[4][2]{}; // each move mode's (stand, walk, run) least and most distance, out of battle
+    float battle_player[4][2]{}, battle_enemy[4][2]{}; // in battle, to the player and to its target
+    float magic_ratio = 0.0F, hop_ratio = 0.0F, search_range = 0.0F, lost_distance = 0.0F;
+    float idle_time[2]{}, move_time[2]{}, cancel_distance = 0.0F, stay_distance = 0.0F, away_distance = 0.0F;
+    std::vector<FriendAction> actions;
+    std::vector<FriendHop> hops;
+};
+
+// PREF_PARTY (03system.bin's pref "prty", by the entry's weapon part: YS::PREF::Party, YS::SPEC::set): its walk and
+// run speeds (cm a tick), its jump's height, its turn a tick, how long it lies stunned
+struct PartySpec final {
+    float walk = 2.0F, run = 8.0F, jump = 385.0F, turn = 0.262F, stun_time = 1800.0F;
+};
+
+// A member's actions (kn::FriendPersonality's table, its own class's: the PS3 build's kn::Riku's at 0x7f5ed8, nine
+// kn::FriendAction records -- its name, attribute, routine, parameter's number, ability, item and script's label)
+enum class FriendDo { HpItem, MpItem, Idle, Move, Attack, Cure };
+struct FriendRow final {
+    const char *name;
+    std::uint32_t attribute; // bit 1 an attack, bit 9 one kept on while it can go on
+    FriendDo does;
+    int param, ability, item;
+    const char *label;
+};
+const std::vector<FriendRow> kRikuActions = {
+    {"hp_item", 0x18, FriendDo::HpItem, -1, 0, 0, nullptr},  {"mp_item", 0x28, FriendDo::MpItem, -1, 0, 0, nullptr},
+    {"idle", 0x201, FriendDo::Idle, -1, 0, 0, nullptr},      {"move", 0x201, FriendDo::Move, -1, 0, 0, nullptr},
+    {"normal_attack1", 2, FriendDo::Attack, 44, 0, 0, nullptr}, {"normal_attack2", 2, FriendDo::Attack, 45, 0, 0, nullptr},
+    {"jump_attack1", 2, FriendDo::Attack, 46, 0, 0, nullptr}, {"jump_attack2", 2, FriendDo::Attack, 47, 0, 0, nullptr},
+    {"cure", 0x10, FriendDo::Cure, 89, 46, 187, "cure"}};
+
+// A party member's weapon (YS::WEAPON, YS::PARTY::set_weapon): its own model and motions, attached to its member's
+// hand's bone (03system.bin's sklt by his skeleton's number: PARTY::hand_to_bone), its motion his own synced
+// (MOTION::sync: the same number and time in its set, his mode's), its attack ranges his blows on its shapes
+struct PartyWeapon final {
+    std::string mdlx; // its model's path (the draw's)
+    std::shared_ptr<const kh2::MotionSet> set;
+    std::shared_ptr<const kh2::MotionSkeleton> skeleton;
+    std::unique_ptr<kh2::MotionPlayer> player;
+    std::unique_ptr<SetMotions> motions;
+    std::vector<Shape> shapes;
+    int hand = -1;
+    std::vector<kh2::Mat4> pose; // its bones in its member's model space (on his hand)
+    std::map<std::size_t, std::set<unsigned>> struck;
+    int motion = -1;
+    float time = 0.0F;
+};
+
+// A party member KH2's AI moves (kn::Friend): one of the allies (the battle's partner, Kind::with's FRIEND_1)
+struct Friend final {
+    unsigned ally = 0;
+    const FriendParams *params = nullptr;
+    PartySpec spec;
+    const std::vector<FriendRow> *table = nullptr;
+    int mode = 0;            // Friend::moveMode_: 0 stands, 1 walks, 2 runs
+    float speed = 0.0F;      // its speed now, cm a tick (movement_'s w)
+    Vec3 way{};              // its movement's way
+    unsigned target = 0;     // the KH2 enemy it goes for (enemies' key), 0 none
+    int action = -1;         // its table's row it does now, -1 none
+    float action_time = 0.0F; // Friend::actionTimer_
+    std::array<int, 3> history{-1, -1, -1};
+    bool attacking = false;
+    int attack_motion = -1;
+    bool own_turning = true; // Friend::enableSystemWishDir
+    std::uint32_t watched = 0;
+    int use_mp = 0;
+    float mp = 100.0F, mp_most = 100.0F;
+    std::map<std::size_t, std::size_t> struck;
+    std::shared_ptr<PartyWeapon> weapon; // its weapon, none when its kind names none
+};
+std::map<unsigned, Friend> friends; // by their ally's number
+const FriendAction *friend_action(const Friend &f, int id);
+void friend_start(Enemy &e);
+
 // KH2's object pictures (1:285: YS::STDOBJ::show_picture, a dk::Layout of its archive's first entry of type 0x2e) by
 // handle: the object, its kind (the archive: kh2/obj/<name>.a.us, its pictures' HD pages after its effects'), the
 // layout shown, the count of its changes (Tz::Layout::setNum: the layout started again), how far it is moved (KH2's
@@ -1550,9 +1671,13 @@ public:
         if (it == by_actor.end() || record == 0)
             return;
         const Enemy &e = *it->second;
-        if (e.record_most > 0) { // KH2's numbers: its health's share of its entry's (full until Days's first hit)
-            const double share = e.health >= 0 ? double(e.health) / double(std::max<std::int64_t>(1, e.health_most))
-                                               : e.start_share;
+        if (e.record_most > 0) { // KH2's numbers: its health's share of its entry's (before Days's first hit, its start
+            // less the KH2 blows that landed since: its partner's, Riku's, on Final Xemnas)
+            const double share =
+                e.health >= 0 ? double(e.health) / double(std::max<std::int64_t>(1, e.health_most))
+                              : std::max(0.0, e.start_share - (e.health_share > 0.0
+                                                                   ? e.pending_blows / (kSoldierBlows * e.health_share)
+                                                                   : 0.0));
             const std::int64_t now = e.health == 0 ? 0 : std::max<std::int64_t>(1, std::llround(share * double(e.record_most)));
             a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(now, 0x7fffffff)));
             a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.record_most, 0x7fffffff)));
@@ -1825,7 +1950,7 @@ public:
     void effect_fade(std::uint32_t handle, float ticks) override
     {
         if (Enemy::Running *r = running_effect(handle))
-            r->end_age = r->age + ticks;
+            r->fade_step = -r->fade / ticks;
     }
     void effect_scale(std::uint32_t handle, const Vec3 &scale) override
     {
@@ -2060,6 +2185,94 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: the room's map group 0, sky and glow %s (8:%c)", on ? "hidden" : "shown",
                        on ? '6' : '7');
+    }
+    bool event_playing() const override
+    {
+        return playing.has_value();
+    }
+    bool in_battle() override
+    {
+        return std::any_of(enemies.begin(), enemies.end(),
+                           [](const auto &x) { return x.second->started && !x.second->dying && !x.second->released; });
+    }
+    Friend *friend_of(Actor &a)
+    {
+        const auto it = by_actor.find(&a);
+        const auto f = it != by_actor.end() ? friends.find(it->second->days) : friends.end();
+        return f != friends.end() ? &f->second : nullptr;
+    }
+    void friend_target(Actor &a, int mode, Object *target) override
+    {
+        Friend *f = friend_of(a);
+        Actor *t = target != nullptr ? target->actor() : nullptr;
+        const auto it = t != nullptr ? by_actor.find(t) : by_actor.end();
+        if (f != nullptr)
+            f->target = it != by_actor.end() && enemies.count(it->second->days) != 0 ? it->second->days : 0u;
+        if (tracing())
+            khdays_log("kh2 enemies: its script sets the partner's target (10:14, mode %d)", mode);
+    }
+    void friend_turning(Actor &a, bool own) override
+    {
+        if (Friend *f = friend_of(a))
+            f->own_turning = own;
+    }
+    void friend_action_clear(Actor &a) override
+    {
+        if (Friend *f = friend_of(a)) {
+            f->action = -1;
+            f->action_time = 0.0F;
+        }
+    }
+    std::uint32_t friend_action_param(Actor &a, int id) override
+    {
+        Friend *f = friend_of(a);
+        const FriendAction *x = f != nullptr ? friend_action(*f, id) : nullptr;
+        if (x == nullptr)
+            return 0;
+        static std::map<std::pair<const FriendParams *, int>, std::uint32_t> copies;
+        std::uint32_t &at = copies[{f->params, id}];
+        if (at == 0) {
+            at = mod().memory.add(0x80, "a party member's action " + std::to_string(id));
+            mod().memory.write(at, x->raw.data(), x->raw.size());
+        }
+        return at;
+    }
+    bool friend_ability(Actor &, int) override
+    {
+        return true; // (the battle's partner has his own: none of Days's to ask)
+    }
+    float magic_points(Object &o) override
+    {
+        Actor *x = o.actor();
+        Friend *f = x != nullptr ? friend_of(*x) : nullptr;
+        return f != nullptr ? f->mp : 0.0F;
+    }
+    void magic_use(Object &o) override
+    {
+        Actor *x = o.actor();
+        if (Friend *f = x != nullptr ? friend_of(*x) : nullptr)
+            f->mp = std::max(0.0F, f->mp - float(f->use_mp));
+    }
+    void magic_use_set(Object &o, int points) override
+    {
+        Actor *x = o.actor();
+        if (Friend *f = x != nullptr ? friend_of(*x) : nullptr)
+            f->use_mp = points;
+    }
+    void friend_watch(Actor &a, std::uint32_t effect) override
+    {
+        if (Friend *f = friend_of(a))
+            f->watched = effect;
+    }
+    bool friend_watching(Actor &a, std::uint32_t effect) override
+    {
+        Friend *f = friend_of(a);
+        return f != nullptr && f->watched == effect && running_effect(effect) != nullptr;
+    }
+    bool hooked(Object &o) override
+    {
+        const Actor *x = o.actor();
+        return x != nullptr && x->hooked();
     }
     void special_command(Object &o, int number) override
     {
@@ -2674,7 +2887,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
     auto e = std::make_unique<Enemy>();
     e->days = days;
     e->kind = &k;
-    e->motions = std::make_unique<SetMotions>(k.set);
+    e->motions = std::make_unique<SetMotions>(k.set, k.player_set);
     e->actor = std::make_unique<Actor>(k.script, mod().memory, mod().calls, k.name);
     e->player = std::make_unique<kh2::MotionPlayer>(*k.skeleton);
     e->slot = khdays_kh2_shell_attack_slot(days);
@@ -2878,7 +3091,7 @@ Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, b
     e->days = kAllyIds + ++allies_made;
     e->anchor = anchor;
     e->kind = &k;
-    e->motions = std::make_unique<SetMotions>(k.set);
+    e->motions = std::make_unique<SetMotions>(k.set, k.player_set);
     e->actor = std::make_unique<Actor>(k.script, mod().memory, mod().calls, k.name);
     e->player = std::make_unique<kh2::MotionPlayer>(*k.skeleton);
     Actor &a = *e->actor;
@@ -2916,6 +3129,7 @@ Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, b
     const int own = k.model_fx ? model_effects(a.u32(field::kEntry)) : 0;
     for (int n = 0; n < own; ++n)
         cast(*raw, n, 0, false, k.model_fx.get());
+    friend_start(*raw); // (a party member: KH2's party AI moves it)
     return raw;
 }
 
@@ -3283,24 +3497,11 @@ struct PlayerFiles final {
     KindFiles weapon_fx;
 };
 
-// The bone KH2's player holds his weapon on: 00objentry.bin's P_EX100 record's + 7 (its weapon joint) names a
-// character of 03system.bin's "sklt" (a u32 kind, a u32 count, then 8 bytes each: a u32 character, u16 the primary
-// weapon's bone, u16 the second's: OpenKH's 03system page); his primary's bone (178), -1 when either file lacks it
-int player_hand_bone()
+// The bone a character holds its weapon on: 03system.bin's "sklt" (a u32 kind, a u32 count, then 8 bytes each: a u32
+// character -- an object entry's + 7, its weapon joint --, u16 the primary weapon's bone, u16 the second's: OpenKH's
+// 03system page); -1 when it lacks it
+int weapon_bone(int character)
 {
-    const std::vector<std::uint8_t> entries = read_file(kh2_file("00objentry.bin"));
-    std::uint32_t count = 0;
-    if (entries.size() >= 8)
-        std::memcpy(&count, entries.data() + 4, 4);
-    int character = -1;
-    for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= entries.size() && character < 0; ++i) {
-        const std::uint8_t *r = entries.data() + 8 + 96 * std::size_t(i);
-        const char *n = reinterpret_cast<const char *>(r + 8);
-        if (std::string(n, strnlen(n, 32)) == "P_EX100")
-            character = r[7];
-    }
-    if (character < 0)
-        return -1;
     const std::vector<std::uint8_t> sys = read_file(kh2_file("03system.bin"));
     try {
         for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size()))
@@ -3321,6 +3522,24 @@ int player_hand_bone()
         khdays_log("kh2 enemies: the mod's kh2/03system.bin cannot be read (%s)", x.what());
     }
     return -1;
+}
+
+// The bone KH2's player holds his weapon on: 00objentry.bin's P_EX100 record's + 7 (its weapon joint) on
+// weapon_bone; his primary's bone (178), -1 when either file lacks it
+int player_hand_bone()
+{
+    const std::vector<std::uint8_t> entries = read_file(kh2_file("00objentry.bin"));
+    std::uint32_t count = 0;
+    if (entries.size() >= 8)
+        std::memcpy(&count, entries.data() + 4, 4);
+    int character = -1;
+    for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= entries.size() && character < 0; ++i) {
+        const std::uint8_t *r = entries.data() + 8 + 96 * std::size_t(i);
+        const char *n = reinterpret_cast<const char *>(r + 8);
+        if (std::string(n, strnlen(n, 32)) == "P_EX100")
+            character = r[7];
+    }
+    return character < 0 ? -1 : weapon_bone(character);
 }
 
 const PlayerFiles &player_files()
@@ -3447,12 +3666,12 @@ const std::vector<DamagePattern> &damage_patterns()
 // Pattern, (Default | Enable) & ~Disable (YS::PIERROT::_OVR_exec_damage): + 0xd10 Default (1:211 sets a bit, 1:212
 // and 1:324 clear it), + 0xd14 Enable and + 0xd18 Disable (its motion's ranges 36 and 37 while they last,
 // motion_states); in the air as 1:60 tells it
-int hit_pattern_reaction(const Actor &a, int first)
+int hit_pattern_reaction(const Actor &a, int first, bool not_player = false)
 {
     const bool air = (a.u32(field::kStatus) & 0x1000020u) != 0 || (a.u32(field::kFlags) & bit::kInAir) != 0 ||
                      (a.u32(field::kStatus) & 0x40u) != 0;
     const std::uint32_t on = (a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18);
-    return pattern_reaction(damage_patterns(), on, air, first);
+    return pattern_reaction(damage_patterns(), on, air, first, not_player);
 }
 
 // A KH2 player's blow with attack `atkp` on `t`: its reaction kept with the blow's, the strongest
@@ -5562,6 +5781,529 @@ std::vector<kh2::EffectPoint> points_between(const std::vector<kh2::EffectPoint>
 // Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
 // at its element's place, its sound started when its time comes; the last tick's drawn at the camera now; those over
 // let go. Where it is drawn gives its sounds' pan.
+// ------------------------------------------------------------------------------------------------- a party member's AI
+
+// kn::Friend's constructor: a member's parameters' index by his entry's part (+ 0x4c)
+int friend_index(int part, int weapon_part)
+{
+    switch (part) {
+    case 2: return weapon_part == 0x12 ? 0xc : 0; // Donald
+    case 3: return weapon_part == 0x15 ? 0xd : 1; // Goofy
+    case 5: return 2;                              // Auron
+    case 6: return 4;                              // Mulan
+    case 7: return 5;                              // Aladdin
+    case 8: return 6;                              // Sparrow
+    case 9: return 7;                              // Beast
+    case 10: return 8;                             // Jack
+    case 11: return 9;                             // Simba
+    case 12: return 10;                            // Tron
+    case 13: return 0xb;                           // Riku
+    case 15: return 3;                             // Pinocchio's
+    case 200: return 0xe;                          // Stitch
+    case 201: return 0xf;                          // Genie
+    case 202: return 0x10;                         // Peter Pan
+    case 203: return 0x11;                         // Tinker Bell
+    case 204: return 0x12;                         // Chicken Little
+    default: return 0;
+    }
+}
+
+// The members' parameters read once from the mod (kh2/friend_param.bin)
+const FriendParams *friend_params(int index)
+{
+    static std::vector<FriendParams> all;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> b = read_file(kh2_file("friend_param.bin"));
+        const auto f32 = [&b](std::size_t at) {
+            float v = 0.0F;
+            if (at + 4 <= b.size())
+                std::memcpy(&v, b.data() + at, 4);
+            return v;
+        };
+        const auto u32 = [&b](std::size_t at) {
+            std::uint32_t v = 0;
+            if (at + 4 <= b.size())
+                std::memcpy(&v, b.data() + at, 4);
+            return v;
+        };
+        for (std::size_t i = 0; b.size() >= 19 * 4 && i < 19; ++i) {
+            const std::size_t o = u32(4 * i);
+            FriendParams p;
+            if (o + 0xe0 > b.size()) {
+                all.push_back(p);
+                continue;
+            }
+            for (int m = 0; m < 4; ++m)
+                for (int k = 0; k < 2; ++k) {
+                    p.follow[m][k] = f32(o + std::size_t(8 * m + 4 * k));
+                    p.battle_player[m][k] = f32(o + 0x20 + std::size_t(8 * m + 4 * k));
+                    p.battle_enemy[m][k] = f32(o + 0x40 + std::size_t(8 * m + 4 * k));
+                }
+            const std::size_t bp = o + 0x60;
+            p.magic_ratio = f32(bp), p.hop_ratio = f32(bp + 4), p.search_range = f32(bp + 8);
+            p.lost_distance = f32(bp + 0xc), p.idle_time[0] = f32(bp + 0x10), p.idle_time[1] = f32(bp + 0x14);
+            p.move_time[0] = f32(bp + 0x18), p.move_time[1] = f32(bp + 0x1c), p.cancel_distance = f32(bp + 0x20);
+            p.stay_distance = f32(bp + 0x24), p.away_distance = f32(bp + 0x28);
+            const std::uint32_t an = u32(o + 0xa0), ao = u32(o + 0xa4), hn = u32(o + 0xa8), ho = u32(o + 0xac);
+            for (std::uint32_t k = 0; k < an && o + ao + 0x80 * (k + 1) <= b.size(); ++k) {
+                const std::size_t a = o + ao + 0x80 * k;
+                FriendAction x;
+                std::memcpy(&x.id, b.data() + a, 4);
+                std::memcpy(&x.motion, b.data() + a + 4, 4);
+                std::memcpy(&x.need_mp, b.data() + a + 8, 4);
+                x.flag = u32(a + 0xc);
+                x.range_zx[0] = f32(a + 0x10), x.range_zx[1] = f32(a + 0x14);
+                x.range_y[0] = f32(a + 0x18), x.range_y[1] = f32(a + 0x1c), x.jump = f32(a + 0x20);
+                x.check_y[0] = f32(a + 0x2c), x.check_y[1] = f32(a + 0x30), x.disable_y_range = f32(a + 0x34);
+                x.disable_y = f32(a + 0x38), x.cure = f32(a + 0x3c);
+                std::memcpy(x.raw.data(), b.data() + a, 0x80);
+                p.actions.push_back(x);
+            }
+            for (std::uint32_t k = 0; k < hn && o + ho + 0x20 * (k + 1) <= b.size(); ++k) {
+                const std::size_t a = o + ho + 0x20 * k;
+                p.hops.push_back({f32(a), f32(a + 4), f32(a + 8), f32(a + 0xc), f32(a + 0x10)});
+            }
+            all.push_back(std::move(p));
+        }
+        if (all.empty())
+            khdays_log("kh2 enemies: no party AI's parameters (the mod's kh2/friend_param.bin): partners stand still");
+    }
+    return index >= 0 && std::size_t(index) < all.size() ? &all[std::size_t(index)] : nullptr;
+}
+
+// PREF::Party of a weapon part (03system.bin's pref "prty": a count, the records' offsets, PREF_PARTY 0x34 bytes)
+PartySpec party_spec(int weapon_part)
+{
+    PartySpec spec;
+    const std::vector<std::uint8_t> sys = read_file(kh2_file("03system.bin"));
+    try {
+        for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size())) {
+            if (e.name != "pref")
+                continue;
+            const std::uint8_t *pref = sys.data() + e.offset;
+            for (const kh2::BarEntry &s : kh2::bar_entries(pref, e.size)) {
+                if (s.name != "prty" || s.size < 8)
+                    continue;
+                std::int32_t count = 0;
+                std::memcpy(&count, pref + s.offset, 4);
+                int n = weapon_part >= 0 && weapon_part < count ? weapon_part : 1;
+                std::uint32_t at = 0;
+                std::memcpy(&at, pref + s.offset + 4 + 4 * std::size_t(n), 4);
+                if (at == 0)
+                    std::memcpy(&at, pref + s.offset + 8, 4); // (none: the first's, KH2's 1)
+                if (at == 0 || at + 0x34 > s.size)
+                    continue;
+                float r[13];
+                std::memcpy(r, pref + s.offset + at, sizeof r);
+                spec.walk = r[0], spec.run = r[1], spec.jump = r[2], spec.turn = r[3], spec.stun_time = r[6];
+            }
+        }
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: the mod's kh2/03system.bin cannot be read (%s)", x.what());
+    }
+    return spec;
+}
+
+// A party member's weapon read from the mod (its kind's Kind::weapon, weapon_set), on its hand's bone; none when its
+// kind names none or its files are not there
+std::shared_ptr<PartyWeapon> party_weapon(const Enemy &e, int skeleton)
+{
+    const Kind *kind = find_kind(mod().kinds, e.kind->name);
+    if (kind == nullptr || kind->weapon.empty())
+        return nullptr;
+    try {
+        const fs::path mdlx = kh2_file("obj/" + kind->weapon + ".mdlx", kind->folder);
+        const auto model = read_file(mdlx);
+        const auto mset = read_file(kh2_file("obj/" + kind->weapon_set + ".mset", kind->folder));
+        if (model.empty() || mset.empty())
+            throw std::runtime_error("its files are not in the mod");
+        auto w = std::make_shared<PartyWeapon>();
+        const std::u8string p8 = mdlx.u8string();
+        w->mdlx.assign(p8.begin(), p8.end());
+        w->set = std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
+        w->skeleton = std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(model.data(), model.size()));
+        w->player = std::make_unique<kh2::MotionPlayer>(*w->skeleton);
+        w->motions = std::make_unique<SetMotions>(w->set, mset.size() >= 16 && (mset[12] & 1) != 0);
+        w->shapes = read_shapes(model);
+        w->hand = weapon_bone(skeleton);
+        if (tracing())
+            khdays_log("kh2 enemies: %s's weapon %s (%s), on its bone %d, %zu shapes", e.kind->name.c_str(),
+                       kind->weapon.c_str(), kind->weapon_set.c_str(), w->hand, w->shapes.size());
+        return w->hand >= 0 ? w : nullptr;
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: %s's weapon %s cannot be read (%s)", e.kind->name.c_str(), kind->weapon.c_str(), x.what());
+    }
+    return nullptr;
+}
+
+// An ally that is a party member (its entry's kind 1) made one of KH2's party AI's (Friend)
+void friend_start(Enemy &e)
+{
+    const std::uint32_t record = e.actor->u32(field::kEntry);
+    if (record == 0 || (mod().memory.u32(record + 4) & 0xff) != 1)
+        return;
+    const int part = int(mod().memory.u32(record + 0x4c) & 0xffff), weapon = int(mod().memory.u32(record + 0x4c) >> 16);
+    Friend f;
+    f.ally = e.days;
+    f.params = friend_params(friend_index(part, weapon));
+    f.spec = party_spec(weapon);
+    f.table = part == 13 ? &kRikuActions : nullptr;
+    f.weapon = party_weapon(e, int(mod().memory.u32(record + 4) >> 24));
+    if (f.params == nullptr || f.table == nullptr) {
+        khdays_log("kh2 enemies: %s's party AI not known (part %d): it stands where it is", e.kind->name.c_str(), part);
+        return;
+    }
+    if (tracing())
+        khdays_log("kh2 enemies: %08x (%s) is KH2's party member %d (params %d): walk %.1f run %.1f, %zu actions",
+                   e.days, e.kind->name.c_str(), part, friend_index(part, weapon), double(f.spec.walk),
+                   double(f.spec.run), f.params->actions.size());
+    friends[e.days] = f;
+}
+
+const FriendAction *friend_action(const Friend &f, int id)
+{
+    for (const FriendAction &a : f.params->actions)
+        if (a.id == id)
+            return &a;
+    return nullptr;
+}
+
+// kn::VecSet from `from` to `to` (KH2's world): its height (to's y less from's: up is negative), its way along the
+// ground and that way's length
+struct FriendVec final {
+    float height = 0.0F, along = 0.0F;
+    Vec3 way{};
+};
+FriendVec friend_vec(const Vec3 &from, const Vec3 &to)
+{
+    FriendVec v;
+    v.height = to[1] - from[1];
+    const float dx = to[0] - from[0], dz = to[2] - from[2];
+    v.along = std::sqrt(dx * dx + dz * dz);
+    v.way = v.along > 0.0F ? Vec3{dx / v.along, 0.0F, dz / v.along} : Vec3{};
+    return v;
+}
+
+// Friend::isInsideRange: the target within the action's ranges along the ground and up (its flags' bit 0 none
+// along the ground, bit 1 none up)
+bool friend_in_range(const FriendAction &a, const FriendVec &v, float size)
+{
+    if ((a.flag & 1) == 0 && (v.along > a.range_zx[1] + size || v.along < a.range_zx[0] - size))
+        return false;
+    if ((a.flag & 2) == 0 && (v.height < -a.range_y[1] - size || v.height > size - a.range_y[0]))
+        return false;
+    return a.disable_y_range <= v.along || std::abs(v.height) <= a.disable_y;
+}
+
+// Friend::canAction for an attack: standing (its action idle's), its target in the action's ranges, in front of it
+bool friend_can_attack(const Friend &f, const Enemy &self, const FriendAction &a, const FriendVec &v, float size)
+{
+    if (f.attacking || self.actor->jump.on || !friend_in_range(a, v, size))
+        return false;
+    const Vec3 face = facing_of(self.actor->yaw());
+    return a.jump != 0.0F || face[0] * v.way[0] + face[2] * v.way[2] >= -1.0F;
+}
+
+// Friend::followMove: its move mode by the distance to where it goes (each mode's least and most: up a mode past
+// the most, down below the least), its speed the mode's (none, walk, run), its way there
+void friend_follow(Friend &f, const FriendVec &v, const float ranges[4][2])
+{
+    if (v.along > ranges[f.mode][1] && f.mode < 2)
+        ++f.mode;
+    else if (v.along < ranges[f.mode][0] && f.mode > 0)
+        --f.mode;
+    f.speed = f.mode == 0 ? 0.0F : f.mode == 1 ? f.spec.walk : f.spec.run;
+    f.way = v.way;
+}
+
+// A KH2 tick of a party member (kn::Friend::normal_exec, battleAction, followMove; YS::ACTION_IDLE): its target (the
+// nearest of the KH2 enemies within its search range, kept till it is farther than its lost distance), out of battle
+// or without one the player followed, else an action its table's routines allow -- standing or moving a while (its
+// idle and move times), an attack whose ranges reach (its motion played from the start, a jump toward the target
+// for the jumping ones) -- picked by KH2's chance, not the same thrice; its speed and way turned into its steps
+// (swept against the walls), its turn toward its way (its spec's turn a tick), its motion its stand's, walk's or
+// run's (ACTION_IDLE: walking below half its walk and run speeds), 8 ticks blended
+void friend_tick(Friend &f, Enemy &e, Vec3 &place)
+{
+    Actor &a = *e.actor;
+    const FriendParams &p = *f.params;
+    // its set's mode (YS::MOTION::id_to_num): 1 in battle, 2 out of it, turned over with its weapon
+    e.motions->mode = (the_field().in_battle() ? 1 : 2) ^ (f.weapon != nullptr ? 1 : 0);
+    // KH2's party AI stands aside while a script's thread holds him (YS::OBJ::is_hook: Final Xemnas's grab moves him
+    // by the player's pad, 1:113 and 1:111) and while an event plays (YS::EVENT's ControlOff of the party): his motions
+    // and place are the script's then
+    if (a.hooked() || the_field().event_playing()) {
+        f.attacking = false;
+        f.speed = 0.0F;
+        f.action = -1;
+        return;
+    }
+    if (f.action_time > 0.0F)
+        f.action_time -= 1.0F;
+    Object *player = the_field().player(a);
+    const Vec3 me = a.place();
+    Enemy *t = nullptr;
+    if (const auto it = enemies.find(f.target);
+        it != enemies.end() && !it->second->dying && !it->second->released && it->second->started)
+        t = it->second.get();
+    const bool battle = the_field().in_battle();
+    if (t != nullptr && friend_vec(me, t->actor->place()).along > p.lost_distance)
+        t = nullptr;
+    if (battle && t == nullptr) { // Friend::searchEnemy: the nearest within its search range
+        float best = p.search_range;
+        for (auto &[days, x] : enemies) {
+            if (x->dying || x->released || !x->started || !x->actor)
+                continue;
+            const float d = friend_vec(me, x->actor->place()).along;
+            if (d <= best)
+                best = d, t = x.get();
+        }
+    }
+    if (!battle)
+        t = nullptr;
+    const unsigned was = f.target;
+    f.target = t != nullptr ? t->days : 0u;
+    if (tracing() && was != f.target)
+        khdays_log("kh2 enemies: %08x (partner) targets %08x", e.days, f.target);
+    if (f.attacking) { // its attack's motion plays (its root moves it, its blows strike) till it ends
+        if (a.motion.id == f.attack_motion && !a.motion.ended)
+            return;
+        f.attacking = false;
+    }
+    bool turn_to_target = false;
+    if (t == nullptr) {
+        if (player != nullptr)
+            friend_follow(f, friend_vec(me, player->place()), battle ? p.battle_player : p.follow);
+        else
+            f.speed = 0.0F;
+        f.action = -1;
+    } else {
+        const FriendVec v = friend_vec(me, t->actor->place());
+        const float size = t->radius * kKh2PerDays;
+        const auto attack_reaches = [&] {
+            for (const FriendRow &r : *f.table)
+                if (const FriendAction *x = r.does == FriendDo::Attack ? friend_action(f, r.param) : nullptr;
+                    x != nullptr && friend_can_attack(f, e, *x, v, size))
+                    return true;
+            return false;
+        };
+        const bool going_on = f.action >= 0 && ((*f.table)[std::size_t(f.action)].attribute & 0x200) != 0 &&
+                              f.action_time > 0.0F && !attack_reaches();
+        if (!going_on) { // battleAction: the rows whose routine says yes, one picked
+            std::vector<int> can;
+            for (std::size_t i = 0; i < f.table->size(); ++i) {
+                const FriendRow &r = (*f.table)[i];
+                switch (r.does) {
+                case FriendDo::Idle:
+                case FriendDo::Move:
+                    if (!attack_reaches())
+                        can.push_back(int(i));
+                    break;
+                case FriendDo::Attack:
+                    if (const FriendAction *x = friend_action(f, r.param); x != nullptr && friend_can_attack(f, e, *x, v, size))
+                        can.push_back(int(i));
+                    break;
+                default:
+                    break; // (its items and its cure: not yet)
+                }
+            }
+            if (can.size() > 1 && f.history[0] == f.history[1] && f.history[1] == f.history[2])
+                can.erase(std::remove(can.begin(), can.end(), f.history[0]), can.end());
+            if (can.empty()) {
+                f.action = -1;
+            } else {
+                f.action = can[std::size_t(kh2_chance() % std::uint32_t(can.size()))];
+                f.history = {f.action, f.history[0], f.history[1]};
+                const FriendRow &r = (*f.table)[std::size_t(f.action)];
+                const auto timer = [](const float range[2]) {
+                    return range[0] + float(kh2_chance() >> 8) / float(1u << 24) * (range[1] - range[0]);
+                };
+                if (r.does == FriendDo::Idle)
+                    f.action_time = timer(p.idle_time);
+                else if (r.does == FriendDo::Move)
+                    f.action_time = timer(p.move_time);
+                else if (const FriendAction *x = friend_action(f, r.param)) { // Friend::_OVR_attack
+                    a.set_yaw(std::atan2(v.way[0], v.way[2]));
+                    if (x->jump != 0.0F) { // a jump toward it: as high as its target over it, at its run's speed
+                        const float up = std::clamp(x->jump - v.height, 0.0F, f.spec.jump);
+                        const float ticks = std::sqrt(2.0F * up / kKh2Pull);
+                        a.jump = {};
+                        a.jump.on = true;
+                        a.jump.arc = true;
+                        a.jump.apex = ticks;
+                        a.jump.rise = -up;
+                        a.jump.along = {v.way[0] * f.spec.run, 0.0F, v.way[2] * f.spec.run};
+                        a.velocity = a.steered = a.jump.along;
+                        a.move_clock = 0.0F;
+                        a.set_bits(field::kFlags, bit::kInAir, true);
+                    }
+                    a.play(x->motion, 2.0F, 0.0F);
+                    a.motion.queued.clear();
+                    a.motion.queued.push_back({x->jump != 0.0F ? 4 : 0, 2.0F});
+                    f.attacking = true;
+                    f.attack_motion = x->motion;
+                    f.speed = 0.0F;
+                    if (tracing())
+                        khdays_log("kh2 enemies: %08x (partner) %s: motion %d at %.0f cm along, %.0f up", e.days,
+                                   r.name, x->motion, double(v.along), double(-v.height));
+                    return;
+                }
+                if (tracing())
+                    khdays_log("kh2 enemies: %08x (partner) %s for %.0f ticks", e.days, r.name, double(f.action_time));
+            }
+        }
+        const FriendRow *r = f.action >= 0 ? &(*f.table)[std::size_t(f.action)] : nullptr;
+        if (r != nullptr && r->does == FriendDo::Idle) {
+            f.speed = 0.0F;
+            turn_to_target = true;
+            f.way = v.way;
+        } else { // battleMove: toward its target
+            friend_follow(f, v, p.battle_enemy);
+        }
+    }
+    // ACTION_IDLE: turned toward its way, its step along it, its motion its speed's
+    if (f.own_turning && (f.speed > 0.0F || turn_to_target) && (f.way[0] != 0.0F || f.way[2] != 0.0F)) {
+        float d = std::atan2(f.way[0], f.way[2]) - a.yaw();
+        while (d > kPi)
+            d -= 2.0F * kPi;
+        while (d < -kPi)
+            d += 2.0F * kPi;
+        a.set_yaw(a.yaw() + std::clamp(d, -f.spec.turn, f.spec.turn));
+    }
+    if (f.speed > 0.0F && !a.jump.on) {
+        Vec3 step = {f.way[0] * f.speed, 0.0F, f.way[2] * f.speed};
+        wall_sweep(e.anchor, place, kWallRadius, step, true);
+        place[0] += step[0];
+        place[2] += step[2];
+    }
+    if (!a.jump.on) {
+        const int want = f.speed <= 0.0F ? 0 : f.speed < (f.spec.walk + f.spec.run) * 0.5F ? 1 : 2;
+        if (a.motion.id != want)
+            a.play(want, 8.0F, 0.0F);
+    }
+}
+
+// Its weapon a KH2 tick: its motion its member's (the same number and time, his mode's), its bones on his hand's;
+// its attack ranges' spheres (its own shapes, on its bones) strike the KH2 enemies they reach, each once a range, as
+// the player's team's blows do (strike_enemies)
+void weapon_tick(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
+{
+    PartyWeapon *w = f.weapon.get();
+    const Actor &a = *e.actor;
+    if (w == nullptr)
+        return;
+    w->motions->mode = e.motions->mode;
+    const kh2::Motion *m = a.motion.id >= 0 ? w->motions->motion(a.motion.id) : nullptr;
+    if (m == nullptr || e.pose.empty() || std::size_t(w->hand) >= e.pose.size()) {
+        w->pose.clear();
+        return;
+    }
+    std::vector<kh2::Mat4> own;
+    try {
+        own = pose_at(*w->player, *m, a.motion.time);
+    } catch (const std::exception &x) { // a motion made for another skeleton
+        if (tracing())
+            khdays_log("kh2 enemies: %s's weapon motion %d cannot be played (%s)", e.kind->name.c_str(), a.motion.id,
+                       x.what());
+        w->pose.clear();
+        return;
+    }
+    w->pose.resize(own.size());
+    for (std::size_t j = 0; j < own.size(); ++j)
+        row_matrix_mul(own[j].data(), e.pose[std::size_t(w->hand)].data(), w->pose[j].data());
+    if (a.motion.id != w->motion || a.motion.time < w->time)
+        w->struck.clear();
+    w->motion = a.motion.id;
+    w->time = a.motion.time;
+    const kh2::MotionAttributes *attr = w->motions->attributes(a.motion.id);
+    if (attr == nullptr)
+        return;
+    for (std::size_t r = 0; r < attr->ranges.size(); ++r) {
+        const auto &range = attr->ranges[r];
+        if ((range.id != 10 && range.id != 33) || range.params.size() < 2 || a.motion.time < float(range.start) ||
+            a.motion.time >= float(range.end))
+            continue;
+        const int atkp = std::int16_t(range.params[0]), group = std::int16_t(range.params[1]);
+        const int power = attack_power(atkp);
+        for (const Shape &sh : w->shapes) {
+            if (sh.group != group || (sh.kind & 0xff) != 6 || sh.bone < 0 || std::size_t(sh.bone) >= w->pose.size())
+                continue;
+            const kh2::Mat4 &b = w->pose[std::size_t(sh.bone)];
+            const Vec3 p = {b[0] * sh.at[0] + b[4] * sh.at[1] + b[8] * sh.at[2] + b[12],
+                            b[1] * sh.at[0] + b[5] * sh.at[1] + b[9] * sh.at[2] + b[13],
+                            b[2] * sh.at[0] + b[6] * sh.at[1] + b[10] * sh.at[2] + b[14]};
+            const Vec3 t = turned({p[0], 0.0F, p[2]}, a.yaw());
+            const float c[3] = {s.place[0] + t[0] / kKh2PerDays, s.place[1] + p[1] / kKh2PerDays,
+                                s.place[2] + t[2] / kKh2PerDays};
+            const float radius = sh.radius / kKh2PerDays;
+            for (auto &[days, other] : enemies) {
+                Enemy &x = *other;
+                if (x.released || x.dying || !x.started || w->struck[r].count(days) != 0)
+                    continue;
+                KhdaysKh2Shell ts;
+                if (!khdays_kh2_shell_read(days, &ts) || !ts.standing)
+                    continue;
+                const float low = ts.place[1] + ts.radius, high = std::max(low, ts.place[1] + kPlayerHeight - ts.radius);
+                const float d[3] = {ts.place[0] - c[0], std::clamp(c[1], low, high) - c[1], ts.place[2] - c[2]};
+                if (std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) >= radius + ts.radius)
+                    continue;
+                w->struck[r].insert(days);
+                const int base = x.days_damage > 0 ? x.days_damage : last_days_damage > 0 ? last_days_damage : 1;
+                x.blow += power > 0 ? std::max(1, base * power / 100) : 0;
+                x.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
+                x.blow_party = a.address(); // his, not the player's (the damage patterns' 2)
+                blow_reaction(x, atkp);
+                if (tracing())
+                    khdays_log("kh2 enemies: %08x (partner)'s weapon, motion %d at %.1f (atkp %d, power %d), strikes %08x: "
+                               "%d damage",
+                               e.days, a.motion.id, double(a.motion.time), atkp, power, days, x.blow);
+            }
+        }
+    }
+}
+
+// Its weapon drawn on its hand with its member's model's place (khdays_models_draw_posed: its bones given in his
+// model's space)
+void draw_weapon(const Friend &f, const float view[16], const float projection[16], unsigned alpha)
+{
+    const PartyWeapon *w = f.weapon.get();
+    if (w == nullptr || w->pose.empty() || alpha == 0)
+        return;
+    std::vector<float> bones(w->pose.size() * 16);
+    for (std::size_t b = 0; b < w->pose.size(); ++b)
+        std::copy(w->pose[b].begin(), w->pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
+    khdays_models_draw_posed(w->mdlx.c_str(), view, projection, (alpha << 16) | (1u << 24), bones.data(),
+                             w->pose.size(), 0);
+}
+
+// Its attack motions' blows (their ranges 10 and 33) on the KH2 enemies they reach: its team the player's
+void friend_blows(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
+{
+    weapon_tick(f, e, s);
+    const Actor &a = *e.actor;
+    if (a.motion.id != e.attack_motion || a.motion.time < e.attack_time)
+        e.struck.clear();
+    e.attack_motion = a.motion.id;
+    e.attack_time = a.motion.time;
+    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
+    if (attr == nullptr || e.pose.empty())
+        return;
+    for (std::size_t r = 0; r < attr->ranges.size(); ++r) {
+        const auto &range = attr->ranges[r];
+        if ((range.id != 10 && range.id != 33) || range.params.size() < 2 || a.motion.time < float(range.start) ||
+            a.motion.time >= float(range.end))
+            continue;
+        const std::size_t before = e.struck[r].size();
+        strike_enemies(e, s, r, std::int16_t(range.params[1]), std::int16_t(range.params[0]));
+        if (tracing() && e.struck[r].size() > before)
+            khdays_log("kh2 enemies: %08x (partner)'s motion %d strikes (atkp %d)", e.days, a.motion.id,
+                       int(std::int16_t(range.params[0])));
+    }
+    (void)f;
+}
+
 // ------------------------------------------------------------------------------------------------- the laser dome
 
 // KH2's pick of one of n (ryj::LAST_XEMNUS_LASER's: its chance over (2^32 + n - 1) / n)
@@ -5877,6 +6619,76 @@ void take_dome(Enemy::Running &r)
         list[i].bytes = back[i].bytes;
 }
 
+// KHDAYS_KH2_HIDE_ELEMENTS=n,n...: a diagnostic -- the KH2 effect elements of those numbers (the trace's "casts ...'s
+// element n") run but are not drawn, to find which one draws what
+bool hidden_element(const KindFiles &files, const Element *el)
+{
+    static const std::set<int> hidden = [] {
+        std::set<int> out;
+        if (const char *v = std::getenv("KHDAYS_KH2_HIDE_ELEMENTS")) {
+            std::istringstream in(v);
+            for (std::string t; std::getline(in, t, ',');)
+                out.insert(std::atoi(t.c_str()));
+        }
+        return out;
+    }();
+    if (hidden.empty())
+        return false;
+    for (const auto &[number, element] : files.fx_elements)
+        if (&element == el)
+            return hidden.count(number) != 0;
+    return false;
+}
+
+// KHDAYS_TRACE_KH2_ENEMIES=2: an element's draws that cross the screen as slivers (a triangle longer than half the
+// screen, its area under a fiftieth of its longest edge squared) or have corners behind the camera, told once a
+// second an element -- what a picture "cracked" across the screen is drawn by
+void trace_slivers(const Enemy &e, const KindFiles &files, const Enemy::Running &r)
+{
+    static std::map<std::pair<unsigned, const Element *>, unsigned> told;
+    int slivers = 0, behind = 0, all = 0;
+    float longest = 0.0F;
+    for (const kh2::EffectDraw &d : r.draws)
+        for (std::size_t t = 0; t + 2 < d.triangles.size(); t += 3) {
+            ++all;
+            float x[3], y[3];
+            bool back = false;
+            for (int k = 0; k < 3; ++k) {
+                const kh2::EffectVertex &v = d.triangles[t + std::size_t(k)];
+                back = back || v.w <= 1e-6F;
+                x[k] = v.w > 1e-6F ? v.x / v.w : 0.0F;
+                y[k] = v.w > 1e-6F ? v.y / v.w : 0.0F;
+            }
+            if (back) {
+                ++behind;
+                continue;
+            }
+            float edge = 0.0F;
+            for (int k = 0; k < 3; ++k) {
+                const float dx = x[(k + 1) % 3] - x[k], dy = y[(k + 1) % 3] - y[k];
+                edge = std::max(edge, std::sqrt(dx * dx + dy * dy));
+            }
+            const float area = std::fabs((x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0])) * 0.5F;
+            if (edge > 1.0F && area < edge * edge * 0.02F) {
+                ++slivers;
+                longest = std::max(longest, edge);
+            }
+        }
+    if (slivers == 0 && behind == 0)
+        return;
+    unsigned &last = told[{e.days, r.element}];
+    if (khdays_link_frame() - last < 60u && last != 0)
+        return;
+    last = khdays_link_frame();
+    int number = -1;
+    for (const auto &[n, element] : files.fx_elements)
+        if (&element == r.element)
+            number = n;
+    khdays_log("kh2 enemies: %08x's element %d (effect %zu, age %.0f): %d slivers (longest %.2f of the screen's 2), "
+               "%d with corners behind the camera, of %d triangles",
+               e.days, number, r.element->effect, double(r.age), slivers, double(longest), behind, all);
+}
+
 void draw_effects(Enemy &e, const float view[16], const float projection[16])
 {
     const float across = std::sqrt(view[12] * view[12] + view[14] * view[14]);
@@ -5959,12 +6771,23 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
                     v.b *= r.colour[2];
                     v.a *= r.colour[3];
                 }
+        if (r.fade_step != 0.0F && ticks > 0) { // its fading (EFFECT::fade), held or not: its draws' alpha its share
+            // (a held one's draws are the last tick's, already at the share before: those times the change)
+            const float was = r.fade;
+            r.fade = std::max(0.0F, r.fade + r.fade_step * float(ticks));
+            const float by = !r.paused ? r.fade : was > 0.0F ? r.fade / was : 0.0F;
+            for (kh2::EffectDraw &d : r.draws)
+                for (kh2::EffectVertex &v : d.triangles)
+                    v.a *= by;
+        }
         const KindFiles &files = r.files != nullptr ? *r.files : *e.kind;
-        if (r.element->effect < files.fx_pages.size())
+        if (trace_level() >= 2)
+            trace_slivers(e, files, r);
+        if (r.element->effect < files.fx_pages.size() && !hidden_element(files, r.element))
             khdays::kh2_fx::submit(r.draws, units, *files.fx_pages[r.element->effect]);
     }
     for (std::size_t i = e.fx.size(); i-- > 0;)
-        if (e.fx[i].fx->done() || (e.fx[i].end_age >= 0.0F && e.fx[i].age >= e.fx[i].end_age))
+        if (e.fx[i].fx->done() || (e.fx[i].fade_step != 0.0F && e.fx[i].fade <= 0.0F))
             e.fx.erase(e.fx.begin() + std::ptrdiff_t(i));
 }
 
@@ -6394,6 +7217,7 @@ void allies_close()
             if (record != 0)
                 mod().memory.remove(record);
         by_actor.erase(e.actor.get());
+        friends.erase(e.days);
         it = allies.erase(it);
     }
     float camera[16];
@@ -6427,9 +7251,12 @@ void allies_close()
         }
         put_on_carrier(e, place);
         Capture *turned = capture_of_form(e.days);
+        const auto partner = friends.find(e.days);
         for (unsigned t = 0; t < run; ++t) {
             if (turned != nullptr)
                 capture_tick(*turned, e, place); // a player's form: his pad moves it (KH2's action)
+            if (partner != friends.end())
+                friend_tick(partner->second, e, place); // a party member: KH2's party AI moves it
             one_tick(e, s, place);
             if (turned != nullptr) {
                 keep_off_enemies(e, place); // the player's form: out of the enemies' bodies
@@ -6439,6 +7266,8 @@ void allies_close()
             pose(e);
             if (turned != nullptr)
                 capture_blows(*turned, e, s); // its attack ranges' blows, his
+            if (partner != friends.end())
+                friend_blows(partner->second, e, s);
         }
         to_days(place, e.place);
         e.given = e.actor->place();
@@ -6466,6 +7295,8 @@ void allies_close()
             e.told_draw = true;
             khdays_log("kh2 enemies: %s's model cannot be drawn (the message above says why)", e.kind->name.c_str());
         }
+        if (partner != friends.end())
+            draw_weapon(partner->second, view, e.pure, alpha); // its weapon in its hand
     }
 }
 
@@ -6890,11 +7721,14 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     e->health_taken = 0;
     const bool blow = e->blow_landing; // a KH2 player's blow's hit, not a Days hit
     e->blow_landing = false;
+    // a party member's blow (Riku's): him the striker, and the patterns that ask for one not the player's on
+    Object *party = blow && e->landing_party != 0 ? Object::at(mod().memory, e->landing_party) : nullptr;
+    e->landing_party = 0;
     // its reaction: a Days hit's a small one (REACTION_SMALL, 3: most of KH2's player's attacks' in atkp); a KH2
     // player's blow's its attacks' (atkp + 10): "The End"'s and Cerberus's finish's none (0) -- the enemy then goes on
     // as it was (Roxas's rc_duelbaut on to his second phase); then as the enemy's damage patterns on change it
     const int first_reaction = blow ? e->landing_reaction : 3;
-    const int hit_reaction = hit_pattern_reaction(*e->actor, first_reaction);
+    const int hit_reaction = hit_pattern_reaction(*e->actor, first_reaction, party != nullptr);
     // a hit its least health kept from taking any (KH2's YS::SHEET MinHp) is a hit all the same: its reaction and its
     // trigger 6 (the Prison Keeper's spits a captive out and lowers its least on it)
     const bool at_least = e->held_at_least;
@@ -6926,12 +7760,13 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
             khdays_log("kh2 enemies: %08x defeated%s", days, e->released ? " (no \"dead\" state)" : "");
         return;
     }
-    if (Object *p = the_field().player(a))
-        a.set_u32(field::kAttacker, p->address()); // the last to hit it (2:88): the nearest player
-    // the reaction: a small one, from the front or the back as the nearest player stands (KH2's motions 10 and 12,
+    // the last to hit it (2:88): the party member whose blow it is, else the nearest player
+    Object *striker = party != nullptr ? party : the_field().player(a);
+    if (striker != nullptr)
+        a.set_u32(field::kAttacker, striker->address());
+    // the reaction: a small one, from the front or the back as the striker stands (KH2's motions 10 and 12,
     // DAMAGE_S_FRONT_HIGH and DAMAGE_S_BACK_HIGH)
     bool front = true;
-    Object *striker = the_field().player(a);
     float way[4] = {};
     if (striker != nullptr) {
         const Vec3 to = striker->place(), at = a.place(), f = facing_of(a.yaw());
@@ -7706,11 +8541,31 @@ int kept_damage(void *actor, int amount, int kinds)
         e->blow_blows = 0.0;
         if (reference_blow <= 0) {
             e->pending_blows += blows;
+            // its least health (1:231, YS::SHEET's MinHp) or its withstanding (pattern 9) keep it from falling as they
+            // keep a measured hit (below): the blows stop where its health would reach its least, one over it while it
+            // withstands -- Final Xemnas, kept at 1 for his laser dome, fell to his partner's blows alone otherwise
+            const std::uint32_t sheet = e->actor->u32(0x5c0);
+            const int least = sheet != 0 ? std::int32_t(mod().memory.u32(sheet + 8)) : 0;
+            const Actor &a = *e->actor;
+            const bool withstands = (((a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18)) & 0x200u) != 0;
+            const double whole = kSoldierBlows * e->health_share * e->start_share;
+            if (least > 0 || withstands) {
+                const double share = least > 0 && e->record_most > 0 ? double(least) / double(e->record_most) : 0.0;
+                const double most = std::max(0.0, whole - kSoldierBlows * e->health_share * share) - 1e-3;
+                if (e->pending_blows >= most) {
+                    e->pending_blows = std::max(0.0, most);
+                    e->held_at_least = true;
+                    if (tracing())
+                        khdays_log("kh2 enemies: %08x takes %.2f of KH2's blows before a Days hit measured one: held "
+                                   "at its least",
+                                   e->days, blows);
+                    return 0;
+                }
+            }
             // enough of them to end it in KH2's own measure (its health in KH2's Soldier blows, as much as is left of
             // it): its end, the Days hit its whole Days health -- Demyx's water clones (a quarter of a blow) fall to the
             // first swing of Wild Dance, as in KH2, whether Roxas struck anything before or not
-            if (KhdaysKh2Shell s; e->pending_blows >= kSoldierBlows * e->health_share * e->start_share &&
-                                  khdays_kh2_shell_read(e->days, &s) && s.hp > 0) {
+            if (KhdaysKh2Shell s; e->pending_blows >= whole && khdays_kh2_shell_read(e->days, &s) && s.hp > 0) {
                 if (tracing())
                     khdays_log("kh2 enemies: %08x takes %.2f of KH2's blows before a Days hit measured one: its "
                                "health's %.2f, its end",
@@ -7821,6 +8676,8 @@ extern "C" int khdays_kh2_enemies_blow(void *actor, int *amount)
     e->blow_landing = true;
     e->landing_reaction = e->blow_reaction;
     e->blow_reaction = 0;
+    e->landing_party = e->blow_party;
+    e->blow_party = 0;
     return 1;
 }
 

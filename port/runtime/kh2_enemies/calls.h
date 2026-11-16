@@ -39,7 +39,7 @@ void seed_chance(std::uint32_t seed);
 std::uint32_t kh2_chance();
 
 // The memory 2:21 shares among a field's objects (trap_teamwork_alloc) let go, as KH2 lets it go with its field
-// (FUN_1403f6ea0): the next field's objects make theirs anew.
+// (FUN_1403f6ea0): the next field's objects make theirs anew; the target slots' owners with it.
 void forget_teamwork();
 
 } // namespace khdays::kh2_enemies

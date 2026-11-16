@@ -155,6 +155,8 @@ KINDS = {
     # one his script commands (6:59); P_EX100_LAST is the Sora his script makes (1:0) for his reaction commands
     "B_EX170_LAST_LV99": "Xemnas (Final, Data)",
     "P_EX100_LAST": "Sora (Final Xemnas's)",
+    # the partner KH2 gives the player in Final Xemnas's battle (FRIENDS): KH2's party AI moves him (kn::Friend)
+    "P_EH000_LAST": "Riku (Final Xemnas's partner)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -183,7 +185,27 @@ VOICES = {
     "B_EX150_LV99": "n_gambler",
     "B_EX140_LV99": "n_sniper",
     "B_EX170_LAST_LV99": "n_xemnas_last",
+    "P_EH000_LAST": "eh0_riku",
 }
+# The party member KH2 gives the player in a boss's battle, as the battle's FRIEND_1 (its area's program: op 0xf, 5 --
+# W_FRIEND_ONLY -- the world's partner alone; 03system.bin's member table names him for the world): he comes with the
+# boss as its companions do, moved by KH2's party AI (the port's Friend). Final Xemnas's (eh20's b_80): Riku, whom his
+# script finds by number (1:114 2257) and part (1:210 13)
+FRIENDS = {"B_EX170_LAST_LV99": "P_EH000_LAST"}
+# A party member's weapon (YS::PARTY::set_weapon: its own object, attached to his hand's bone -- 03system.bin's sklt by
+# his skeleton -- its motions his own numbers, synced with his, from the set 03system.bin's wmst names by his weapon
+# part): its object and its motion set. KH2 takes the object from the weapon item he has equipped; the battle's
+# partner's is named here (Riku's Way to the Dawn: W_EH000, its set for weapon part 65 W_EH000_LAST). His blows are its
+# motions' attack ranges, on its shapes
+WEAPONS = {"P_EH000_LAST": ("W_EH000", "W_EH000_LAST")}
+# The sounds KH2's own code plays for a kind, which none of its files names (bank x 1000 + number): Final Xemnas's laser
+# dome (ryj::LAST_XEMNUS_LASER: its hum, a laser's hit, its bounce off a player and off his partner)
+ENGINE_SOUNDS = {"B_EX170_LAST_LV99": {374040, 374047, 374065, 374066}}
+# KH2's party AI's parameters (kn::friend_param_data: each member's follow and battle ranges, his actions' ranges and
+# motions, his hops; the PS3 build reads a debug file over them, dbg/friend_param.bin), as KINGDOM HEARTS II FINAL
+# MIX.exe holds them: its first 19 words the members' records' offsets, the whole 0x62d0 bytes (friend_params)
+FRIEND_PARAMS_SIZE = 0x62D0
+FRIEND_PARAMS_HEAD = bytes.fromhex("50000000" "50050000" "f0090000")
 # A boss its battle places more than once: the first argument (UnitArg[1], 1:39) of the one a wave makes -- the others
 # are placed with it as companions. Final Xemnas's script hides the one whose argument is not 1 as it begins (its
 # init: flag 14, faded out at once, its collision off) and commands it (Ts::XEMNAS::Get, 6:59)
@@ -245,6 +267,19 @@ def searched_numbers(bar: bytes) -> set[int]:
             if code[at].syscall == (1, 114) and pushed is not None and pushed != 0x236 and before + code[before].size == at:
                 out.add(pushed)
     return out
+
+
+def friend_params(exe: bytes) -> bytes | None:
+    """KH2's party AI's parameters (FRIEND_PARAMS_SIZE bytes, little-endian) out of its executable: where its records'
+    offsets begin (FRIEND_PARAMS_HEAD), the 19 offsets rising inside it; None when not found."""
+    at = exe.find(FRIEND_PARAMS_HEAD)
+    while at >= 0:
+        blob = exe[at : at + FRIEND_PARAMS_SIZE]
+        offsets = struct.unpack_from("<19I", blob, 0) if len(blob) == FRIEND_PARAMS_SIZE else ()
+        if offsets and all(a < b for a, b in zip(offsets, offsets[1:])) and offsets[-1] < FRIEND_PARAMS_SIZE:
+            return blob
+        at = exe.find(FRIEND_PARAMS_HEAD, at + 1)
+    return None
 
 
 def made_numbers(bar: bytes) -> set[int]:
@@ -320,6 +355,7 @@ def kinds_line(
     home: str | None = None,
     room: list[tuple[str, float, float, float, float, int]] | None = None,
     argument: int = 0,
+    weapon: tuple[str, str] | None = None,
 ) -> str:
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
     script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
@@ -329,8 +365,8 @@ def kinds_line(
     (walk_paths: "number x y z x y z ..." each, apart by ";") else "-", the KH2 map it is bound to (room_objects: its
     battle's area, bb05) else "-" --
     the port makes it only in a room made from that map -- its room's objects there ("name x y z yaw argument" each,
-    KH2's world, apart by ";") else "-", and the first argument its KH2 battle spawn gives it (unit_argument; 0 none)
-    (tab-separated)."""
+    KH2's world, apart by ";") else "-", the first argument its KH2 battle spawn gives it (unit_argument; 0 none), and
+    a party member's weapon (WEAPONS: "object:motion set") else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
@@ -341,7 +377,7 @@ def kinds_line(
     pieces = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f} {arg}" for n, x, y, z, yaw, arg in room or []) or "-"
     return (
         f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}\t{mission or '-'}"
-        f"\t{ways or '-'}\t{home or '-'}\t{pieces}\t{argument}"
+        f"\t{ways or '-'}\t{home or '-'}\t{pieces}\t{argument}\t{':'.join(weapon) if weapon else '-'}"
     )
 
 
@@ -444,6 +480,8 @@ def companions(
         for o in objects:
             other, kind = entries.get(o[0], ("", -1))
             double = other == name and name in PRIMARY
+            if other == "FRIEND_1" and name in FRIENDS:  # the battle's partner (FRIENDS)
+                other, kind = FRIENDS[name], 9
             if o is me or kind in PARTY or (kind in ENEMIES and not double) or other not in kinds:
                 continue
             dx, dy, dz = o[1] - me[1], o[2] - me[2], o[3] - me[3]
@@ -842,6 +880,11 @@ def make(
     lines = ["# KINGDOM HEARTS II's calls: kind:number arguments gives-back (read from its executable, kh2_enemies.py)"]
     lines += [f"{kind}:{number} {count} {int(back)}" for kind, number, count, back in shapes]
     calls_file.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    params = friend_params(kh2_exe.read_bytes())
+    if params is not None:
+        (mod / "kh2" / "friend_param.bin").write_bytes(params)
+    else:
+        left_out.append("KH2's party AI's parameters (not found in its executable): partners stand still")
     handled = kh2_bdx.read_handled(run([str(exe), "--kh2-ai-calls"])) if exe is not None else set()
     if exe is None:
         left_out.append("every kind's coverage: no khdays-native given (--exe), none is covered")
@@ -856,7 +899,7 @@ def make(
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = [
         "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission\twalk paths"
-        "\thome map\troom objects\tunit argument (kh2_enemies.py; the port's kh2_enemies.txt)"
+        "\thome map\troom objects\tunit argument\tweapon (kh2_enemies.py; the port's kh2_enemies.txt)"
     ]
     entries_file = kh2 / "original" / "00objentry.bin"
     entries = entries_file.read_bytes() if entries_file.is_file() else b""
@@ -934,11 +977,25 @@ def make(
                 shutil.copy2(s, obj / s.name)
         if model and not copy_pages(kh2 / "remastered" / "obj" / f"{name}.mdlx", obj / name):
             left_out.append(f"{name} ({title}): its model's HD pictures (its own PS2 pictures used)")
+        weapon_sounds: set[int] = set()
+        if name in WEAPONS:  # its weapon's object and motions (WEAPONS)
+            weapon, weapon_set = WEAPONS[name]
+            for s in (f"{weapon}.mdlx", f"{weapon}.a.us", f"{weapon_set}.mset"):
+                if (kh2 / "original" / "obj" / s).is_file():
+                    shutil.copy2(kh2 / "original" / "obj" / s, obj / s)
+                else:
+                    left_out.append(f"{name} ({title}): its weapon's {s} not there")
+            copy_pages(kh2 / "remastered" / "obj" / f"{weapon}.mdlx", obj / weapon)
+            copy_pages(kh2 / "remastered" / "obj" / f"{weapon}.a.us", mod / "kh2" / "fx" / weapon)
+            if (kh2 / "original" / "obj" / f"{weapon_set}.mset").is_file():
+                weapon_sounds = motion_sounds((kh2 / "original" / "obj" / f"{weapon_set}.mset").read_bytes())
         copy_pages(kh2 / "remastered" / "obj" / f"{name}.a.us", mod / "kh2" / "fx" / name)
         sounds = (
             (motion_sounds(sources[1].read_bytes()) if sources[1].is_file() else set())
             | (effect_sounds(sources[2].read_bytes()) if sources[2].is_file() else set())
             | script_sounds(sources[0].read_bytes())
+            | weapon_sounds
+            | ENGINE_SOUNDS.get(name, set())
         )
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
@@ -960,7 +1017,7 @@ def make(
         listed.append(
             kinds_line(
                 name, title, calls, handled, journal_title(titles, name), with_it, mission, ways, homes.get(name),
-                rooms.get(name), unit_argument(areas, numbered, name),
+                rooms.get(name), unit_argument(areas, numbered, name), WEAPONS.get(name),
             )
         )
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)

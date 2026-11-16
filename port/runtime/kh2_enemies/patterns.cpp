@@ -21,13 +21,14 @@ std::vector<DamagePattern> parse_damage_patterns(const std::uint8_t *section, st
     return out;
 }
 
-int pattern_reaction(const std::vector<DamagePattern> &patterns, std::uint32_t on, bool air, int first)
+int pattern_reaction(const std::vector<DamagePattern> &patterns, std::uint32_t on, bool air, int first,
+                     bool not_player)
 {
     int reaction = first;
     if (on == 0 || first < 0 || first >= 19)
         return reaction;
     for (const DamagePattern &p : patterns) {
-        if (p.number >= 32 || ((on >> p.number) & 1u) == 0 || p.number == 2 || (p.number == 7 && air) ||
+        if (p.number >= 32 || ((on >> p.number) & 1u) == 0 || (p.number == 2 && !not_player) || (p.number == 7 && air) ||
             (p.number == 8 && !air))
             continue;
         if (p.to[std::size_t(first)] != 0xff)

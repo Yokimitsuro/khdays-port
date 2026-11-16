@@ -100,6 +100,13 @@ std::vector<Kind> read_kinds(const std::string &text)
         }
         if (cells.size() > 12 && !cells[12].empty() && cells[12] != "-")
             k.unit_arg = std::atoi(cells[12].c_str());
+        if (cells.size() > 13 && cells[13] != "-") {
+            const std::size_t colon = cells[13].find(':');
+            if (colon != std::string::npos) {
+                k.weapon = upper(cells[13].substr(0, colon));
+                k.weapon_set = upper(cells[13].substr(colon + 1));
+            }
+        }
         out.push_back(std::move(k));
     }
     return out;

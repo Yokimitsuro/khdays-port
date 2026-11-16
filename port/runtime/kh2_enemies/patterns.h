@@ -22,7 +22,10 @@ std::vector<DamagePattern> parse_damage_patterns(const std::uint8_t *section, st
 
 // A hit's reaction once the patterns `on` (bit n: pattern number n) have changed its first one: each on, in the
 // table's order, maps `first` to its own when it has one, the last such winning; pattern 7 only on the ground, 8 only
-// in the air (`air`), 2 never (it asks a flag of the attacker's no Days player has). `first` itself when none does.
-int pattern_reaction(const std::vector<DamagePattern> &patterns, std::uint32_t on, bool air, int first);
+// in the air (`air`), 2 only when the attacker is not the player (`not_player`: YS::PATTERN::Convert asks the attacker's
+// + 0x588 bit 0x4000, which the player's has and a party member's -- Riku's in Final Xemnas's battle -- has not). `first`
+// itself when none does.
+int pattern_reaction(const std::vector<DamagePattern> &patterns, std::uint32_t on, bool air, int first,
+                     bool not_player = false);
 
 } // namespace khdays::kh2_enemies

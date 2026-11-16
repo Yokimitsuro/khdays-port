@@ -111,32 +111,50 @@ Vec3 xyz(const Vec &v)
     return {v.v[0], v.v[1], v.v[2]};
 }
 
-// A target slot (actor + 0xbf8; FUN_1403be2b0 fills one): how its target is chosen, its owner, 16 bytes in the
-// scripts' memory. KH2's modes: 2 the player (DAT_142a105d0, what 1:114 finds for 0x236); 0 and 1 the player's lock
-// or a friend's target, else the player; 3 to 6 searches from the owner (FUN_1403be7f0, FUN_1403bea30,
-// FUN_1403be4b0), not read: the player for each -- an enemy's target is Days's player. (Mode 2 was read as the owner
-// itself: Demyx, whose target is 2, then stood at no distance from it and never summoned his water clones.)
-constexpr std::uint32_t kSlotMode = 0, kSlotOwner = 4, kSlotSet = 8;
+// A target slot (actor + 0xbf8; FUN_1403be2b0 fills one): KH2's YS::TARGET, 20 bytes in the scripts' memory (often
+// in a script's own work, Final Xemnas's &wp + 0x430) -- + 0 the target object (Obj), + 4 its group, + 8 its attack,
+// + 0xc how it is chosen (Type), + 0x10 its list's link: scripts read the object off its + 0 (Final Xemnas's grab asks
+// 1:309 of it; until 2026-11-16 the port kept the mode there, and his grab never took the player). Its owner, which
+// the choice starts from, kept aside (slot_owners). KH2's modes: 2 the player (DAT_142a105d0, what 1:114 finds for
+// 0x236); 0 and 1 the player's lock or a friend's target, else the player; 3 to 6 searches from the owner
+// (FUN_1403be7f0, FUN_1403bea30, FUN_1403be4b0), not read: the player for each -- an enemy's target is Days's player.
+// (Mode 2 was read as the owner itself: Demyx, whose target is 2, then stood at no distance from it and never summoned
+// his water clones.)
+constexpr std::uint32_t kSlotObject = 0, kSlotType = 0xc, kSlotSize = 20;
+
+std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> &slot_owners()
+{
+    static std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> owners;
+    return owners;
+}
 
 std::uint32_t slot_of(Actor &a)
 {
     if (a.target_slot == 0)
-        a.target_slot = a.memory().add(16, a.name() + "'s target slot");
+        a.target_slot = a.memory().add(kSlotSize, a.name() + "'s target slot");
     return a.target_slot;
 }
 
+// the slot's target now (its owner's player), put at its + 0 as KH2 keeps it; none when the slot was never chosen
 Object *target_in(ai::Machine &m, std::uint32_t slot)
 {
     ai::Memory &mem = m.memory();
-    std::uint32_t mode = 0, owner = 0, set = 0;
-    if (!mem.read(slot + kSlotMode, &mode, 4) || !mem.read(slot + kSlotOwner, &owner, 4) ||
-        !mem.read(slot + kSlotSet, &set, 4) || set == 0)
+    const auto it = slot_owners().find({&mem, slot});
+    if (it == slot_owners().end())
         return nullptr;
-    Object *o = Object::at(mem, owner);
+    Object *o = Object::at(mem, it->second);
     Actor *a = o != nullptr ? o->actor() : nullptr;
-    if (a == nullptr || a->world == nullptr)
-        return o;
-    return a->world->player(*a);
+    Object *t = a == nullptr || a->world == nullptr ? o : a->world->player(*a);
+    mem.set_u32(slot + kSlotObject, t != nullptr ? t->address() : 0u);
+    return t;
+}
+
+// FUN_1403be2b0: a slot's target chosen for an owner by a mode
+void choose_target(ai::Machine &m, std::uint32_t slot, Object *owner, std::uint32_t mode)
+{
+    m.memory().set_u32(slot + kSlotType, mode);
+    slot_owners()[{&m.memory(), slot}] = owner != nullptr ? owner->address() : 0u;
+    target_in(m, slot);
 }
 
 // 2:21's blocks by their memory and number
@@ -161,6 +179,7 @@ std::uint32_t kh2_chance()
 void forget_teamwork()
 {
     teamwork().clear();
+    slot_owners().clear();
 }
 
 int read_shapes(ai::Calls &calls, const std::string &text)
@@ -547,6 +566,7 @@ void add_states(ai::Calls &calls)
 }
 
 void add_final_xemnas(ai::Calls &calls);
+void add_friend_calls(ai::Calls &calls);
 
 // ------------------------------------------------------------------------------------------------- the actor's fields
 
@@ -1062,12 +1082,18 @@ void add_actor_fields(ai::Calls &calls)
         if (Object *x = object_of(m, a[0]))
             x->set_u32(field::kKarmaLimit, a[1].bits);
     });
-    // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:34 DAT_142a11478 (FUN_1403ac220), 1:301
-    // FUN_1403bbea0, 1:171 / 1:206 DAT_142a11400's bits 2 / 7 -- KH2's field busy (an event, a pause), which Days's
-    // field never is for its enemies: 0
+    // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:301 FUN_1403bbea0, 1:171 / 1:206
+    // DAT_142a11400's bits 2 / 7 -- KH2's field busy (a pause), which Days's field never is for its enemies: 0
     // 1:24 DAT_140717009, the byte after 1:23's (the Wight Knight tests 9) -- the same
-    for (const unsigned n : {23u, 24u, 34u, 301u, 171u})
+    for (const unsigned n : {23u, 24u, 301u, 171u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:34 whether an event runs (YS::trap_event_is_exec -> YS::EVENT::IsExec: YS::Current set; DAT_142a11478,
+    // FUN_1403ac220): an object's camera sequence started by 1:164 is one (YS::STDOBJ::start_camera makes a YS::EVENT of
+    // kind 0xb and starts it) -- World::event_playing. Final Xemnas's laser dome fires (8:4) once his "60" is over
+    calls.set(1, 34, [](ai::Machine &m, std::span<ai::Value> a) {
+        const World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->event_playing() ? 1 : 0);
+    });
     // 1:204 / 1:205 / 1:206 the field's "force leave" set, cleared, read (trap_status_force_leave_start, _end,
     // trap_status_is_force_leave: FUN_140430860, FUN_140430870, DAT_142a11400 bit 7)
     calls.set(1, 204, [](ai::Machine &m, std::span<ai::Value>) {
@@ -2529,19 +2555,15 @@ void add_world(ai::Calls &calls)
     calls.set(2, 23, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const std::uint32_t slot = slot_of(*x);
-        if (m.memory().u32(slot + kSlotSet) == 0) {
-            m.memory().set_u32(slot + kSlotMode, 2);
-            m.memory().set_u32(slot + kSlotOwner, x->address());
-            m.memory().set_u32(slot + kSlotSet, 1);
-        }
+        if (slot_owners().count({&m.memory(), slot}) == 0)
+            choose_target(m, slot, x, 2);
+        else
+            target_in(m, slot); // (its + 0 the player now)
         a[0] = ai::Value::of_address(slot);
     });
     // 1:121 a slot's target chosen for an owner by a mode (FUN_1403be2b0: the player; target_in above)
     calls.set(1, 121, [](ai::Machine &m, std::span<ai::Value> a) {
-        Object *owner = object_of(m, a[1]);
-        m.memory().set_u32(a[0].bits + kSlotMode, a[2].bits);
-        m.memory().set_u32(a[0].bits + kSlotOwner, owner != nullptr ? owner->address() : 0);
-        m.memory().set_u32(a[0].bits + kSlotSet, 1);
+        choose_target(m, a[0].bits, object_of(m, a[1]), a[2].bits);
     });
     // 1:120 a slot's target's place (FUN_1403bdde0, FUN_1403be0f0), the shared vector; 1:131 the slot as KH2's pool
     // keeps it (FUN_1403bda80): the same slot
@@ -3194,6 +3216,110 @@ void add_world(ai::Calls &calls)
     for (const unsigned n : {257u, 258u, 259u, 260u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value>) {});
     add_final_xemnas(calls);
+    add_friend_calls(calls);
+}
+
+// ------------------------------------------------------------------------------------------------- a party member's
+
+void add_friend_calls(ai::Calls &calls)
+{
+    // 1:244 whether the field fights (YS::trap_status_is_battle -> YS::STATUS::IsBattleMode)
+    calls.set(1, 244, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->in_battle() ? 1 : 0);
+    });
+    // 1:276 its magic points spent by its use (YS::trap_obj_use_mp -> YS::PARTY::use_mp: 10:43's)
+    calls.set(1, 276, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]); x != nullptr && running(m)->world != nullptr)
+            running(m)->world->magic_use(*x);
+    });
+    // 10:43 that use set (kn::trap_obj_set_use_mp: YS::PARTY's UseMp)
+    calls.set(10, 43, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]); x != nullptr && running(m)->world != nullptr)
+            running(m)->world->magic_use_set(*x, a[1].i());
+    });
+    // 10:50 its magic points (kn::trap_sheet_get_mp: YS::SHEET's Mp)
+    calls.set(10, 50, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(x != nullptr && w != nullptr ? std::int32_t(w->magic_points(*x)) : 0);
+    });
+    // 2:56 the target of the player's lock-on into the record given (YS::trap_btlobj_lockon_target: its object, none 0)
+    calls.set(2, 56, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        World *w = running(m)->world;
+        Object *t = x != nullptr && w != nullptr ? w->lockon_target(*x) : nullptr;
+        a[0] = ai::Value::of_address(t != nullptr ? t->address() : 0u);
+    });
+    // 6:61 whether a script's thread holds an object (Ts::trap_obj_is_hook -> YS::OBJ::is_hook: 1:112's)
+    calls.set(6, 61, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(x != nullptr && w != nullptr && w->hooked(*x) ? 1 : 0);
+    });
+    // 7:24 / 7:25 a party member's own turning on and off (Ts::trap_friend_enable_system_wishdir, _disable_)
+    calls.set(7, 24, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->friend_turning(*self_of(m, a[0]), true);
+    });
+    calls.set(7, 25, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->friend_turning(*self_of(m, a[0]), false);
+    });
+    // 10:14 its target set (kn::trap_friend_set_target -> Friend::setTarget(mode, target))
+    calls.set(10, 14, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->friend_target(*self_of(m, a[0]), a[1].i(), a[2].bits != 0 ? object_of(m, a[2]) : nullptr);
+    });
+    // 10:17 / 10:18 whether an object is an enemy, a boss (kn::trap_sysobj_is_zako, _is_boss: its entry's kind 4;
+    // 3 or 0xc)
+    calls.set(10, 17, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = a[0].bits != 0 ? object_of(m, a[0]) : nullptr;
+        const std::uint32_t record = x != nullptr ? x->u32(field::kEntry) : 0u;
+        a[0] = ai::Value::of_int(record != 0 && (m.memory().u32(record + 4) & 0xff) == 4 ? 1 : 0);
+    });
+    calls.set(10, 18, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = a[0].bits != 0 ? object_of(m, a[0]) : nullptr;
+        const std::uint32_t record = x != nullptr ? x->u32(field::kEntry) : 0u;
+        const std::uint32_t kind = record != 0 ? m.memory().u32(record + 4) & 0xff : 0u;
+        a[0] = ai::Value::of_int(kind == 3 || kind == 0xc ? 1 : 0);
+    });
+    // 10:24 whether it has an ability (kn::tarp_friend_is_equiped_ability -> Friend::equipedAbility)
+    calls.set(10, 24, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->friend_ability(*self_of(m, a[0]), a[1].i()) ? 1 : 0);
+    });
+    // 10:29 an item used on a target (kn::trap_friend_use_item -> Friend::setCommandItem): Days's players have no KH2
+    // items -- nothing used
+    calls.set(10, 29, [](ai::Machine &, std::span<ai::Value>) {});
+    // 10:35 one of its actions' parameters (kn::trap_friend_get_action_param -> FriendPersonality::getActionParam)
+    calls.set(10, 35, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_address(w != nullptr ? w->friend_action_param(*self_of(m, a[0]), a[1].i()) : 0u);
+    });
+    // 10:38 whether its attack is over (kn::trap_attack_is_finish: its motion no longer an attack's -- ended or back to
+    // its idle's range)
+    calls.set(10, 38, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x->motion.ended || x->motion.id <= 2 ? 1 : 0);
+    });
+    // 10:39 its action dropped (kn::trap_friend_action_clear)
+    calls.set(10, 39, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->friend_action_clear(*self_of(m, a[0]));
+    });
+    // 10:53 / 10:54 an effect it watches and whether it plays (kn::trap_friend_add_watch_effect, _is_effect_exist)
+    calls.set(10, 53, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->friend_watch(*self_of(m, a[0]), a[1].bits);
+    });
+    calls.set(10, 54, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->friend_watching(*self_of(m, a[0]), a[1].bits) ? 1 : 0);
+    });
+    // 10:58 a magic linked to it (kn::trap_friend_link_magic -> Friend::linkMagic: the magic's object kept, its end
+    // told to it): its darkness's circle, Riku's -- kept by nothing more here
+    calls.set(10, 58, [](ai::Machine &, std::span<ai::Value>) {});
 }
 
 // ------------------------------------------------------------------------------------------------- Final Xemnas
@@ -3284,12 +3410,13 @@ void add_final_xemnas(ai::Calls &calls)
         if (Actor *x = self_of(m, a[0]))
             x->states().queue_child(*x, name_at(m.memory(), a[1].bits));
     });
-    // 6:59 one of Final Xemnas's own into an AI handle's + 4 (Ts::trap_xemnas_get_obj -> Ts::XEMNAS::Get(n): 0 the
-    // one whose first argument is 1, 1 the other; World::xemnas), 0 none
+    // 6:59 one of Final Xemnas's own (Ts::trap_xemnas_get_obj -> Ts::XEMNAS::Get(n): 0 the one whose first argument
+    // is 1, 1 the other; World::xemnas), 0 none: given back, his script puts it in an AI handle's + 4 itself (its
+    // 0x3b79 / 0x3b85, then 1:8 on the handle: his other one's own states -- atk_normal_laser3_child)
     calls.set(6, 59, [](ai::Machine &m, std::span<ai::Value> a) {
         World *w = running(m)->world;
-        Actor *x = w != nullptr ? w->xemnas(std::int32_t(a[1].bits)) : nullptr;
-        m.memory().set_u32(a[0].bits + 4, x != nullptr ? x->address() : 0u);
+        Actor *x = w != nullptr ? w->xemnas(a[0].i()) : nullptr;
+        a[0] = ai::Value::of_address(x != nullptr ? x->address() : 0u);
     });
     // 6:65 an object's model cut to the screen's rectangle or not (Ts::trap_obj_set_scissoring: its draw list's flag
     // 0x20, + 0x768): kept; the port's draw does not read it

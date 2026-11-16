@@ -1722,10 +1722,12 @@ void test_damage_patterns()
     CHECK(kh::pattern_reaction(patterns, 0, false, 3) == 3);
     CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 3) == 0 && kh::pattern_reaction(patterns, 1u << 1, false, 4) == 0);
     CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 2) == 2);
-    // 7 only on the ground, 8 only in the air; 2 never; with 1 and 7 on the later in the table (7) wins
+    // 7 only on the ground, 8 only in the air; 2 only on a hit not the player's (a party member's: Riku's blows on Final
+    // Xemnas); with 1 and 7 on the later in the table (7) wins
     CHECK(kh::pattern_reaction(patterns, 1u << 7, false, 3) == 1 && kh::pattern_reaction(patterns, 1u << 7, true, 3) == 3);
     CHECK(kh::pattern_reaction(patterns, 1u << 8, true, 3) == 4 && kh::pattern_reaction(patterns, 1u << 8, false, 3) == 3);
     CHECK(kh::pattern_reaction(patterns, 1u << 2, false, 3) == 3);
+    CHECK(kh::pattern_reaction(patterns, 1u << 2, false, 3, true) == 0);
     CHECK(kh::pattern_reaction(patterns, (1u << 1) | (1u << 7), false, 3) == 1);
     // a reaction past the table's 19 kept
     CHECK(kh::pattern_reaction(patterns, 1u << 1, false, 255) == 255);

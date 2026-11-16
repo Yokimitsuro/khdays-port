@@ -4,8 +4,8 @@
 // places with it ("name x y z yaw" each and its first argument when not 0, apart by ";"; "-" none), the mission KH2's
 // area runs with its battle (its msn file's name, kh2/msn/<name>.bar; "-" none), the walk paths of its battle ("number
 // x y z x y z ..." each, apart by ";"; "-" none), the KH2 map it is bound to ("-" none: made in any room), its room's
-// objects there ("name x y z yaw argument" each, KH2's world, apart by ";"; "-" none) and the first argument its KH2
-// battle spawn gives it (0 none).
+// objects there ("name x y z yaw argument" each, KH2's world, apart by ";"; "-" none), the first argument its KH2
+// battle spawn gives it (0 none) and a party member's weapon ("object:motion set", "-" none).
 #pragma once
 
 #include <functional>
@@ -49,6 +49,8 @@ struct Kind final {
     // the first argument its KH2 battle spawn gives it (YS::OBJ's UnitArg[1], 1:39(self, 1)): Oogie Boogie fights only at
     // 1, idles at 0; 0 for an enemy
     int unit_arg = 0;
+    // a party member's weapon (the battle's partner's: Riku's W_EH000) and its motion set (W_EH000_LAST), "" none
+    std::string weapon, weapon_set;
     // the mod whose list (kh2_enemies.txt) gives it: its own files (kh2/obj, kh2/fx, kh2/voice) are read there
     std::string folder;
 };
