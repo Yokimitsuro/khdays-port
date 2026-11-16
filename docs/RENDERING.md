@@ -399,6 +399,22 @@ width (`capture.hlsl`: the blend, `gfx_render.c` `take_capture`), and shows its
 copy of the bank instead of the DS's 256x192 one (RUNTIME_MAP, "The screen
 blends at the port's resolution").
 
+**One screen: the parts read.** The one-screen picture reads the two screens
+only through its shapes, often a few corners of them (the HUD's pieces, the
+lower screen's map), so only those parts are composed (`gfx_render.c`
+`one_reads`): each shape that takes from a screen marks the 8 x 8-dot tiles its
+source rectangle can fall on -- wider by what a repeated or mirrored shape
+reads past it, and a dot each side for the sampling -- and each row's runs of
+marked tiles, joined downward, are dispatched one after another in the
+screen's pass from an origin in the composition's parameters. The parts are
+whole dispatch groups and never overlap; the rest of the screen's texture
+holds nothing and is not read. A screen no shape reads is not composed at all.
+Composed whole as before: engine A while it is shown whole or kept as the
+capture, a shape whose reads cannot be bounded (numbers that say no place, a
+destination shorter than 1/64 dot, a scale under 1/64 or over 4096, a source
+or destination past 4096 dots), more than 64 parts, the 2D check
+(`KHDAYS_GFX=check` reads the screens back whole), and `KHDAYS_PARTS_2D=0`.
+
 **A screen kept.** A screen whose composition reads no 3D (engine B's always;
 engine A's while no 3D is drawn) comes out the same when everything it reads is
 the same, so its pass is left out and its texture stays as the picture before
@@ -408,7 +424,8 @@ What is compared, whole and not by a hash: the bytes the card is sent for the
 engine (its description, palettes, elements and left-out cells), whether a page
 of its memory or of its tile maps changed (the bank a VRAM display shows counts
 for both engines), the replacements' buffer (its generation, the images drawn
-into it), the composition's parameters and the texture itself.
+into it), the composition's parameters, the parts composed and the texture
+itself.
 `KHDAYS_KEEP_2D=0` composes every screen every time; `KHDAYS_PROFILE` says how
 often each screen was kept.
 

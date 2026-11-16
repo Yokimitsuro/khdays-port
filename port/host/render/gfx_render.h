@@ -63,6 +63,10 @@ typedef struct KhdaysOneScreenDraw {
 int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int scale3d, int raster,
                                const KhdaysOneScreenDraw *one);
 
+/* 1 (as it starts): for the one-screen picture only the parts of each screen it reads are composed
+ * (gfx_render.c one_reads), and the rest of a screen's texture holds nothing; 0 composes them whole. */
+void khdays_gfx_render_set_parts(int on);
+
 /* 1 (as it starts): a screen that reads no 3D is not composed again while nothing it is made of changes
  * (gfx_render.c kept_screen); 0 composes every screen every time. */
 void khdays_gfx_render_set_keep(int on);

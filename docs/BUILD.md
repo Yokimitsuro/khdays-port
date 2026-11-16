@@ -340,7 +340,11 @@ never belong in the repository.
   beside the DS's columns counted. 4: each package's 2D is drawn twice by
   `gfx_render.c`: the second time the screens that read no 3D must be kept
   (`docs/RENDERING.md`, "A screen kept") and hold the pixels composing them
-  anew gives, and a changed backdrop colour must compose the screen again.
+  anew gives, and a changed backdrop colour must compose the screen again;
+  and a one-screen picture of three made-up shapes (a corner, a strip turned
+  over and repeated past its rectangle, a piece shrunk) must be the same with
+  only the parts they read composed as with the screens whole, each time after
+  the screens were composed whole in other colours.
 - `save_test.c`: the save written so a crash cannot corrupt it: a child process
   writes two 64 KB images in turn as fast as it can and is stopped at a random
   moment, 100 times; the file must be one of the two, whole.

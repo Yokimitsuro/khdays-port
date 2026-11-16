@@ -7,6 +7,7 @@
 #include "../host/render/gfx_render.h"
 #include "../host/render/gpu_raster3d.h"
 #include "../gfx/g3d_interp.h"
+#include "../gfx/onescreen.h"
 #include "../runtime/display/frame_package.h"
 #include "../runtime/mods/textures.h"
 /* the window's KH2 pause: none in a recording (gfx_render.c asks) */
@@ -233,6 +234,68 @@ static int kept_as_composed(KhdaysFramePackage *p, const char *name)
         SDL_free(kept_pixels[e]);
         SDL_free(anew[e]);
     }
+    return same;
+}
+
+/* A shape of the one-screen picture (gfx/onescreen.h): `src` (x, y, w, h) of a screen at `dst` (x1, y1, x2, y2),
+ * `scale` destination dots a source dot, its texels shown whatever their alpha. */
+static void put_shape(uint32_t *w, uint32_t flags, const float src[4], const float dst[4], float scale_xy)
+{
+    const float scale[2] = {scale_xy, scale_xy}, opacity = 1.0f;
+    SDL_memset(w, 0, sizeof(uint32_t) * KO_WORDS);
+    w[KO_FLAGS] = flags | KOF_FORCE;
+    memcpy(&w[KO_SRC_X], src, sizeof(float) * 4);
+    memcpy(&w[KO_DST_X1], dst, sizeof(float) * 4);
+    memcpy(&w[KO_OPACITY], &opacity, sizeof(float));
+    memcpy(&w[KO_SCALE_X], scale, sizeof(scale));
+}
+
+/* The one-screen picture is the same with only the parts of the screens its shapes read composed
+ * (gfx_render.c one_reads) as with the screens composed whole: a corner of the lower screen, a strip of the
+ * upper one turned over and repeated, 96 dots past its rectangle, and a piece of it shrunk to half. Before
+ * the parts, the screens are composed whole in other colours: what the parts miss would show them. */
+static int parts_as_whole(KhdaysFramePackage *p, const char *name)
+{
+    static const float corner_src[4] = {160, 120, 96, 72}, corner_dst[4] = {8, 8, 104, 80};
+    static const float strip_src[4] = {120, 0, 40, 24}, strip_dst[4] = {120, 150, 256, 174};
+    static const float small_src[4] = {64, 64, 128, 96}, small_dst[4] = {150, 20, 214, 68};
+    uint32_t shapes[3 * KO_WORDS], no_key = 0;
+    KhdaysOneScreenDraw one;
+    uint32_t *pictures[2] = {NULL, NULL};
+    int w[2] = {0, 0}, h[2] = {0, 0}, same;
+    put_shape(shapes, KOF_LOWER, corner_src, corner_dst, 1.0f);
+    put_shape(shapes + KO_WORDS, KOF_MIRROR_X | KOF_REPEAT_X, strip_src, strip_dst, 1.0f);
+    put_shape(shapes + 2 * KO_WORDS, 0u, small_src, small_dst, 0.5f);
+    SDL_zero(one);
+    one.shapes = shapes;
+    one.shape_count = 3;
+    one.keys = &no_key;
+    one.frame = (int)KOS_UPPER;
+    one.columns = KHDAYS_FRAME_W;
+    for (int parts = 1; parts >= 0; --parts) {
+        /* (every colour another, whole, then as recorded) */
+        for (size_t i = 0; i < sizeof(p->palette2d); ++i) {
+            p->palette2d[i] ^= 0xffu;
+        }
+        khdays_gfx_render_set_parts(0);
+        khdays_gfx_render_draw_one(p, 3, 3, 0, &one);
+        for (size_t i = 0; i < sizeof(p->palette2d); ++i) {
+            p->palette2d[i] ^= 0xffu;
+        }
+        khdays_gfx_render_set_parts(parts);
+        if (khdays_gfx_render_draw_one(p, 3, 3, 0, &one)) {
+            pictures[parts] = khdays_gfx_render_read(2, &w[parts], &h[parts]);
+        }
+    }
+    khdays_gfx_render_set_parts(1);
+    same = pictures[0] != NULL && pictures[1] != NULL && w[0] == w[1] && h[0] == h[1] &&
+           memcmp(pictures[0], pictures[1], sizeof(uint32_t) * (size_t)w[0] * (size_t)h[0]) == 0;
+    if (!same) {
+        fprintf(stderr, "%s: the one-screen picture composed in parts is not the one composed whole (%s)\n", name,
+                pictures[0] == NULL || pictures[1] == NULL ? SDL_GetError() : "its pixels differ");
+    }
+    SDL_free(pictures[0]);
+    SDL_free(pictures[1]);
     return same;
 }
 
@@ -509,11 +572,13 @@ int main(int argc, char **argv)
         if (gpu2d && (p->wants & KHDAYS_WANT_2D)) {
             ++kept_checked;
             failures += !kept_as_composed(recorded, names[f]);
+            failures += !parts_as_whole(recorded, names[f]);
         }
         SDL_free(data);
     }
     if (gpu2d) {
-        printf("%d packages' screens kept and composed anew\n", kept_checked);
+        printf("%d packages' screens kept and composed anew, and their one-screen picture in parts and whole\n",
+               kept_checked);
     }
     if (timed > 0) {
         printf("drawn %d times each at %dx: %.3f ms a picture on average\n", times, timed_scale, timed_ms / timed);

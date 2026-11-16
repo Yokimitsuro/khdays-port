@@ -43,7 +43,7 @@ cbuffer Params : register(b0, space2) {
     uint hud3d;         // 1: the HUD's 3D apart, over the rest
     uint hud_width;     // its targets, texels (as wide as the 3D's at N)
     uint hud_height;
-    uint unused5;
+    uint origin;        // the DS dot the dispatch starts at, in eighths: x in bits 0-15, y in 16-31
 };
 
 #define FINISH3D_SCALED
@@ -146,10 +146,12 @@ void read3d_once(int x, int row)
 }
 
 [numthreads(8, 8, 1)]
-void cs_main(uint3 id : SV_DispatchThreadID)
+void cs_main(uint3 dispatched : SV_DispatchThreadID)
 {
     uint c6;
     int x, row;
+    // the dispatch covers the screen from `origin` (only a part of it composed: gfx_render.c one_reads)
+    const uint2 id = dispatched.xy + uint2(origin & 0xffffu, origin >> 16) * 8u * scale;
     if (id.x >= width || id.y >= height) {
         return;
     }
@@ -162,14 +164,14 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {
         // the one-screen picture's source: K in 8 bits, its alpha 0 (not shown over
         // the 3D) or 1 + the 3D's factor x 254 (kd_split)
-        out_screen[id.xy] = float4((float)(c6 & 255u) / 255.0f, (float)((c6 >> 8) & 255u) / 255.0f,
+        out_screen[id] = float4((float)(c6 & 255u) / 255.0f, (float)((c6 >> 8) & 255u) / 255.0f,
                                    (float)((c6 >> 16) & 255u) / 255.0f, (float)(c6 >> 24) / 255.0f);
         return;
     }
     if ((KD_DESC(KD_FLAGS) & KDF_FINE) != 0u) {
-        out_screen[id.xy] = float4((float)(c6 & 255u) / 255.0f, (float)((c6 >> 8) & 255u) / 255.0f,
+        out_screen[id] = float4((float)(c6 & 255u) / 255.0f, (float)((c6 >> 8) & 255u) / 255.0f,
                                    (float)((c6 >> 16) & 255u) / 255.0f, 1.0f);
         return;
     }
-    out_screen[id.xy] = float4(channel8(c6 & 63u), channel8((c6 >> 8) & 63u), channel8((c6 >> 16) & 63u), 1.0f);
+    out_screen[id] = float4(channel8(c6 & 63u), channel8((c6 >> 8) & 63u), channel8((c6 >> 16) & 63u), 1.0f);
 }
