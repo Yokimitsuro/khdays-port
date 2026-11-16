@@ -485,10 +485,10 @@ void add_states(ai::Calls &calls)
         if (a[1].tag == ai::Tag::Address && entry >= m.code())
             entry = (entry - m.code()) / 2;
         const ai::Value values[2] = {ai::Value::of_address(on->address()), a[2]};
-        // the second when it names an object (itself, or an AI handle whose + 4 is one)
-        std::uint32_t inner = 0;
-        const bool second = Object::at(m.memory(), a[2].bits) != nullptr ||
-                            (m.memory().read(a[2].bits + 4, &inner, 4) && Object::at(m.memory(), inner) != nullptr);
+        // the second whenever it is given (YS::trap_obj_hook: VM::dup with 2 values when it is not 0, 1 when it is) --
+        // until 2026-11-16 only when it named an object, and Final Xemnas's Reflect thread, given a record of his work,
+        // popped a value it was never given and stopped
+        const bool second = a[2].bits != 0;
         ai::Thread *t = m.start_routine(nullptr, entry, std::span<const ai::Value>(values, second ? 2u : 1u));
         if (t == nullptr)
             return;

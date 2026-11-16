@@ -1500,6 +1500,7 @@ std::uint32_t next_picture = 0x7c000000u; // handles out of the scripts' memory'
 // sends when taken (its argument), the one it follows (require: a range 26 of that number must be on), its name's text
 struct Command final {
     int argument = 0, require = 0, text = 0;
+    std::uint32_t flags = 0; // + 0xc: 0x10 offered in battle, 0x40 only while the player's motion follows its require
 };
 const Command *command(int id);
 const std::vector<std::uint8_t> &system_constants();
@@ -3604,11 +3605,13 @@ const Command *command(int id)
                         std::uint16_t number = 0, require = 0;
                         std::int16_t argument = 0;
                         std::int32_t text = 0;
+                        std::uint32_t flags = 0;
                         std::memcpy(&number, c, 2);
                         std::memcpy(&argument, c + 4, 2);
                         std::memcpy(&text, c + 8, 4);
+                        std::memcpy(&flags, c + 12, 4);
                         std::memcpy(&require, c + 34, 2);
-                        table[number] = {argument, require, text};
+                        table[number] = {argument, require, text, flags};
                     }
                 }
         } catch (const std::exception &x) {
@@ -4735,16 +4738,19 @@ bool top_menu_standing()
     return khdays_link_frame() - top_offer.frame <= 2u && enemies.count(top_offer.enemy) != 0;
 }
 
-// Whether this game's own player can take command `id` now, from his menu or a zone (KH2's FUN_1403ba070): free, any;
-// held, one whose require the motion an enemy holds him in follows on from (its range 26: Roxas's duel, AR11, "The
-// End"'s 672; his grab, AR20, "Reversal"'s 675), no other -- KH2's is then in no state to act (no range 0 to 2 in his
-// motion: the duel's "?", 104)
+// Whether this game's own player can take command `id` now, from his menu or a zone (KH2's FUN_1403ba070): free, any
+// but one that asks its require (its flags' 0x40: YS::RC_SEARCHER::get_command_elem gives it only while the player's
+// motion follows on from it, + 0x160 bit 21 and + 0x50c -- Days's own motions follow on from none) or one not given in
+// battle (no 0x10, the field always fighting); held, one whose require the motion an enemy holds him in follows on from
+// (its range 26: Roxas's duel, AR11, "The End"'s 672; his grab, AR20, "Reversal"'s 675; Final Xemnas's grab, AQ50,
+// "Rescue"'s 657), no other -- KH2's is then in no state to act (no range 0 to 2 in his motion: the duel's "?", 104).
+// Final Xemnas's Rescue zone stands on all the battle long: its 0x40 keeps it to his grab
 bool command_usable(int id)
 {
     const auto h = held.find(local_player);
-    if (h == held.end())
-        return true;
     const Command *c = command(id);
+    if (h == held.end())
+        return c == nullptr || ((c->flags & 0x40u) == 0 && (c->flags & 0x10u) != 0);
     return c != nullptr && c->require != 0 && h->second.follows.count(c->require) != 0;
 }
 

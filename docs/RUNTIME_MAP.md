@@ -6041,6 +6041,21 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   scope looked down at Xigbar's own chest; now his aim point. Events gave no control back: `scope_start`'s 1:42 kept
   Roxas still for the whole scope until the port ended an event as `YS::EVENT::phase_end` does.
 
+- **Final Xemnas and Riku** (2026-11-16, B_EX170_LAST_LV99 with P_EH000_LAST in window runs, the coliseum; docs/
+  KH2_ENEMIES.md, "Final Xemnas and Riku"): a whole battle played -- his dance with his double, the air fight (Riku in
+  his AQ10 for 8 s, back to his AI after), two grabs each freed with "Rescue" at its first offer (the menu showing
+  "Saltar / Razia tenebrosa / Atacar", Riku moved by the pad and striking with 197 and 198, the camera on him), and the
+  dome: fired 6 s after 8:3 (his "60" over), 30 Reflects taken, ended 30.09 s after it fired (1800 ticks at KH2's 60).
+  Riku's party AI: walk 2, run 8, search 800 cm, lost at 1200; his normal_attack2 (152) every second within 2.2 m,
+  jump_attack2 (182) up to 3.2 m above him.
+- **A hit's karma** (the same runs): Xemnas set his limit to 75 (2:76); a run of 8 Days hits (10 each) put him in
+  `revenge` at the next damage motion's frame 20 -- twice in a whole battle where the reflect path had entered it
+  on every reacting hit (453 times in one run, his 1 HP held under Riku's flinching blows).
+- **Cracks across the screen were held effects** (the same runs): Xemnas's thorns (effect 3, elements 10 to 12) are
+  held by 0:66 and then faded by 0:52 (12 ticks, `EFFECT::fadeout_kill`); the port ended an effect by its age, which a
+  held one's does not move on, and the thorns stayed drawn where they fell for the rest of the fight (found with
+  KHDAYS_KH2_HIDE_ELEMENTS and the slivers KHDAYS_TRACE_KH2_ENEMIES=2 tells).
+
 ## 38. Days's commands on KH2's reaction command bar
 
 Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)

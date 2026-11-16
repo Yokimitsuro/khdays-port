@@ -133,20 +133,36 @@ and moves.
 The game asks for states by name: `dead` (`FUN_140410af0`, the defeat), `leave` (`FUN_1403de080`), `reraise`,
 `dead_crash`, `after_talk`, `before_check`; a hit asks for the reaction state its attack names (below).
 
-**Revenge.** KH2 tells a hit to the actor twice (`FUN_140410d60`): its attack's own reaction (`FUN_140410700`,
-`FUN_140411060`: the attacker kept at + 0xd38, trigger 19, the reaction's motion, the queue cleared, then the state
-the attack's data names at its + 0x18 entered by name -- a small hit's `revenge`), then the current state's hit
-routine and **trigger 6** (its argument the hit), the native reaction (the class's virtual + 0xc8,
-`FUN_1403d2fe0`) and 8 listening threads. Every enemy script's trigger 6 asks `1:309` of `2:88` -- + 0x6c8 bit 7 of
-the last to hit it, set only by the player's maker (`FUN_1403a7a40`): struck by the player, it enters
-`mode_revenge`, otherwise `mode_battle`. `mode_revenge` (a state that waits for the reaction to end) picks its revenge
-moves: the Rabid Dog's `rvg_short` (`move_counter`, then `atk_rush`) or `rvg_long` (`atk_dive`) by the player's
-distance against its handle's + 0x34 (450). `revenge` itself picks `rst_normal`, `rst_hard` or `rst_super_hard` by
-its handle's + 0x18; the Rabid Dog registers none of them, and KH2's lookup (`FUN_1403ca700`) then enters nothing.
-The port does the same: Days's hit runs the state's hit routine (+ 0x18, `FUN_1403caba0`: the state's handle, the
-hit's damage and its attack) and trigger 19 (the damage and the attack) -- the attack a Days hit's, its + 0xc and its
-owner (2:24) the player who struck -- then enters `revenge`, then runs the state's + 0x10 routine (`FUN_1403ca470`:
-the handle and the damage) and raises trigger 6; Days's players carry the player's bit.
+**A hit: damage, not reflect.** KH2 has two paths for an attack reaching an enemy (the PS3 build's, read
+2026-11-16). Its **damage** (`YS::ENEMY::_OVR_exec_damage` -> `YS::PIERROT::_OVR_exec_damage` ->
+`YS::BTLOBJ::_OVR_exec_damage_reaction`): the enemy's **karma** (+ 0xaf0 in the PS3 build) takes the attack's
+RevengeDamage (atkp + 0x2a: Sora's small hits 10, his finishers 20, Riku's 0), its health falls (`add_damage`), its
+damage patterns change the reaction (`PATTERN::Convert`), the current state's + 0x10 routine runs (`ACT::damage`,
+callback 3), trigger 6 fires with the hit, and the reaction's motion starts by its kind (1 hitback, 2 a small one on
+the spot, 3 a small one -- ground or air --, 4 a blow, 5 a tornado, 0xe a large one), its idle pushed after it
+(`MOTION::push(0)`). Nothing clears the state queue, nothing enters a state. Its **reflect**
+(`PIERROT::_OVR_exec_reflect`: the PC's `FUN_140411060`) is when its own attack is turned back: the state's + 0x18
+routine (`ACT::reflect`, callback 7), trigger 19, the attack's reflected motion (atkp + 0x15) with `ACT::clear`, then
+the state the attack names (atkp + 0x18). Until 2026-11-16 the port ran the reflect path on every Days hit: each
+reacting hit cleared the queue and entered `revenge` at once (Final Xemnas, flinching under Riku's blows, never left
+his `revenge`).
+
+**Revenge.** A damage motion's trigger 28 (`ANMATR::ExecTriggerCallback`'s 0x1c; Final Xemnas's 10 to 24 at their
+frame 20) asks for `revenge` (`ACT::request`: entered at once when the script has it) once the karma has reached its
+limit (+ 0xaf4: 100, from `YS::ENEMY`'s constructor, which also sets the + 0x588 bit 4 the trigger tests; 2:76 sets
+another -- Final Xemnas 75). The karma falls by the frame time every tick the state can act (`ENEMY::_OVR_pre_exec`,
+`ACT::can_control`). While a damage motion plays (`ACT::is_damage_motion`: a motion 10 to 39, or a reflect), a state
+under priority 300 skips its ticks (`ACT::exec`) unless its flag 1 lets it run on; `revenge` is 300. So an enemy takes
+a run of flinches and then breaks out of them, as KH2's do. Every enemy script's trigger 6 asks `1:309` of `2:88` --
++ 0x6c8 bit 7 of the last to hit it, set only by the player's maker (`FUN_1403a7a40`): struck by the player, it enters
+`mode_revenge`, otherwise `mode_battle`. `mode_revenge` (a state that waits for the reaction to end) picks its
+revenge moves: the Rabid Dog's `rvg_short` (`move_counter`, then `atk_rush`) or `rvg_long` (`atk_dive`) by the
+player's distance against its handle's + 0x34 (450). `revenge` itself picks `rst_normal`, `rst_hard` or
+`rst_super_hard` by its handle's + 0x18; the Rabid Dog registers none of them, and KH2's lookup (`FUN_1403ca700`) then
+enters nothing. The port: Days's hit adds its karma (10, as KH2's player's small hit; a KH2 blow its atkps'), runs the
+state's + 0x10 routine and trigger 6 (the hit's attack, its + 0xc and its owner -- 2:24 -- the player who struck),
+plays the reaction motion with the idle after it, holds the state while it plays, and enters `revenge` from trigger
+28; Days's players carry the player's bit.
 
 ## The Soldier's and the Shadow's calls
 
@@ -198,12 +214,14 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
 | 1:39, 1:218 | its unit's argument n (`trap_obj_unit_arg`: `YS::OBJ`'s `UnitArg`, + 0x9f4 + 4 n, what the room's spawn gives each object; the Shadow tests 99); one set (`trap_obj_set_unit_arg`) | Days's waves give none: 0, then what 1:218 set |
 | 1:104, 1:105, 1:309 | + 0x8c8 bit 6 set and cleared; + 0x6c8 bit 7 of an actor: the player (set by its maker, `FUN_1403a7a40`) | as KH2; Days's players have the bit |
-| 1:23, 1:34, 1:301, 1:171 | KH2's field busy: `DAT_140717008` (tested == 10), `DAT_142a11478`, `FUN_1403bbea0`, `DAT_142a11400`'s bit 2 | 0: Days's field is never busy for its enemies |
+| 1:23, 1:301, 1:171 | KH2's field busy: `DAT_140717008` (tested == 10), `FUN_1403bbea0`, `DAT_142a11400`'s bit 2 | 0: Days's field is never busy for its enemies |
+| 1:34 | whether an event runs (`trap_event_is_exec` -> `YS::EVENT::IsExec`: `YS::Current` set): an object's camera sequence (1:164, `STDOBJ::start_camera`, makes a `YS::EVENT` of kind 0xb) is one | as KH2: an event sequence playing (Final Xemnas's dome fires after his "60") |
 | 1:204, 1:205, 1:206 | the field's "force leave" set, cleared, read (`trap_status_force_leave_start`, `_end`, `trap_status_is_force_leave`: `DAT_142a11400` bit 7) | as KH2, the world's, cleared with the area (Oogie Boogie's) |
 | 1:119 | a way toward a point at a height (`FUN_1403b7f10`): 1 or 2 a jump on the way, 3 none | 0: Days's rooms have no KH2 paths; the room's collision keeps the actor out of the walls |
 | 1:92 | a point of the ground ahead (a ray, then `FUN_1403dc170` with a number) | nothing |
 | 2:8 | whether a hit's reaction kind (+ 0x26, `FUN_1403ce980`'s groups) is past 1: trigger 6's hit, which the Strafer and the cubes turn to their revenge on | as KH2: Days's hits are small reactions (2) |
-| 1:128, 1:133, 1:134 | the object's class's virtuals + 0x20, + 0x80, + 0x88 (its native code) | nothing |
+| 1:128 | the object's class's virtual + 0x20 (its native code) | nothing |
+| 1:133, 1:134 | the object hidden, shown (`trap_obj_hide`, `trap_obj_show`) | on a Days player his model hidden and shown (Final Xemnas's grab hides Sora on Riku); nothing on an actor |
 | 2:9 | the actor's + 0x5c0 made from a number (`FUN_140411350`) | nothing |
 | 2:20 | a routine of the script started as a thread of its own (`trap_magic_start_thread`, `FUN_1403c5ec0`: a machine of its own on the script, `FUN_1403e1970`, put in the game's list of them, `FUN_1403c4e90`; run apart from its object's ticks) | a loose thread of its object's machine (`Machine::start_loose`); the shell runs the field's loose threads once a KH2 tick after the enemies' own ticks, the frame's shouts told after the first (the Sorcerer's turn-giving thread moves the turn its order gave on before its cubes hear it). Until 2026-11-11 they ran inside their object's tick, before its state's routine: the turn never came in time |
 
@@ -249,13 +267,13 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 0:23 | a value without its sign (`FUN_14041ca90`), marked a whole number | as KH2 |
 | 0:85 | an effect's loops closed and the effect freed once it has ended (`trap_effect_loop_end_kill`, `FUN_14041e1c0` -> `FUN_1402be8f0`: `ryj::EFFECT::loop_end_kill`) | as 0:44 (Data Roxas closes the glows `1:87` put on him as he rolls or waits for his duel: left going, every roll added to them and the screen went white) |
 | 1:2 | steered toward a point along the ground at a speed (`FUN_1403b9c60`: + 0x10, + 0x1c), the way's length back; its first value the actor itself | as KH2 |
-| 1:29 | another object plays a motion of this one's set from a frame (`FUN_1403c6cc0`: its set made this one's, + 0x2b8; + 0x180) -- the Magnum Loader's rider, on its message 309 | as KH2, on another of the port's actors |
+| 1:29 | another object plays a motion of this one's set from a frame (`FUN_1403c6cc0`: its set made this one's, + 0x2b8; + 0x180) -- the Magnum Loader's rider, on its message 309. A slot of type 0x14 holds a part per character, named by its object entry's + 7 (its weapon joint: "0010" Sora's body, "0011" his keyblade, "0190" Riku's body, "0191" his weapon) | as KH2, on another of the port's actors: its own part when the slot has one (its own set kept for its own motions, its weapon its "...1"; ended as it plays another), else the set given to it (Final Xemnas's air fight carries Riku in his AQ10 so) |
 | 1:58 | flying (`trap_obj_fly`) at a velocity of its own (`FUN_140421ce0`: + 0x20 the vector made one long times its w, + 0x108 a value, class 5, whose movement `FUN_140421c80` keeps + 0x108 of it an evaluation, eased toward the steering) | as KH2 (class 5 ends with 1:74 or a jump) |
 | 1:66, 1:69, 1:84, 1:97, 1:179 | + 0x120's 0x8000000 set; the float at + 0x19c; the object at + 0x5c0 (2:9's); where + 0x128 lies; + 0x118 (its fall's motion) set | as KH2 |
 | 1:83 | a point given on a bone (0x4000 the actor itself, in its own axes) in the world (`FUN_1403b50f0`: the bone's matrix, the point through it) | the pose the enemy has now |
 | 1:90 | a state's name shouted (`trap_obj_act_shout`): `FUN_1403cacd0` lists it with the shouter, `FUN_1403c9d40` sends the list to every object once a frame -- with a delay each its own time at random below it (+ 0x4c0 .. + 0x4d0, KH2's chance), else at once -- and each runs its own state of that name's shout routine (the state record's + 0x14, event 5; `FUN_1403ca950` through `FUN_1403e2000`), given its own handle and the shouter's; no state is entered | every KH2 enemy of the field, at the next frame's first tick, once the field's loose threads ran (2:20). Until 2026-11-10 the port entered the state at once: the Silver Rock, whose `rc_address_shift_appear` shouts its own name, entered it again and again within one tick and the game stood still |
 | 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it |
-| 1:112 | a routine of the script as the actor's attached thread (`FUN_1403e1970`, `FUN_1403d76d0`: + 0xd48, the one before ended), the actor its first value | as KH2 |
+| 1:112 | a routine of the script as the actor's attached thread (`FUN_1403e1970`, `FUN_1403d76d0`: + 0xd48, the one before ended), the actor its first value, the third its second whenever it is not 0 (`trap_obj_hook`: `VM::dup` with one value or two) | as KH2 (until 2026-11-16 the second only when it named an object: Final Xemnas's Reflect thread, given a record, stopped at once) |
 | 1:140 | whether a target record's object (its + 8) is there (`FUN_1403bde30`; its other test, the player's lock, not read) | its + 8 only |
 | 1:143 | an actor found by its placing record's number (`FUN_1403b41e0`, 0x70 for 0) | none: the slot left empty |
 | 1:162 | the actor put on one of KH2's lists (`FUN_1403bd410` -> `FUN_14040c9d0`) | nothing |
@@ -317,7 +335,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 2:7, 2:92, 2:15 | a hit's reaction kind (`YS::DAMAGE`'s `Reaction`, + 0x26); whether it is a finishing one (`OrigReaction`, + 0x27, 6, 7, 10 or 11); its reaction to be carried out (`Flag`, + 0x18, bit 0) | as KH2 on the Days hit: a small reaction (2), no finish; the port plays a Days hit's reaction before trigger 6, so 2:15 changes nothing |
 | 2:1 | a blow taken (`trap_enemy_exec_damage_blow`, `FUN_1403d3f50`): from the front (the hit's way, `Dir`, against its facing) it turns to face the hit and plays the first motion given, from behind it turns its back and plays the second, then it is thrown as 1:129 throws -- along the way's ground part the last value fast, the one before up -- landing in the motion after; + 0x124 bit 17 a finish's | as KH2: a Days hit's way is from the player who struck to the enemy along the ground. The Mole Driller `M_EX700`'s (16 and 18, 15 up, 20 along) |
 | 1:161 | whether another object carries it (`trap_obj_is_attach`: `YS::OBJ`'s `Attach`, + 0x6a0) | as KH2: none of Days's do |
-| 2:76 | its karma's limit (`trap_enemy_set_karma_limit`: `YS::ENEMY`'s `KarmaLimit`, + 0xd4c, after its `Karma`) | kept; the port's revenge does not read it yet |
+| 2:76 | its karma's limit (`trap_enemy_set_karma_limit`: `YS::ENEMY`'s `KarmaLimit`, + 0xd4c, after its `Karma`) | as KH2: trigger 28's ("A hit: damage, not reflect", above) |
 | 6:4, 6:57 | a search's list emptied (`Ts::TARGET_SEARCHER`'s `Counter`, + 8, and its ring's next, + 4's low byte); a target record's group (+ 4) | as KH2 |
 | 2:4, 1:292 | the enemy after one, the first after none (`trap_enemy_each`, `FUN_1403db9d0`); the object whose unit argument n is a value, into an AI handle (`trap_obj_search_by_unit_arg`) | KH2's actors of the field |
 | 1:59, 1:224 | whether it flies (`trap_obj_is_fly`: its class's flag bit 1 -- class 5, which 1:58 `trap_obj_fly` gives it -- or + 0x18c bit 6); whether its class is one of the air's (`trap_obj_is_action_air`: the flags' bits 0 or 1) | as KH2 |
@@ -871,7 +889,49 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   run (the coliseum): the scope's opening event cameras ("00", "10"), twelve rounds of aiming and locking on (the
   violet sights, then the yellow), Roxas moving under it, reaction commands 491 and 598 taken, the shake, the
   sights' closing (layout 3) and "20" after. Not seen: his end.
-- **Not yet**: Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`).
+- **Final Xemnas** `B_EX170_LAST_LV99` and **Riku** `P_EH000_LAST` (2026-11-16): "Final Xemnas and Riku", below.
+
+### Final Xemnas and Riku (2026-11-16)
+
+Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his battle's partner, Riku
+(`P_EH000_LAST`), read in his script and the PS3 build and seen in window runs (2026-11-15 and 16):
+
+- **Two Xemnas**: his battle's spawn places two (the second as his companion), the one whose first unit argument is 1
+  seen, the other faded out with no collision (his init). His script finds them by part 4007 (6:59,
+  `Ts::XEMNAS::Get(n)`: one value in, the object back -- until 2026-11-16 the port took two and wrote at address 5) and
+  queues states for the other (6:58, `YS::ACT::child_push`, entered on it in `ACT::check_start`): his blades' dance,
+  the `_child` lasers, and his dark mode (`mode_dark_start`, `mode_battle_dark`: `atk_shield`, `atk_bomb`) while Sora
+  is held. So in KH2 one Xemnas is seen most of the fight.
+- **Riku**, KH2's party member (the area's `W_FRIEND_ONLY` partner, the battle's `FRIEND_1`; the tool makes him a
+  companion), moved by **KH2's party AI** (`kn::Friend`: `friend_param_data` -- 0x62d0 bytes, read from
+  KINGDOM HEARTS II FINAL MIX.exe by the tool -- his follow and battle ranges, `PREF_PARTY` "prty" for his speeds, his
+  9 actions; `battleAction`, `followMove`, `ACTION_IDLE`). A party member's motion set holds four of each motion
+  (`YS::MOTION::id_to_num`: N at 4 N plus the first of its mode's order; mode 2 out of battle, 1 in it, turned over
+  with his weapon); a slot it is hooked to (1:75) is numbered so too (251 -> entry 1004, whose 197 is 788). His
+  **weapon** (`YS::WEAPON`): `W_EH000` with the set `03system.bin`'s wmst names for his weapon part 65
+  (`W_EH000_LAST`), on his hand's bone (sklt's character 19: bone 163), its motion his own number and time, its
+  attack ranges his blows on Xemnas (the damage patterns' 2 applies to them: the attacker not the player). His AI
+  stands aside while a script's thread holds him (`PARTY::exec_hook`) or an event plays.
+- **The laser dome** (`atk_crowd_laser`, `rc_crowd_laser`; `ryj::LAST_XEMNUS_LASER`, 8:3 to 8:7): 405 lasers on 15
+  rings; it fires (8:4) once his camera "60" is over (1:34), each laser at the player, bouncing off him in a Reflect
+  motion (650, offered by 1:165 every tick -- "Reflect", Sora's 254 to 256) or striking him; it ends 1800 ticks after
+  (a timer his offers' thread counts, his player threads' check: `crowd_laser_finish`, 8:5) and he dies
+  (`rc_crowd_laser_finish`, `dead`). Its sounds (374040 the hum, 374047, 374065, 374066) are the engine's own: the
+  tool copies them (`ENGINE_SOUNDS`).
+- **His grab** (`atk_dark`, motion 224, its trigger 7 with 200 at frame 100 -> trigger 17): the player within a metre
+  in front is bound (`rc_invitation_to_dark2`, his HP drained), Sora's puppet (`P_EX100_LAST`) made, the player hidden
+  (1:133) and put on Riku (1:18), and Riku hooked (1:112 1652) -- the pad moves him (1:113 -> 1:111, 0:81 the jump)
+  while the player's command menu is the special one (10:6, `STDOBJ::set_special_command` -> menu 14,
+  `RcDarkRikuTable`: Jump 454, Dark Aura 653, Attack 652, in Xemnas's own pictures; its commands sent to him as
+  reaction commands: 652 Riku's 197, 653 his 198). "Rescue" (654) frees Sora: offered by Xemnas's zone (group 7, on
+  all the fight long), given only while the player's motion follows on from its require 657 (the command's flags 0x40:
+  `RC_SEARCHER::get_command_elem`) -- his AQ50.
+- **His air fight** (`atk_air_fight`, `rc_air_fight`): Riku rides in Xemnas's AQ10 (1:29: his own part, "0190") till
+  it ends, then his AI takes him back.
+- **What the port does not do yet**: Riku takes no hits (no health of his, no stun, no KO) and the lasers aim at the
+  player alone (KH2's `LASER::attack` picks Riku by chance or when the player plays 270 or 271); 8:6's hiding of the
+  arena's map (KH2's own map group 0, sky and glow) has no Days room to hide; his event cameras ("50", "60", "61") are
+  placed for KH2's arena and look elsewhere in Days's rooms.
 
 ### The scope, the pictures and the screen's shake
 
