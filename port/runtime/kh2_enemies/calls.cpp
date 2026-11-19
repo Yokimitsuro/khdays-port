@@ -114,7 +114,7 @@ Vec3 xyz(const Vec &v)
 // A target slot (actor + 0xbf8; FUN_1403be2b0 fills one): KH2's YS::TARGET, 20 bytes in the scripts' memory (often
 // in a script's own work, Final Xemnas's &wp + 0x430) -- + 0 the target object (Obj), + 4 its group, + 8 its attack,
 // + 0xc how it is chosen (Type), + 0x10 its list's link: scripts read the object off its + 0 (Final Xemnas's grab asks
-// 1:309 of it; until 2026-11-16 the port kept the mode there, and his grab never took the player). Its owner, which
+// 1:309 of it: with the mode there his grab never takes the player). Its owner, which
 // the choice starts from, kept aside (slot_owners). KH2's modes: 2 the player (DAT_142a105d0, what 1:114 finds for
 // 0x236); 0 and 1 the player's lock or a friend's target, else the player; 3 to 6 searches from the owner
 // (FUN_1403be7f0, FUN_1403bea30, FUN_1403be4b0), not read: the player for each -- an enemy's target is Days's player.
@@ -165,11 +165,6 @@ std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> &teamwork(
 }
 
 } // namespace
-
-void seed_chance(std::uint32_t seed)
-{
-    chance_state = seed != 0 ? seed : 1;
-}
 
 std::uint32_t kh2_chance()
 {
@@ -332,9 +327,9 @@ void add_math(ai::Calls &calls)
     });
     // 0:31 the screen faded to white over n frames, 0:32 back from white (func_screen_whiteout, _whitein in the PS3
     // build: FUN_14041dd70, FUN_14041ddb0 -> FUN_140156ce0, FUN_140156c90 on FUN_140156dc0's fader, white): the world's
-    // (World::screen_white; until 2026-11-19 none was shown -- Sephiroth's reaction command 664 flashes it a frame,
-    // Jafar fades it). 0:88 back from black (trap_screen_fadein, FUN_14041de70; KH2's hit asks 0:32 for 10 frames):
-    // Days's screen fades are its own, so none is shown
+    // (World::screen_white: Sephiroth's reaction command 664 flashes it a frame, Jafar fades it). 0:88 back from black
+    // (trap_screen_fadein, FUN_14041de70; KH2's hit asks 0:32 for 10 frames): Days's screen fades are its own, so none
+    // is shown
     calls.set(0, 31, [](ai::Machine &m, std::span<ai::Value> a) {
         if (World *w = running(m)->world)
             w->screen_white(true, a[0].f());
@@ -508,9 +503,8 @@ void add_states(ai::Calls &calls)
         if (a[1].tag == ai::Tag::Address && entry >= m.code())
             entry = (entry - m.code()) / 2;
         const ai::Value values[2] = {ai::Value::of_address(on->address()), a[2]};
-        // the second whenever it is given (YS::trap_obj_hook: VM::dup with 2 values when it is not 0, 1 when it is) --
-        // until 2026-11-16 only when it named an object, and Final Xemnas's Reflect thread, given a record of his work,
-        // popped a value it was never given and stopped
+        // the second whenever it is given (YS::trap_obj_hook: VM::dup with 2 values when it is not 0, 1 when it is):
+        // Final Xemnas's Reflect thread is given a record of his work so
         const bool second = a[2].bits != 0;
         ai::Thread *t = m.start_routine(nullptr, entry, std::span<const ai::Value>(values, second ? 2u : 1u));
         if (t == nullptr)
@@ -728,8 +722,8 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 69, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_float(self_of(m, a[0])->f(0x19c));
     });
-    // 1:84 an object's sheet (+ 0x5c0): a player's his own (World::player_sheet -- until 2026-11-19 the running
-    // enemy's: Sephiroth's Heartless Angel read his own health for the player's and left himself 1)
+    // 1:84 an object's sheet (+ 0x5c0): a player's his own (World::player_sheet), not the running enemy's
+    // (Sephiroth's Heartless Angel reads the player's health)
     calls.set(1, 84, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         const Actor *x = running(m);
@@ -795,8 +789,7 @@ void add_actor_fields(ai::Calls &calls)
     // the slot left empty; 1:162 the actor put on one of KH2's lists (FUN_1403bd410): nothing here
     // ... or its + 0's an actor in play with a shape of kind 3 in its groups on (what 6:5 finds; the PS3 build's
     // YS::TARGET::is_exist: OBJ::is_exist, is_enable_collision, a collision of TYPE 3) -- a player's always (KH2's
-    // Sora has his): until 2026-11-19 a target record on the player read as gone, and Vexen's disc, homing on him
-    // through one, stopped and flew off in a straight line
+    // Sora has his): Vexen's disc homes on him through one
     calls.set(1, 140, [](ai::Machine &m, std::span<ai::Value> a) {
         bool there = Object::at(m.memory(), m.memory().u32(a[0].bits + 8)) != nullptr;
         Object *o = there ? nullptr : Object::at(m.memory(), m.memory().u32(a[0].bits));
@@ -862,8 +855,7 @@ void add_actor_fields(ai::Calls &calls)
     });
     // 1:133 / 1:134 the object hidden and shown (YS::trap_obj_hide, trap_obj_show: its class's VTABLE hide, its flags'
     // FLAG_HIDE_MODEL and FLAG_HIDE_SHADOW set, and show, FLAG_HIDE_MODEL cleared): a KH2 actor's model and the effects
-    // that fade with it not drawn meanwhile (Actor::hidden); a player's, World::player_hide. Until 2026-11-19 only a
-    // player's was
+    // that fade with it not drawn meanwhile (Actor::hidden); a player's, World::player_hide
     calls.set(1, 133, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         if (o != nullptr && is_player(o) && running(m)->world != nullptr)
@@ -1037,8 +1029,7 @@ void add_actor_fields(ai::Calls &calls)
     // YS::SHEET::_add_hp: kept between the bar's least and most; the bar's health given back): the first bar's given to
     // Days's enemy (at least 1)
     calls.set(1, 155, [](ai::Machine &m, std::span<ai::Value> a) {
-        // a player's (no actor of the port's): Days's player's HP (World::add_player_health) -- until 2026-11-19 the
-        // running enemy's
+        // a player's (no actor of the port's): Days's player's HP (World::add_player_health), not the running enemy's
         if (Object *o = object_of(m, a[0]); o != nullptr && o->actor() == nullptr) {
             const Actor *me = running(m);
             a[0] = ai::Value::of_int(me != nullptr && me->world != nullptr
@@ -1337,8 +1328,8 @@ void add_motions(ai::Calls &calls)
     });
     // 1:13 a motion asked of the object's controller to follow the one it plays (trap_sysobj_motion_push ->
     // YS::MOTION::push_queue: its ring of motions, which add_time takes from as the motion reaches its end): queued
-    // (Playing::queued), played at once when none plays. Until 2026-11-14 it was played at once: Zexion's illusion,
-    // asking 201 and then 202, skipped 201 and never called him on to his book ("start_illusion" at 201's trigger 10).
+    // (Playing::queued), played at once when none plays: Zexion's illusion asks 201 and then 202, and 201's trigger 10
+    // calls him on to his book ("start_illusion").
     // A player's own (Cerberus's 0, its idle, at the end of its reaction command) gives the player back to Days
     calls.set(1, 13, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
@@ -2990,8 +2981,8 @@ void add_world(ai::Calls &calls)
     // the field's KH2 mission (World::mission): 4:3 complete, 4:5 a counter's count set (the count, then its index:
     // YS::MISSION::SetCount(n, index)), 4:6 one more (its index), 4:11 failed, 4:14 its pieces shown, 4:15 hidden,
     // 4:16 its boss dead, 4:20 one less (its index), 4:21 whether its pieces are up, 4:22 left, 4:29 a counter's count
-    // (its index), 4:41 so many more (how many, then its index: AddCount(n, index) -- until 2026-11-19 read the other
-    // way round, Vexen's full gauges never counted), 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT,
+    // (its index), 4:41 so many more (how many, then its index: AddCount(n, index); Vexen's full gauges counted so),
+    // 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT,
     // MISSION2D; the PS3 build's names trap_mission_set_count ...)
     for (const unsigned n : {3u, 5u, 6u, 11u, 14u, 15u, 16u, 20u, 21u, 22u, 29u, 41u, 54u, 55u})
         calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
@@ -3483,7 +3474,7 @@ void add_final_xemnas(ai::Calls &calls)
     // tops -- its speed the flight's, + 0x20 = + 0x860): it goes on as it flew, falling under KH2's pull
     calls.set(1, 95, [](ai::Machine &m, std::span<ai::Value> a) {
         if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: the world's steering of him ends
-            // (Sephiroth's grab's thread, 770, lets him fall so; until 2026-11-19 the running actor fell instead)
+            // (Sephiroth's grab's thread, 770, lets him fall so), not the running actor
             if (running(m)->world != nullptr)
                 running(m)->world->player_steer(*o, {}, 0.0F);
             return;

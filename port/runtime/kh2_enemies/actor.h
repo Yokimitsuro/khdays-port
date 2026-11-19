@@ -959,8 +959,6 @@ public:
     // (FUN_1403cb940: + 0x11c, then 5 again for the next)
     void touch_down();
 
-    static Actor *of_handle(ai::Machine &m, std::uint32_t handle);
-
 private:
     std::unique_ptr<ai::Machine> machine_;
     StateMachine states_;

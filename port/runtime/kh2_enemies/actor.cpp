@@ -249,8 +249,7 @@ void StateMachine::tick(Actor &a)
 {
     if (current_) {
         // its routine ended: the state left as KH2 leaves it then (FUN_1403ca550 -> FUN_1403caec0), its leave routine
-        // run -- the Sorcerer's cubes clear their "busy" so after a shield (until 2026-11-11 the port skipped it, and
-        // they never took another order)
+        // run -- the Sorcerer's cubes clear their "busy" so after a shield, else they never take another order
         ai::Thread *t = find_thread(a.machine().main_thread(), thread_id_);
         if (t == nullptr || t->status == ai::Status::Done || t->status == ai::Status::Stopped)
             leave(a);
@@ -397,9 +396,8 @@ Actor::Actor(std::shared_ptr<const ai::Script> script, ai::Memory &memory, const
     machine_ = std::make_unique<ai::Machine>(std::move(script), memory_, calls, this);
     // its Spec as YS::SPEC::SPEC makes it (YS::OBJ's constructor; YS::ENEMY's and YS::BTLOBJ's change none of it):
     // walking 2, running 8, a jump 160 high, turning pi / 16 (0x3e490fdb), up and down 0, accelerating 0.95; its
-    // fall's most is YS::PREF::System's + 0x14, not read: 0. Until 2026-11-19 all 0: 1:80 with no step of its own
-    // never turned it -- Sephiroth walked to the player along the way he faced, into the coliseum's walls, and his
-    // split flash then went off the other way
+    // fall's most is YS::PREF::System's + 0x14, not read: 0. Without the turning, 1:80 with no step of its own never
+    // turns it (Sephiroth walks into the coliseum's walls and his split flash goes off the other way)
     constexpr float kPi = 3.14159265358979F;
     set_f(field::kSpec + 0x0, 2.0F);
     set_f(field::kSpec + 0x4, 8.0F);
@@ -430,12 +428,6 @@ void Actor::tick()
 bool Actor::event(std::int32_t trigger, std::span<const ai::Value> args)
 {
     return machine_->raise(trigger, args);
-}
-
-Actor *Actor::of_handle(ai::Machine &m, std::uint32_t handle)
-{
-    Object *o = at(m.memory(), m.memory().u32(handle + 4));
-    return o != nullptr ? o->actor() : nullptr;
 }
 
 // FUN_1403c86a0 (YS::MOTION::start_motion): the motion set going from `start`; a blend above 2 ticks

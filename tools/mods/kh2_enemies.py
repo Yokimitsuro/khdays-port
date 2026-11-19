@@ -252,10 +252,10 @@ SCRIPT_ENTRY = 0xD  # an .ard's scripts (map, btl, evt)
 SPAWN_OP, MISSION_OP = 0x0, 0x15  # their operations: a spawn file placed, a mission run (OpenKH's ARD page)
 MISSIONS = "msn/us"  # original/<MISSIONS>/<name>.bar: KH2's missions (OpenKH's MSN page)
 BOSSES = (3, 0xC)  # object entries' kinds of a boss and a large enemy (the Hydra)
-# Bosses bound to their KH2 rooms (room_objects: Shadow Stalker, Dark Thorn, Oogie Boogie) left out for now (the
-# maintainer, 2026-11-13): a room made from their own map still lacks what KH2's does for them (its conveyors, its
-# objects' own collision). True makes them, their room's objects and what their scripts make, as the port can play
-# them (docs/KH2_ENEMIES.md, "Bosses bound to their rooms").
+# Bosses bound to their KH2 rooms (room_objects: Shadow Stalker, Dark Thorn, Oogie Boogie) left out for now: a room
+# made from their own map still lacks what KH2's does for them (its conveyors, its objects' own collision). True makes
+# them, their room's objects and what their scripts make, as the port can play them (docs/KH2_ENEMIES.md, "Bosses bound
+# to their rooms").
 ROOM_BOSSES = False
 ENEMIES = (3, 4, 0xC)  # and of an enemy: the port makes each a Days enemy
 
@@ -948,7 +948,6 @@ def make(
                 making[piece] = f"{piece} ({title}'s room)"
                 homes[piece] = area
     # the objects each kind's script makes (1:0) go with it: the Lingering Will's B_EX430, Zexion's books and illusions
-    # (until 2026-11-14 only the room bosses' were taken, so the Will's second object was never in the mod)
     todo = list(making)
     while todo:
         name = todo.pop()

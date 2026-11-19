@@ -1263,8 +1263,8 @@ static uint32_t whiter(uint32_t word, unsigned factor)
 /* A KH2 enemy's screen faded to white (khdays_kh2_enemies_screen_white: its script's 0:31 and 0:32) laid over this
  * frame's picture as the master brightness toward white on both engines (MASTER_BRIGHT's mode 1), where it is whiter
  * than the game's own: in what the host reads of the frame -- each engine's 2D description (KD_MASTER, the one-screen
- * picture's brightness) and its information (the composition's). The game's registers are left alone: written there
- * for a frame (2026-11-19), the game kept the white for good. */
+ * picture's brightness) and its information (the composition's). The game's registers are left alone: the game keeps
+ * what is written there. */
 static void whiten(KhdaysFramePackage *p)
 {
     const float white = khdays_kh2_enemies_screen_white();

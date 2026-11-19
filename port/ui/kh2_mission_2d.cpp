@@ -859,8 +859,8 @@ void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::Sequen
             Overlay o;
             o.x0 = x_at(side.name[0]) + 1.0F, o.y0 = y_at(side.name[1]);
             o.x1 = x_at(side.name[2]), o.y1 = y_at(side.name[3]);
-            // its capitals as tall as KH2's own name (the font's cell 1.6 times the box: seen beside "LUXORD",
-            // 2026-11-15), narrower where it would pass the bar's plain end (as far again as two fifths of the
+            // its capitals as tall as KH2's own name (the font's cell 1.6 times the box: seen beside "LUXORD"),
+            // narrower where it would pass the bar's plain end (as far again as two fifths of the
             // name's own stretch)
             const float room = (x_at(side.name[2]) - x_at(side.name[0])) * 1.4F;
             const float wide = khdays::ui::kh2::sys_font().width(name);
@@ -877,7 +877,7 @@ void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::Sequen
 // The top a piece's column puts it under (kColumnTops); one laid out by the middle of the screen as low as the lowest
 // of those so laid -- two pieces whose halves meet there (Lexaeus's power counts: Sora's "POW" ending at the middle in
 // the left column, Lexaeus's "ER" starting there in the right, "POWER" between them) kept in one row, as KH2's
-// columns start alike; until 2026-11-19 they stood 13 dots apart
+// columns start alike
 float column_top(const Piece &p)
 {
     float top = kColumnTops[column_of(p.kh2)];

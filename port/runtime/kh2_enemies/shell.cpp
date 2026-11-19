@@ -92,9 +92,8 @@ bool tracing()
 }
 
 // KH2's world in Days's: turned half round its x (its y down, its z the other way) and in centimetres -- as a room made
-// from a KH2 map lays the map (map_point). Until 2026-11-19 the z was kept: the KH2 enemies' world was a mirror of
-// KH2's, whatever their scripts reckoned to one side came out on the other (Marluxia's doom's two figures the other way
-// round, 95 shown "59")
+// from a KH2 map lays the map (map_point). With the z kept it would be a mirror of KH2's: whatever the scripts reckon
+// to one side would come out on the other (Marluxia's doom's two figures the other way round)
 Vec3 to_kh2(const float d[3])
 {
     return {d[0] * kKh2PerDays, -d[1] * kKh2PerDays, -d[2] * kKh2PerDays};
@@ -121,8 +120,8 @@ float days_turn(float yaw)
 }
 
 // A point or way of KH2's world in the frame the shell's own placing in Days's world (its models, their effects, held
-// players, the dome) was written in until 2026-11-19 -- Days's axes, its y down -- and back (its own inverse); a yaw in
-// that frame is days_turn's. Its formulas kept so, what Days draws stays as it was
+// players, the dome) is written in -- Days's axes, its y down -- and back (its own inverse); a yaw in that frame is
+// days_turn's
 Vec3 legacy(const Vec3 &k)
 {
     return {k[0], k[1], -k[2]};
@@ -890,8 +889,8 @@ struct Enemy final {
         std::array<float, 4> colour{1.0F, 1.0F, 1.0F, 1.0F};
         // its fading out (0:52: ryj::EFFECT::fadeout_kill / fadeout_free -- its colour's alpha a share, + 0x20, that
         // falls by + 0x24 a tick, EFFECT::fade, which runs while it is held too; at 0 the effect is freed): its share
-        // now and its fall a tick, 0 none. Xemnas's thorns are held (0:66) and faded so; until 2026-11-16 the port
-        // ended them by their age, which a held effect's does not move on, and they stayed drawn for ever)
+        // now and its fall a tick, 0 none. Xemnas's thorns are held (0:66) and faded so: a held effect's age does not
+        // move on)
         float fade = 1.0F, fade_step = 0.0F;
         bool paused = false;   // held where it is (0:66, ryj::EFFECT::stop(true)): drawn as it stands, not run
         int dome = 0; // one of the laser dome's (LaserDome): 1 its lasers', 2 hits', 3 bounces', 4 bursts' -- 0 none
@@ -1245,7 +1244,6 @@ unsigned shouts_frame = ~0u;
 // a thread a script started on a player before taking it in hand (Cerberus's 1:112 comes before its 1:29), by object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
-bool kh2_layers_on = true;     // KH2's 2D layers (1:354 off, 1:356 on)
 unsigned local_takes = 0;      // the reaction commands this game's own player took (khdays_kh2_enemies_taken)
 // the object types whose control a script took away (1:42, YS::ControlFlag): 0 the player -- Days's players locked as
 // Days's own lock locks them (khdays_kh2_enemies_control_off, Ov022_TranslateCommandToAction)
@@ -1553,8 +1551,8 @@ struct FriendHop final { // kn::FriendHopParam
 struct FriendParams final {
     float follow[4][2]{}; // each move mode's (stand, walk, run) least and most distance, out of battle
     float battle_player[4][2]{}, battle_enemy[4][2]{}; // in battle, to the player and to its target
-    float magic_ratio = 0.0F, hop_ratio = 0.0F, search_range = 0.0F, lost_distance = 0.0F;
-    float idle_time[2]{}, move_time[2]{}, cancel_distance = 0.0F, stay_distance = 0.0F, away_distance = 0.0F;
+    float search_range = 0.0F, lost_distance = 0.0F; // + 0x68, + 0x6c
+    float idle_time[2]{}, move_time[2]{};            // + 0x70, + 0x78
     std::vector<FriendAction> actions;
     std::vector<FriendHop> hops;
 };
@@ -1617,7 +1615,7 @@ struct Friend final {
     bool own_turning = true; // Friend::enableSystemWishDir
     std::uint32_t watched = 0;
     int use_mp = 0;
-    float mp = 100.0F, mp_most = 100.0F;
+    float mp = 100.0F;
     // its sheet's health (YS::SHEET::AllocFriend: its character's, character_health, full; 0 none known: no enemy's
     // attack reaches it), its character (its part number), whether it lies knocked out (+ 0x7f8 bit 4,
     // BTLOBJ::_OVR__dead) and for how many ticks still (+ 0xb40), the motions of the damage reaction it plays (none:
@@ -2468,9 +2466,9 @@ public:
         }
         return true;
     }
+    // 1:354 / 1:356 KH2's 2D layers off and on: Days's HUD is its own (nothing done)
     void layers(bool on) override
     {
-        kh2_layers_on = on;
         if (tracing())
             khdays_log("kh2 enemies: KH2's 2D layers %s (1:35%c)", on ? "on" : "off", on ? '6' : '4');
     }
@@ -3370,8 +3368,8 @@ float drawn_fade(const Enemy &e)
 // The share of an effect's alpha its enemy's fade leaves it: an element bound to it whose flags say it fades with it
 // (+ 0x10 bits 0 and 11: ryj::PAX::MANAGER::exec runs set_obj_fade then, the effect's colour's alpha the object's
 // fade alpha each tick -- YS::OBJ::get_fade_alpha --, 0 while it is hidden, YS::OBJ::is_hide) its fade, every other 1.
-// Final Xemnas's blades (elements 1, 2, 3, 5, 45): his double, faded out but for its dance and its lasers, held them
-// in the air till 2026-11-19
+// Final Xemnas's blades (elements 1, 2, 3, 5, 45): his double fades out but for its dance and its lasers, and they
+// with it
 float effect_object_alpha(const Enemy &e, const Enemy::Running &r)
 {
     if ((r.element->flags & 0x801u) != 0x801u || r.in_world)
@@ -3768,7 +3766,7 @@ void landed(Enemy &e, unsigned object, int atkp, bool star = false)
     a.event(15, values);
     // held in another's motion (1:29: YS::MOTION::capture, a motion of his own started), struck by an attack with a
     // reaction: his damage reaction's motion takes its place, as KH2's MOTION::change does, and the holder's script
-    // sees it (1:238) -- Vexen's freeze ends with its shatter (2:17, atkp 1816); until 2026-11-19 he stayed frozen
+    // sees it (1:238) -- Vexen's freeze ends with its shatter (2:17, atkp 1816)
     if (!star && held.count(object) != 0 && attack_reacts(atkp))
         let_go(object, "struck: his damage reaction");
 }
@@ -4386,9 +4384,7 @@ void let_go(unsigned object, const char *why)
         o->second->set_bits(field::kStatus, bit::kOtherMotion, false);
         o->second->set_bits(field::kStatus, bit::kKeepsCarried, false);
         // his controller's motion his own again (1:238, 1:15): the one asked for, else his idle -- Days plays the rest.
-        // Until 2026-11-19 the enemy's stayed: a thread waiting for it to change (Sephiroth's grab's, 770: the player
-        // falls when given back) waited on to the next reaction command, and then dropped Sephiroth (1:95 on the
-        // player fell to the running actor) out of his split flash
+        // A thread waiting for it to change (Sephiroth's grab's, 770: the player falls when given back) goes on so
         const int own = h->second.own_queued ? h->second.own_motion : 0;
         o->second->set_u32(field::kMotion, std::uint32_t(own));
         o->second->set_u32(field::kMotionNow, std::uint32_t(own));
@@ -6215,8 +6211,7 @@ void motion_states(Enemy &e)
     // its range 22 (YS::ANMATR::CheckRangeCallback -> YS::BTLOBJ::turn_to_target_range, the PS3 build's): turned toward
     // its target while it is on -- the way to it along the ground, unless within 50 cm -- by its value in degrees, 0 its
     // Spec's turn speed (YS::OBJ::turn_to_dir: times the frame's time, 2.0 as 1:80 has it). Sephiroth's split flash
-    // (204, frames 0 to 57) so faces the player till it dashes; until 2026-11-19 none turned (a party member's own
-    // turning is its own)
+    // (204, frames 0 to 57) so faces the player till it dashes (a party member's turning is its own)
     if (const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
         attr != nullptr && on_motion && the_field().friend_of(a) == nullptr)
         for (const auto &r : attr->ranges) {
@@ -6988,10 +6983,9 @@ const FriendParams *friend_params(int index)
                     p.battle_enemy[m][k] = f32(o + 0x40 + std::size_t(8 * m + 4 * k));
                 }
             const std::size_t bp = o + 0x60;
-            p.magic_ratio = f32(bp), p.hop_ratio = f32(bp + 4), p.search_range = f32(bp + 8);
-            p.lost_distance = f32(bp + 0xc), p.idle_time[0] = f32(bp + 0x10), p.idle_time[1] = f32(bp + 0x14);
-            p.move_time[0] = f32(bp + 0x18), p.move_time[1] = f32(bp + 0x1c), p.cancel_distance = f32(bp + 0x20);
-            p.stay_distance = f32(bp + 0x24), p.away_distance = f32(bp + 0x28);
+            p.search_range = f32(bp + 8), p.lost_distance = f32(bp + 0xc);
+            p.idle_time[0] = f32(bp + 0x10), p.idle_time[1] = f32(bp + 0x14);
+            p.move_time[0] = f32(bp + 0x18), p.move_time[1] = f32(bp + 0x1c);
             const std::uint32_t an = u32(o + 0xa0), ao = u32(o + 0xa4), hn = u32(o + 0xa8), ho = u32(o + 0xac);
             for (std::uint32_t k = 0; k < an && o + ao + 0x80 * (k + 1) <= b.size(); ++k) {
                 const std::size_t a = o + ao + 0x80 * k;
@@ -8088,7 +8082,7 @@ void laser_tick()
 
 // The dome's lists given to one of its effects in the caster's effects' space (KH2's world from the caster, turned
 // back by its turn, its y KH2's -- down -- as an effect's place in the world is given, Running::in_world) before it
-// runs, and what it wrote back taken after. Until 2026-11-19 its y was turned over: the dome hung under the floor
+// runs, and what it wrote back taken after
 Vec3 to_effect_space(const Enemy &e, const Vec3 &w, bool way)
 {
     const Vec3 from = e.actor->place();
@@ -9351,8 +9345,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     days_hit->set_u32(0x20, params);
     // the hit's attack (its + 0xc its owner, 2:24: the player who struck). A hit is KH2's damage (the PS3 build's
     // YS::ENEMY::_OVR_exec_damage, PIERROT::_OVR_exec_damage), not its reflect: the state's + 0x18 routine (event 7)
-    // and trigger 19 are a reflected attack's (PIERROT::_OVR_exec_reflect, the PC's FUN_140411060, which until
-    // 2026-11-16 the port ran on every hit, with its ACT::clear and its reflect state, "revenge")
+    // and trigger 19 are a reflected attack's (PIERROT::_OVR_exec_reflect, the PC's FUN_140411060: its ACT::clear and
+    // its reflect state, "revenge", are not a hit's)
     if (!days_attack)
         days_attack = std::make_unique<Object>(mod().memory, "a Days hit's attack");
     days_attack->set_u32(0xc, striker != nullptr ? striker->address() : 0u);

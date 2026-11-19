@@ -72,7 +72,7 @@ void khdays_kh2_shell_player_recoil(unsigned actor, const float push[3]);
  * it in `hit`; whether it does. Days's collision keeps three lists, each met by its own cast, as the camera's line
  * meets them: Collision_RunRayCast its floors and slopes (Coll_WalkTreeForHit reads a node's first list alone),
  * Collision_RunSphereCast with no radius its walls (the second), Collision_CastNearest its ceilings -- the nearest of
- * the three. Until 2026-11-14 the ray alone: no wall was ever met. */
+ * the three (the ray alone meets no wall). */
 int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3]);
 /* The same, and the face it meets in `face` (the collision's own record, while the room stands: KH2's 1:135 gives
  * its polygon so, 1:137 its normal) */

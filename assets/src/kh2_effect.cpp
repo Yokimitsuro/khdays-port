@@ -4187,8 +4187,7 @@ struct EffectInstance::State {
     // pppRyjMegaBirthUserCtrl3 (FUN_1404db660 + FUN_1404e2fe0; the PS3 build's RyjMegaBirthUserCtrDrawShapeLine): at
     // each of the game's matrices a line of its shape along the matrix's z row, the record's +0x10 long: its +0x14 of
     // them, the length over their count apart, from half the length behind the matrix's place on; each at the
-    // record's +0xc x the matrix's size, the frame moved on. Final Xemnas's lasers: 8 a metre long, a stick each.
-    // Until 2026-11-19 the port set them the whole length apart: lines eight times as long, of dots
+    // record's +0xc x the matrix's size, the frame moved on. Final Xemnas's lasers: 8 a metre long, a stick each
     void user_ctrl3(const Key &k, std::vector<EffectDraw> *out)
     {
         const std::int32_t shape = k.s32(4);

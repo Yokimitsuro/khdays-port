@@ -1168,7 +1168,7 @@ void test_shots()
     CHECK(read(copy)[1] == 2.0F && read(copy)[2] == 3.0F);
 }
 
-// The calls of the 1-2-call batch (2026-11-10): collision groups, a hit's record, a blow, a search's reset, a BGHIT,
+// The calls of the 1-2-call batch: collision groups, a hit's record, a blow, a search's reset, a BGHIT,
 // the health record's least, the unit's arguments
 void test_near_batch()
 {

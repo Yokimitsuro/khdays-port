@@ -168,7 +168,7 @@ constexpr std::size_t kRecord = 0x20;
 // 0x18 words (Ov002_PushBucketNode, Ov002_ClearListA and _B, Ov002_UnlinkNode, the walks of Ov002_SceneStep,
 // Ov002_NotifyNodesOfKind, Ov002_SetSceneObjectsActive, Ov002_TeardownAllSpawnSlots, Ov002_ReleaseAllSlotObjects):
 // a room past them lists into the context's next words, its handle and its scale -- a mission in eh's third added
-// room (25: the scale's 0x1000 taken for a piece) stopped at its start, 2026-11-14. The scene manager holds as many
+// room (25: the scale's 0x1000 taken for a piece) stops at its start. The scene manager holds as many
 // spawn places (Ov002_EnsureSceneManager: 24 of 0x184 bytes at + 0xb8, Ov002_BindSlotActorModel's and
 // Ov002_ResetSlotActorPose's by the room). Rooms are added up to that, the rest told and left out, until those grow
 // as the rooms' slots did (slots.c)
