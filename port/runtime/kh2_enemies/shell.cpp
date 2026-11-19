@@ -91,16 +91,47 @@ bool tracing()
     return trace_level() > 0;
 }
 
+// KH2's world in Days's: turned half round its x (its y down, its z the other way) and in centimetres -- as a room made
+// from a KH2 map lays the map (map_point). Until 2026-11-19 the z was kept: the KH2 enemies' world was a mirror of
+// KH2's, whatever their scripts reckoned to one side came out on the other (Marluxia's doom's two figures the other way
+// round, 95 shown "59")
 Vec3 to_kh2(const float d[3])
 {
-    return {d[0] * kKh2PerDays, -d[1] * kKh2PerDays, d[2] * kKh2PerDays};
+    return {d[0] * kKh2PerDays, -d[1] * kKh2PerDays, -d[2] * kKh2PerDays};
 }
 
 void to_days(const Vec3 &k, float out[3])
 {
     out[0] = k[0] / kKh2PerDays;
     out[1] = -k[1] / kKh2PerDays;
-    out[2] = k[2] / kKh2PerDays;
+    out[2] = -k[2] / kKh2PerDays;
+}
+
+// A way of KH2's world in Days's, and back (to_days, to_kh2 without the move and the scale)
+Vec3 days_way(const Vec3 &k)
+{
+    return {k[0], -k[1], -k[2]};
+}
+
+// A KH2 yaw as a turn about Days's up (as Days's quaternions and the models are turned: +z to (sin, 0, cos)), and
+// back: a KH2 way (sin y, 0, cos y) is Days's (sin y, 0, -cos y), the turn pi - y
+float days_turn(float yaw)
+{
+    return kPi - yaw;
+}
+
+// A point or way of KH2's world in the frame the shell's own placing in Days's world (its models, their effects, held
+// players, the dome) was written in until 2026-11-19 -- Days's axes, its y down -- and back (its own inverse); a yaw in
+// that frame is days_turn's. Its formulas kept so, what Days draws stays as it was
+Vec3 legacy(const Vec3 &k)
+{
+    return {k[0], k[1], -k[2]};
+}
+
+// A KH2 yaw's way in Days's world
+Vec3 days_facing(float yaw)
+{
+    return {std::sin(yaw), 0.0F, -std::cos(yaw)};
 }
 
 bool wall_sweep(unsigned shell, const Vec3 &place, float radius, Vec3 &way, bool slide);
@@ -1700,7 +1731,7 @@ Vec3 map_point(const float place[7], const Vec3 &w, bool way = false)
     p[0] = std::cos(ay) * q[0] + std::sin(ay) * q[2], p[1] = q[1], p[2] = -std::sin(ay) * q[0] + std::cos(ay) * q[2];
     q[0] = std::cos(az) * p[0] - std::sin(az) * p[1], q[1] = std::sin(az) * p[0] + std::cos(az) * p[1], q[2] = p[2];
     if (way)
-        return {q[0], -q[1], q[2]};
+        return days_way({q[0], q[1], q[2]});
     const float d[3] = {q[0] + place[4], q[1] + place[5], q[2] + place[6]};
     return to_kh2(d);
 }
@@ -2640,7 +2671,7 @@ public:
         float n[3];
         if (polygon <= 0 || !khdays_kh2_shell_face_normal(unsigned(polygon), n))
             return false;
-        normal = {n[0], -n[1], n[2]};
+        normal = days_way({n[0], n[1], n[2]});
         return true;
     }
     void camera_watch(Object &o) override
@@ -3672,7 +3703,7 @@ void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &a
         p = {m[0] * at[0] + m[4] * at[1] + m[8] * at[2] + m[12], m[1] * at[0] + m[5] * at[1] + m[9] * at[2] + m[13],
              m[2] * at[0] + m[6] * at[1] + m[10] * at[2] + m[14]};
     }
-    const Vec3 t = turned({p[0], 0.0F, p[2]}, e.actor->yaw());
+    const Vec3 t = turned({p[0], 0.0F, p[2]}, days_turn(e.actor->yaw())); // (the model turned as Days draws it)
     out[0] = s.place[0] + t[0] / kKh2PerDays;
     out[1] = s.place[1] + p[1] / kKh2PerDays;
     out[2] = s.place[2] + t[2] / kKh2PerDays;
@@ -3774,7 +3805,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
                     nearest = dist;
                     reach = radius + p.radius;
                     std::copy(c, c + 3, centre);
-                    const Vec3 f = facing_of(a.yaw());
+                    const Vec3 f = days_facing(a.yaw()); // (Days's places)
                     const float tx = p.place[0] - s.place[0], tz = p.place[2] - s.place[2];
                     const float tl = std::sqrt(tx * tx + tz * tz);
                     toward = tl > 0.0F ? (tx * f[0] + tz * f[2]) / tl : 1.0F;
@@ -3815,7 +3846,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
         }
         if (tracing() && e.windows_told.count(r) == 0) {
             // every attack sphere's place along its facing then (forward, up), what each group reaches
-            const Vec3 f = facing_of(a.yaw());
+            const Vec3 f = days_facing(a.yaw()); // (Days's places)
             std::string where;
             for (const Shape &sh : e.kind->shapes) {
                 if ((sh.kind & 0xff) != 6)
@@ -4823,7 +4854,7 @@ void event_tick(const Enemy &e)
 // actor's own axes on no bone (days_point)
 void event_point(const Playing &p, const std::array<float, 3> &k, float out[3])
 {
-    const Vec3 t = turned({k[0], 0.0F, -k[2]}, p.yaw);
+    const Vec3 t = turned({k[0], 0.0F, -k[2]}, days_turn(p.yaw));
     out[0] = p.base[0] + t[0] / kKh2PerDays;
     out[1] = p.base[1] - k[1] / kKh2PerDays;
     out[2] = p.base[2] + t[2] / kKh2PerDays;
@@ -4921,7 +4952,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             }
         }
         h.time = t1;
-        const Vec3 along = turned({model[0], 0.0F, model[2]}, h.yaw);
+        const Vec3 along = turned({-model[0], 0.0F, model[2]}, h.yaw); // (as an actor's: Actor::update)
         h.place = {h.place[0] + along[0], h.place[1] - model[1], h.place[2] + along[2]};
     }
     // a loop's ended bit is the tick it goes round (Scar counts three rounds of the player pinned under him, 253,
@@ -5521,7 +5552,7 @@ bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out)
             // one on a held player's bones: where it was last drawn
             const kh2::EffectMatrix m = r.player != 0 && r.placed ? r.last : element_world(e.pose, *r.element);
             const Vec3 place = e.actor->place();
-            const Vec3 t = turned({m[12], 0.0F, m[14]}, e.actor->yaw());
+            const Vec3 t = legacy(turned({m[12], 0.0F, m[14]}, days_turn(e.actor->yaw())));
             out = {place[0] + t[0], place[1] + m[13], place[2] + t[2]};
             return true;
         }
@@ -6193,7 +6224,7 @@ bool wall_cast(unsigned shell, const Vec3 &from, const Vec3 &way, float radius, 
     const float done = std::sqrt((at[0] - from[0]) * (at[0] - from[0]) + (at[1] - from[1]) * (at[1] - from[1]) +
                                  (at[2] - from[2]) * (at[2] - from[2]));
     share = length > 0.0F ? std::clamp(done / length, 0.0F, 1.0F) : 0.0F;
-    normal = {n[0], -n[1], n[2]};
+    normal = days_way({n[0], n[1], n[2]});
     return normal[0] * way[0] + normal[2] * way[2] < 0.0F;
 }
 
@@ -6561,7 +6592,8 @@ kh2::EffectCamera effect_camera(const float view_in[16], const float projection[
 void model_matrix(const Actor &a, const float place[3], float out[16])
 {
     std::array<float, 16> m{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    const Vec3 turns = a.turned_all ? Vec3{-a.turn_all[0], a.yaw(), -a.turn_all[2]} : Vec3{0.0F, a.yaw(), 0.0F};
+    const float yaw = days_turn(a.yaw());
+    const Vec3 turns = a.turned_all ? Vec3{-a.turn_all[0], yaw, -a.turn_all[2]} : Vec3{0.0F, yaw, 0.0F};
     for (int axis = 0; axis < 3; ++axis) {
         const float angle = turns[std::size_t(axis)];
         if (angle == 0.0F)
@@ -6709,9 +6741,10 @@ void held_map(const Enemy &e, const Held &h, float map[16])
     const Vec3 at = e.actor->place();
     const float yaw = e.actor->yaw();
     const auto to_enemy = [&](const Vec3 &r) {
-        const Vec3 t = turned({-r[0], 0.0F, -r[2]}, h.yaw);
-        const Vec3 d = {h.place[0] + t[0] - at[0], h.place[1] + r[1] - at[1], h.place[2] + t[2] - at[2]};
-        const Vec3 m = turned({d[0], 0.0F, d[2]}, -yaw);
+        const Vec3 t = turned({-r[0], 0.0F, -r[2]}, days_turn(h.yaw));
+        const Vec3 place = legacy(h.place), from = legacy(at);
+        const Vec3 d = {place[0] + t[0] - from[0], place[1] + r[1] - from[1], place[2] + t[2] - from[2]};
+        const Vec3 m = turned({d[0], 0.0F, d[2]}, -days_turn(yaw));
         return Vec3{m[0], d[1], m[2]};
     };
     std::fill(map, map + 16, 0.0F);
@@ -6776,7 +6809,7 @@ void held_middle(const Held &h, float out[3])
         return;
     for (float &v : c)
         v /= float(n);
-    const Vec3 t = turned({c[0], 0.0F, c[2]}, h.yaw);
+    const Vec3 t = turned({c[0], 0.0F, c[2]}, days_turn(h.yaw));
     out[0] += t[0] / kKh2PerDays;
     out[1] += c[1] / kKh2PerDays;
     out[2] += t[2] / kKh2PerDays;
@@ -7304,7 +7337,7 @@ void weapon_tick(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
             const Vec3 p = {b[0] * sh.at[0] + b[4] * sh.at[1] + b[8] * sh.at[2] + b[12],
                             b[1] * sh.at[0] + b[5] * sh.at[1] + b[9] * sh.at[2] + b[13],
                             b[2] * sh.at[0] + b[6] * sh.at[1] + b[10] * sh.at[2] + b[14]};
-            const Vec3 t = turned({p[0], 0.0F, p[2]}, a.yaw());
+            const Vec3 t = turned({p[0], 0.0F, p[2]}, days_turn(a.yaw()));
             const float c[3] = {s.place[0] + t[0] / kKh2PerDays, s.place[1] + p[1] / kKh2PerDays,
                                 s.place[2] + t[2] / kKh2PerDays};
             const float radius = sh.radius / kKh2PerDays;
@@ -7986,7 +8019,7 @@ Vec3 to_effect_space(const Enemy &e, const Vec3 &w, bool way)
 {
     const Vec3 from = e.actor->place();
     const Vec3 v = way ? w : Vec3{w[0] - from[0], w[1] - from[1], w[2] - from[2]};
-    return turned(v, -e.actor->yaw());
+    return turned(legacy(v), -days_turn(e.actor->yaw()));
 }
 
 void give_dome(const Enemy &e, Enemy::Running &r)
@@ -8133,12 +8166,12 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
         } else if (r.in_world) { // its script's place in the world, in the enemy's effects' space
             Element at = *r.element;
             at.bone = kNoBone;
-            const Vec3 from = e.actor->place();
-            const float yaw = e.actor->yaw();
-            const Vec3 t = turned({r.at[0] - from[0], 0.0F, r.at[2] - from[2]}, -yaw);
-            at.place = {t[0], r.at[1] - from[1], t[2]};
-            if (r.turned)
-                at.turn = {r.turn[0], r.turn[1] - yaw, r.turn[2]};
+            const Vec3 from = legacy(e.actor->place()), there = legacy(r.at);
+            const float yaw = days_turn(e.actor->yaw());
+            const Vec3 t = turned({there[0] - from[0], 0.0F, there[2] - from[2]}, -yaw);
+            at.place = {t[0], there[1] - from[1], t[2]};
+            if (r.turned) // (its turns so: about the up days_turn's, about its z the other way)
+                at.turn = {r.turn[0], days_turn(r.turn[1]) - yaw, -r.turn[2]};
             if (r.scaled)
                 at.size = r.scale;
             placed.world = element_world(e.pose, at);
@@ -9144,7 +9177,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             e->body = body;
         }
     }
-    khdays_kh2_shell_place(days, e->place, e->actor->yaw());
+    khdays_kh2_shell_place(days, e->place, days_turn(e->actor->yaw()));
 }
 
 extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
@@ -9557,7 +9590,7 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
             khdays_kh2_shell_player_hidden(cap.actor, 1);
             cap.hidden = true;
         }
-        khdays_kh2_shell_put_player(cap.actor, form.place, form.actor->yaw());
+        khdays_kh2_shell_put_player(cap.actor, form.place, days_turn(form.actor->yaw()));
         if (tracing() && khdays_link_frame() % 30u == 0u)
             khdays_log("kh2 enemies: player %08x as %s (action %#x): its time %.0f, way %s%.2f, at %.2f %.2f %.2f%s",
                        object, form.kind->name.c_str(), unsigned(cap.action), double(cap.time),
@@ -9571,7 +9604,7 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
         return 0;
     float at[3];
     to_days(h->second.place, at);
-    khdays_kh2_shell_put_player(unsigned(KHDAYS_REF(actor)), at, h->second.yaw);
+    khdays_kh2_shell_put_player(unsigned(KHDAYS_REF(actor)), at, days_turn(h->second.yaw));
     return 1;
 }
 
@@ -9585,9 +9618,10 @@ extern "C" int khdays_kh2_enemies_captured(void *actor)
     unsigned pressed = 0;
     int heading = -1;
     const bool read = object != 0 && khdays_kh2_shell_player_pad(at, &pressed, &heading);
-    // Days's heading a moves him along (-sin a, -cos a): KH2's yaw (sin y, cos y) of the same way is a + half a turn
+    // Days's heading a moves him along (-sin a, -cos a), KH2's (-sin a, cos a) (days_way): KH2's yaw (sin y, cos y) of
+    // the same way is -a
     const std::optional<float> way =
-        heading >= 0 ? std::optional<float>(float(heading) / 65536.0F * 2.0F * kPi + kPi) : std::nullopt;
+        heading >= 0 ? std::optional<float>(-float(heading) / 65536.0F * 2.0F * kPi) : std::nullopt;
     if (read)
         pad_ways[object] = way; // (1:113's, World::player_movement)
     const auto c = object != 0 ? captures.find(object) : captures.end();

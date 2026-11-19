@@ -29,9 +29,9 @@ void khdays_kh2_shell_set_hp(unsigned actor, int hp);
  * keeps shown in Days's own fields (signed 16 bits each: their HUD bar and their hits). */
 void khdays_kh2_shell_set_health(unsigned actor, int hp, int most);
 
-/* Its model put at `place` (its collision sphere with it) and turned by `yaw` (radians, KH2's: atan2(x, z)); the
- * room's collision then keeps it out of the walls and on the ground (Ov107_AiState_ResolveContacts, later in the same
- * tick). */
+/* Its model put at `place` (its collision sphere with it) and turned by `yaw` (radians about Days's up: +z to (sin, 0,
+ * cos) of it -- a KH2 yaw's days_turn, shell.cpp); the room's collision then keeps it out of the walls and on the
+ * ground (Ov107_AiState_ResolveContacts, later in the same tick). */
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw);
 
 /* A point of Days's world (metres) put in the game's memory as its vectors are (fx32 x3), for its own code to read:
@@ -98,7 +98,8 @@ int khdays_kh2_shell_attack_slot(unsigned actor);
 unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *node);
 
 /* A player's actor put at `place` (its feet; its node with it, Actor_SetVecAndSyncChild) and turned by `yaw`
- * (radians, KH2's: its model looks along (sin, 0, cos) of it, as Days's node angle at + 0x80 does). */
+ * (radians about Days's up: its model looks along (sin, 0, cos) of it, as Days's node angle at + 0x80 does -- a KH2
+ * yaw's days_turn, shell.cpp). */
 void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw);
 
 /* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */

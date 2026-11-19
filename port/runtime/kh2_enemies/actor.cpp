@@ -509,7 +509,9 @@ Vec3 Actor::step(float ticks)
             motion.time = t1;
         }
         set_bits(field::kStatus, bit::kMotionEnded, at_end);
-        const Vec3 along = turned({model[0], 0.0F, model[2]}, yaw());
+        // (a model's own way in KH2's world: about the up by its yaw after half a turn round its z -- its x and y the
+        // other way, YS::OBJ's model to world)
+        const Vec3 along = turned({-model[0], 0.0F, model[2]}, yaw());
         travel = {along[0], -model[1], along[2]};
         if (jump.on && motion.after >= 0 && jump.up >= 0.0F && motion.id != motion.after) {
             const int after = motion.after;

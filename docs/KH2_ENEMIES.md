@@ -1015,8 +1015,9 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   read his own health for the player's and left himself 1 -- and 1:209 did nothing; a player has a sheet of his own
   now (Days's HP and most, his level: his member record's, at most KH2's 99 -- the doom's two figures; a Days player
   at 100 began at "00"). Seen (window runs, 2026-11-19): the count from 99 down by his hits, 1 a hit; with the level
-  set to 3 (a local test switch) the player fell at 0 (90.11 s). **Open**: its two figures stand the other way round
-  (95 shown "59"): the KH2 enemies' world is a mirror of KH2's (the next fix).
+  set to 3 (a local test switch) the player fell at 0 (90.11 s). Its two figures stood the other way round (95 shown
+  "59") until the KH2 enemies' world was no longer a mirror of KH2's (2026-11-19, "Days's side: the shell", its axes):
+  "89", "71" seen since, the tens on the left.
 
 ### Final Xemnas and Riku (2026-11-16)
 
@@ -2133,6 +2134,20 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   fade out and wait for KH2's spawner to bring them back. Days's field has none, so once faded out the enemy comes
   back where its wave placed it, its script anew, its Days HP as it was (a Wight Knight's lunge can end 12 m past
   the player).
+- **Its axes** (2026-11-19): KH2's world is Days's turned half round its x -- its y down, its z the other way -- and
+  in centimetres (`to_kh2`, `to_days`: x 100, y -100, z -100), as a room made from a KH2 map lays the map
+  (`map_point`). Until 2026-11-19 the z was kept: the enemies' world was a mirror of KH2's, and whatever a script
+  reckoned to one side came out on the other -- Marluxia's doom's figures along the camera's left stood the other way
+  round, his places about the arena, the Hydra's Phil and Pegasus put beside it, the player's stick (1:113) all
+  mirrored. KH2's turn about the up (PS3 `getRotMatrixY`'s AltiVec read word by word: rows (c, 0, -s), (0, 1, 0),
+  (s, 0, c), a row vector times it) is the port's `turned`, `RotToDir` (sin, 0, cos); a model's own axes go to KH2's
+  world by half a turn round its z (its x and y the other way) and then its yaw. A KH2 yaw y faces Days's
+  (sin y, 0, -cos y): Days turns its model, its stand-in and a held player by pi - y (`days_turn`); a model's root
+  travel is (-x, z) turned by the yaw. The shell's own placing written in the old frame -- its effects in the
+  model's space, a held player's map onto the enemy, a shape on no bone, an event's camera -- reads KH2's points
+  through `legacy` (z the other way) and its yaws through `days_turn`, so what Days draws of them is as before. Seen
+  (window runs, 2026-11-19): Marluxia's figures right, Lexaeus (a clash reflected, his event sequence), Final Xemnas
+  (Riku, his spheres, the player held and freed by Rescue) and Sephiroth (his warps, RC 664) as they were.
 - **Drawn once a frame**: its stand-in's other model in the same file (`Ms/04.p`'s at + 0xca00) is left out, the
   KH2 model and its effects drawn once.
 - **Heard** (`Slot_Spawn`, joined): the sounds Days starts for it of its own -- its class's `MON_` archive, the

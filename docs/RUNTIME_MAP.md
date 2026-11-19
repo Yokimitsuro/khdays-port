@@ -6100,6 +6100,12 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   two runs, and once during one of Sephiroth's (1144, its sphere 0.14 m off). Sephiroth's reaction command 664 at 84.21
   s: his split flash landed on the invincible player at 84.41 s, `rc_success`, the player free at 85.75 s; at 117.77 s,
   warped to (5.7, 8.5), the coliseum's wall stopped the flash's dash and the player stayed in AQ90 to the run's end.
+- **Marluxia's doom and KH2's world unmirrored** (2026-11-19, window runs in the coliseum, level 100 -- 99 for KH2):
+  his count from 99 down by his hits; with the level set to 3 the player fell at 0. Its figures, laid along the
+  camera's left by his script, read "59" for 95 while the KH2 enemies' world kept Days's z (a mirror of KH2's); with
+  KH2's world Days's turned half round x (y and z the other way, as KH2's maps are laid as rooms) they read "89", "71",
+  the tens on the left. Lexaeus, Final Xemnas (Riku, the player held, Rescue) and Sephiroth (warps, RC 664) played
+  and drew as before (docs/KH2_ENEMIES.md, "Days's side: the shell", its axes).
 
 ## 38. Days's commands on KH2's reaction command bar
 
