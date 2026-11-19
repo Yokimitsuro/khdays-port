@@ -105,6 +105,18 @@ Event read_event(const std::uint8_t* data, std::size_t size) {
                 ev.timed.push_back(t);
             }
             break;
+        case 0x31:  // the camera given back (sa::EVENT::set_bin_seq_objcamera)
+            if (length >= 8) {
+                EventTimed t;
+                t.command = number;
+                t.frame = s16(c + 4);
+                t.objcamera = s16(c + 6);
+                ev.timed.push_back(t);
+            }
+            break;
+        case 0x4c:  // the camera's start from the game's (sa::EVENT::set_bin_seq_start_camera)
+            ev.start_camera = true;
+            break;
         case 0x27:
             if (length >= 0x10) {
                 EventTimed t;

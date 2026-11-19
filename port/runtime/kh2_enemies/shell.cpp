@@ -1353,8 +1353,44 @@ struct Playing final {
         std::array<float, 3> offset{};
     };
     std::optional<Shake> shake;
+    // its camera's springs (command 0x4c: dk::EventCamera::start took the game's camera's look-at, eye and field of view,
+    // and lookAt moves them toward its keys with ObjCamera::springDamp once a field update): KH2's cm in Days's world;
+    // the field of view (radians, vertical) beside the roll, sprung as one
+    struct Springs final {
+        Vec3 at{}, eye{}, at_target{}, eye_target{}, at_before{}, eye_before{};
+        std::array<float, 2> fov{}, fov_target{}, fov_before{};
+    };
+    std::optional<Springs> springs;
+    bool give_back = false; // its command 0x31 + 6 0 reached (m_interpolate)
+    // the view its camera last showed (Days's world, half the vertical field of view): what the game's camera takes up
+    // from when it is given back
+    bool shown = false;
+    float shown_eye[3] = {}, shown_at[3] = {}, shown_half = 0.0F;
 };
 std::optional<Playing> playing;
+// how the last sequence for this game's player ended, for the game's camera (khdays_kh2_enemies_event_end_view): 0
+// none, 1 ended, 2 its last view given back
+struct EventEnd final {
+    int how = 0;
+    float eye[3] = {}, at[3] = {}, half = 0.0F;
+};
+EventEnd event_end;
+
+// The sequence playing ends (sa::EVENT::event_end_sub, event_cancel: dk::EventCamera::end(m_interpolate)): the game's
+// camera told how to take up when it was this game's player's
+void end_event()
+{
+    if (!playing)
+        return;
+    if (playing->player != 0 && playing->player == local_player) {
+        event_end = {};
+        event_end.how = playing->give_back && playing->shown ? 2 : 1;
+        std::copy(playing->shown_eye, playing->shown_eye + 3, event_end.eye);
+        std::copy(playing->shown_at, playing->shown_at + 3, event_end.at);
+        event_end.half = playing->shown_half;
+    }
+    playing.reset();
+}
 
 // KH2's scope camera a script made (1:281: dk::ScopeCamera, ObjCamera's mode 7; Xigbar's sniping) while it stands: the
 // object it looks from, its eye's point `height` above the object's place (its head), its zoom, close-up distance and
@@ -3135,7 +3171,7 @@ void forget(unsigned days)
         if (h.enemy == days)
             holding.push_back(object);
     if (playing && playing->enemy == days)
-        playing.reset();
+        end_event();
     for (const unsigned object : holding)
         let_go(object, "its enemy gone");
     Enemy &e = *it->second;
@@ -4421,12 +4457,33 @@ void Field::event(Actor &a, const std::string &name, Object *target)
     if (tracing()) {
         std::string unplayed;
         for (const int c : p.event->commands)
-            if (c != 0 && c != 6 && c != 8 && c != 0xf && c != 0x10 && c != 0x13)
+            if (c != 0 && c != 6 && c != 8 && c != 0xf && c != 0x10 && c != 0x13 && c != 0x17 && c != 0x27 &&
+                c != 0x31 && c != 0x4c)
                 unplayed += " " + std::to_string(c);
+        for (const kh2::EventTimed &t : p.event->timed)
+            if (t.command == 0x31 && t.objcamera != 0)
+                unplayed += " 49 (+ 6 " + std::to_string(t.objcamera) + ")";
         khdays_log("kh2 enemies: %08x plays event sequence %s (\"%s\", %d frames) for player %08x%s%s", e.days,
                    p.event->name.c_str(), name.c_str(), p.event->length, p.player,
                    unplayed.empty() ? "" : "; commands not played:", unplayed.c_str());
     }
+    // its camera from the game's (0x4c: dk::EventCamera::start, the game's camera's look-at, eye and field of view as
+    // the springs' start and targets), else a cut to its keys
+    float field_eye[3], field_at[3], field_half = 0.0F;
+    if (p.event->start_camera && khdays_kh2_camera_view(field_eye, field_at) && khdays_kh2_camera_fov(&field_half) &&
+        field_half > 0.0F) {
+        Playing::Springs s;
+        for (std::size_t k = 0; k < 3; ++k) {
+            s.at[k] = field_at[k] * kKh2PerDays;
+            s.eye[k] = field_eye[k] * kKh2PerDays;
+        }
+        s.fov = {2.0F * field_half, 0.0F};
+        s.at_target = s.at_before = s.at;
+        s.eye_target = s.eye_before = s.eye;
+        s.fov_target = s.fov_before = s.fov;
+        p.springs = s;
+    }
+    event_end = {}; // (a sequence after another: the game's camera does not take up between)
     playing = std::move(p);
 }
 
@@ -4447,6 +4504,30 @@ std::array<float, 3> shake_offset(const Playing::Shake &s)
 
 // The event player's tick with its enemy's (KH2's 60 a second; its frames 30): its commands on frames played as the
 // frame reaches each, its trail turned and its shake moved on; over at its length
+void event_point(const Playing &p, const std::array<float, 3> &k, float out[3]);
+
+// dk::ObjCamera::springDamp(rate, 2.5, 0.5, length, ...): `current` moved toward `target` -- d its way from the target,
+// current + d / |d| x rate x (2.5 (length - |d|) + 0.5 (d . (before - target) rate) / |d|), `before` the target before
+template <std::size_t N>
+std::array<float, N> spring_damp(const std::array<float, N> &current, const std::array<float, N> &target,
+                                 const std::array<float, N> &before, float rate, float length)
+{
+    float away = 0.0F, along = 0.0F;
+    for (std::size_t i = 0; i < N; ++i) {
+        const float d = current[i] - target[i];
+        away += d * d;
+        along += d * (before[i] - target[i]) * rate;
+    }
+    away = std::sqrt(away);
+    if (away == 0.0F)
+        return current;
+    const float force = 2.5F * (length - away) + 0.5F * (along / away);
+    std::array<float, N> out{};
+    for (std::size_t i = 0; i < N; ++i)
+        out[i] = current[i] + (current[i] - target[i]) / away * rate * force;
+    return out;
+}
+
 void event_tick(const Enemy &e)
 {
     if (!playing || playing->enemy != e.days)
@@ -4467,6 +4548,8 @@ void event_tick(const Enemy &e)
             p.trail = tr;
         } else if (c.command == 0x27) {
             p.shake = Playing::Shake{c.shake, 0, {}};
+        } else if (c.command == 0x31 && c.objcamera == 0) {
+            p.give_back = true; // sa::EVENT::set_bin_seq_objcamera: m_interpolate
         }
         if (tracing())
             khdays_log("kh2 enemies: event sequence %s plays command %#x at frame %d", p.event->name.c_str(), c.command,
@@ -4481,10 +4564,61 @@ void event_tick(const Enemy &e)
         if (++p.shake->gone >= p.shake->shake.ticks)
             p.shake.reset();
     }
+    if (trace_level() >= 2 && p.ticks % 30u == 0u) {
+        float within_traced = 0.0F;
+        if (const kh2::EventCamera *c = kh2::event_camera_at(*p.event, float(p.ticks) / 2.0F, within_traced)) {
+            kh2::EventView view;
+            kh2::event_view(*c, within_traced, view);
+            float eye[3], at[3];
+            event_point(p, view.eye, eye);
+            event_point(p, view.at, at);
+            float player[3] = {};
+            if (const Object *o = Object::at(mod().memory, p.player))
+                to_days(o->place(), player);
+            khdays_log("kh2 enemies: event sequence %s frame %u from %.2f %.2f %.2f turned %.2f: its camera at %.2f %.2f "
+                       "%.2f looking at %.2f %.2f %.2f, its player at %.2f %.2f %.2f (Days's)",
+                       p.event->name.c_str(), p.ticks / 2u, double(p.base[0]), double(p.base[1]), double(p.base[2]),
+                       double(p.yaw), double(eye[0]), double(eye[1]), double(eye[2]), double(at[0]), double(at[1]),
+                       double(at[2]), double(player[0]), double(player[1]), double(player[2]));
+        }
+    }
+    // its camera's springs once a field update (sa::EVENT::camera_ctrl, KH2's 30 a second: every other tick) toward its
+    // keys at this frame (dk::EventCamera::lookAt: the look-at at 0.1, the eye at 0.07, the field of view and the roll
+    // at 0.07 about 0.001); no cut holding the frame, they stand
+    float within = 0.0F;
+    const kh2::EventCamera *cam = p.springs && p.ticks % 2u == 0u
+                                      ? kh2::event_camera_at(*p.event, float(p.ticks) / 2.0F, within)
+                                      : nullptr;
+    if (cam != nullptr) {
+        kh2::EventView view;
+        kh2::event_view(*cam, within, view);
+        float eye[3], at[3];
+        event_point(p, view.eye, eye);
+        event_point(p, view.at, at);
+        Playing::Springs &s = *p.springs;
+        s.at_before = s.at_target;
+        s.eye_before = s.eye_target;
+        s.fov_before = s.fov_target;
+        for (std::size_t k = 0; k < 3; ++k) {
+            s.at_target[k] = at[k] * kKh2PerDays;
+            s.eye_target[k] = eye[k] * kKh2PerDays;
+        }
+        s.fov_target = {view.fov, view.roll};
+        s.at = spring_damp(s.at, s.at_target, s.at_before, 0.1F, 1.0F);
+        s.eye = spring_damp(s.eye, s.eye_target, s.eye_before, 0.07F, 1.0F);
+        s.fov = spring_damp(s.fov, s.fov_target, s.fov_before, 0.07F, 0.001F);
+        if (tracing())
+            khdays_log("kh2 enemies: event sequence %s frame %u: its camera's springs eye %.0f %.0f %.0f at %.0f %.0f %.0f "
+                       "fov %.3f, its keys eye %.0f %.0f %.0f at %.0f %.0f %.0f fov %.3f",
+                       p.event->name.c_str(), p.ticks / 2u, s.eye[0], s.eye[1], s.eye[2], s.at[0], s.at[1], s.at[2],
+                       s.fov[0], s.eye_target[0], s.eye_target[1], s.eye_target[2], s.at_target[0], s.at_target[1],
+                       s.at_target[2], s.fov_target[0]);
+    }
     if (++p.ticks >= 2u * unsigned(std::max(p.event->length, 0))) {
         if (tracing())
-            khdays_log("kh2 enemies: event sequence %s over", playing->event->name.c_str());
-        playing.reset();
+            khdays_log("kh2 enemies: event sequence %s over%s", playing->event->name.c_str(),
+                       playing->give_back ? ", the camera given back from its last view" : "");
+        end_event();
         // YS::EVENT::phase_end: the control of the player and his party given back (YS::OBJ::ControlOn 0 and 1) -- a
         // script takes it away for an event (1:42) and leaves it to the event's end to give back (Xigbar's scope)
         controls_off.erase(0);
@@ -5680,9 +5814,11 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
     if (trace_level() >= 2 && ++e.ticks_traced % 60 == 0 && a.machine().main_thread() != nullptr) {
         std::string at;
         threads_of(*a.machine().main_thread(), at);
-        khdays_log("kh2 enemies: %08x's threads at%s; motion %d at %.1f%s%s; %.3f above the ground, %.1f its fall", e.days,
-                   at.c_str(), a.motion.id, double(a.motion.time), a.jump.on ? ", in a jump" : "",
-                   e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall));
+        khdays_log("kh2 enemies: %08x's threads at%s; motion %d at %.1f%s%s; %.3f above the ground, %.1f its fall; at "
+                   "%.2f %.2f %.2f",
+                   e.days, at.c_str(), a.motion.id, double(a.motion.time), a.jump.on ? ", in a jump" : "",
+                   e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall),
+                   double(s.place[0]), double(s.place[1]), double(s.place[2]));
     }
     if (!e.sent_state.empty() && (e.sent_after -= 1.0F) <= 0.0F) {
         if (a.states().shout(a, e.sent_state, e.sent_from) && tracing())
@@ -8153,6 +8289,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     script_offer = {};
     top_offer = {};
     playing.reset();
+    event_end = {};
     scope.reset();
     screen_shake.reset();
     pictures.clear();
@@ -8736,6 +8873,17 @@ extern "C" int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float 
     event_point(*playing, view.eye, eye);
     event_point(*playing, view.at, at);
     *fov_half = view.fov * 0.5F;
+    if (const auto &s = playing->springs) { // from the game's camera (command 0x4c)
+        for (std::size_t k = 0; k < 3; ++k) {
+            eye[k] = s->eye[k] / kKh2PerDays;
+            at[k] = s->at[k] / kKh2PerDays;
+        }
+        *fov_half = s->fov[0] * 0.5F;
+    }
+    playing->shown = true;
+    std::copy(eye, eye + 3, playing->shown_eye);
+    std::copy(at, at + 3, playing->shown_at);
+    playing->shown_half = *fov_half;
     shake_view(eye, at, *fov_half);
     if (playing->shake) {
         // the eye moved in the camera's own axes: x and z turned with its yaw, y up (FUN_140528920)
@@ -8747,6 +8895,18 @@ extern "C" int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float 
         eye[2] += (-o[0] * ax + o[2] * az) / kKh2PerDays;
     }
     return 1;
+}
+
+extern "C" int khdays_kh2_enemies_event_end_view(float eye[3], float at[3], float *fov_half)
+{
+    const EventEnd e = event_end;
+    event_end = {};
+    if (e.how == 2) {
+        std::copy(e.eye, e.eye + 3, eye);
+        std::copy(e.at, e.at + 3, at);
+        *fov_half = e.half;
+    }
+    return e.how;
 }
 
 // The screen's trail a sequence playing for this game's player has on (runtime/display/frame_package.h, `trail`): its

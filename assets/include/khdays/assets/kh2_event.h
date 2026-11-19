@@ -58,15 +58,21 @@ struct EventShake final {
 // A command played on its frame (+ 4), in the file's order: KH2's loop (FUN_1402cb5d0) waits for each command's frame
 // before it goes on to the next.
 struct EventTimed final {
-    int command = 0;  // 0x17 a trail, 0x27 a shake
+    int command = 0;  // 0x17 a trail, 0x27 a shake, 0x31 the camera given back
     int frame = 0;
     EventTrail trail;
     EventShake shake;
+    // 0x31 (the PS3 build's sa::EVENT::set_bin_seq_objcamera) + 6: 0 the game's camera given back as the sequence
+    // ends, from its last view (m_interpolate: dk::EventCamera::end(true)); 1 the camera from the player's matrix
+    int objcamera = 0;
 };
 
 struct Event final {
     std::string name;  // command 0's, from + 10 ("re_b_he020-00")
     int length = 0;    // command 8's frames
+    // command 0x4c read before the sequence starts (sa::EVENT::set_bin_seq_start_camera: m_startcamera): its camera
+    // starts where the game's was and springs toward its keys (dk::EventCamera::lookAt's last flag) -- else a cut
+    bool start_camera = false;
     std::vector<EventCamera> cameras;
     std::vector<EventCut> cuts;
     std::vector<EventTimed> timed;  // the commands on frames the port plays

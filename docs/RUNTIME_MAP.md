@@ -6074,6 +6074,16 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   fighting (his set has no 54: KH2's AI acts on), his stars (00effect.bar's 14) over his head from his reaction's end,
   closed in each of his attacks and started again after it (nine times), up at 159 s with 25; hit by Xemnas's blows
   on his bones' hit spheres (`TYPE_HIT`), no longer on his room-collision cylinder.
+- **The event cameras' start and end, Xemnas kept in the coliseum** (2026-11-19, window runs with the KH2 camera on):
+  his grab's "11" (0x4c) started from the game's camera (eye 4 312 -425, its field of view 0.95) and was on its keys'
+  within about 33 frames (eye 103 440 -1237 against 67 474 -1227); at its end and at "50"'s (0x31 + 6 0) the KH2
+  camera took up from the sequence's last view -- after "11" a view from 19 m up, looking down -- and was back behind
+  Roxas a second later; after "40" and "51" (no 0x31) it took up where it stood. His `mode_bomb` warp, 18 m from the
+  player, had put him at (1.89, 0.25, -13.45), behind the coliseum's gate, and at x or z of 9.8 by its stands; kept in
+  by the walls, (1.20, 0.25, -7.77). Not mended: "50" and "51" are placed round the world's middle, where the script
+  puts the player first (1:217 to (0, 0, 0), turned to -z), as KH2's arena has them; shots of "50" (frames 135 to 285)
+  stand 13 to 16 m from the middle, beyond the coliseum's walls (8.7 m), and show them. Hit in a corner by Roxas's
+  aerial blows he rose up a pillar to 5.7 m (motion 10) before his next attack took him down.
 
 ## 38. Days's commands on KH2's reaction command bar
 

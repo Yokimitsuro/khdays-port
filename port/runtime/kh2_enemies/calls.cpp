@@ -1626,16 +1626,33 @@ void add_moving(ai::Calls &calls)
     // 1:2 steered toward a point along the ground at a speed (FUN_1403b9c60: the way there, its height 0, made one
     // long at + 0x10, the speed at + 0x1c), the way's length given back; its first value the actor itself
     // 1:148 the actor put at a point (FUN_1403b64d0: + 0x670, its w 1); 1:220 a step ahead up to a length, the room's
-    // collision stopping it (FUN_1403b9ac0: Days's collision puts it back out of the walls after)
+    // collision stopping it (FUN_1403b9ac0: Days's collision puts it back out of the walls after).
+    // KH2's arenas are larger than Days's rooms: a point a script finds far off lies beyond the room's walls (Final
+    // Xemnas's warp, `mode_bomb`: 18 m behind the player -- he stood outside the coliseum, behind its gate). A KH2
+    // actor put so stops short of the first wall between the player it goes for and the point, swept at the higher of
+    // the two (so a leap onto a rock still lands on it), as a step does
     const auto put = [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v = read_vec(m, a[1].bits);
         for (float &c : v.v)
             if (std::isnan(c))
                 c = 0.0F;
         if (Object *o = object_of(m, a[0])) {
-            o->set_place(xyz(v));
-            if (is_player(o) && running(m)->world != nullptr)
-                running(m)->world->player_place(*o, xyz(v));
+            Vec3 to = xyz(v);
+            Actor *x = dynamic_cast<Actor *>(o);
+            World *w = running(m)->world;
+            if (x != nullptr && w != nullptr && !is_player(o)) {
+                const Object *p = w->player(*x);
+                const Vec3 from = p != nullptr ? p->place() : x->place();
+                Vec3 way = {to[0] - from[0], 0.0F, to[2] - from[2]};
+                // (KH2's y down: the higher one the less)
+                if (w->wall_sweep(*x, {from[0], std::min(from[1], to[1]), from[2]}, 0.0F, way, false)) {
+                    to[0] = from[0] + way[0];
+                    to[2] = from[2] + way[2];
+                }
+            }
+            o->set_place(to);
+            if (is_player(o) && w != nullptr)
+                w->player_place(*o, to);
         }
     };
     calls.set(1, 148, put);

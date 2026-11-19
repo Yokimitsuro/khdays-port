@@ -145,6 +145,12 @@ static struct {
     int tracing;
     int event_fov[3]; /* the FOV's sine, cosine and near plane before a KH2 enemy's event camera took the frames */
     int event_saved;
+    int event_from_kh2; /* this camera had the frames as that event camera took them */
+    /* a KH2 enemy's event over (khdays_kh2_enemies_event_end_view): 1 this camera takes up where it stood, 2 from the
+     * event's last view (KH2's cm in Days's world, half the vertical field of view) */
+    int after_event;
+    Kh2CameraVec after_eye, after_at;
+    float after_half;
 } s = {.tracing = -1, .fade = 1.0f};
 
 static float from_fx(int value)
@@ -403,6 +409,8 @@ static int frame_prepare(int camera, int player, int behind_yaw, int origin, int
         return 0;
     }
     log_owner(cam, want);
+    const int after_event = s.after_event;
+    s.after_event = 0;
     /* Ov002_Camera_SetOrbitAngle, _SetAnchor (leaving a menu, an event's end), Ov002_ResetCamera: no frame of a camera
      * of Days', only its place set anew. Where the player has not moved, this camera stands. */
     if (want == WANT_NONE && s.active && claims_camera(cam) && same_place(read_vec(KHDAYS_W(player)))) {
@@ -434,14 +442,34 @@ static int frame_prepare(int camera, int player, int behind_yaw, int origin, int
     in->player = read_vec(KHDAYS_W(player));
     in->ticks = (float)ticks_a_frame();
     {
-        const int takeover = kh2_camera_takeover(s.active, s.days_frames, same_place(in->player));
+        int takeover = kh2_camera_takeover(s.active, s.days_frames, same_place(in->player));
+        Kh2CameraVec from_at = read_vec(cam + WORD_FOCUS), from_eye = read_vec(cam + WORD_EYE);
+        float from_fov = atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
+        if (after_event != 0 && s.event_from_kh2 && s.frame != 0u &&
+            s.room == Ov022_GetEntryField66(QueryActiveStateOrDelegate())) {
+            /* a KH2 enemy's event over (dk::EventCamera::end): KH2's camera, which stood while it played, takes up with
+             * its own targets; given back, from the event's last view (ObjCamera::update: getEventAt, getEventEye,
+             * getEventFov), its springs bringing it home. Where the player went meanwhile is no warp. */
+            takeover = KH2_CAMERA_RESUME;
+            s.last_player = in->player;
+            if (after_event == 2) {
+                s.camera.at = s.after_at;
+                s.camera.eye = s.after_eye;
+                s.camera.fov_half = s.camera.fov_ease = s.after_half;
+            }
+            khdays_log("kh2 camera: frame %u takes up after a KH2 enemy's event%s", frame,
+                       after_event == 2 ? ", from its last view" : "");
+        } else if (after_event == 2) {
+            from_at = s.after_at; /* this camera starts from the event's last view */
+            from_eye = s.after_eye;
+            from_fov = s.after_half;
+        }
         if (takeover != KH2_CAMERA_RESUME) {
             const float radius = s.frame != 0u && frame - s.frame <= KEEP_RADIUS_FRAMES ? s.camera.radius : 0.0f;
             /* outdoors everywhere: Days has no indoor maps that this could read (docs/KH2_CAMERA.md) */
-            const float fov = takeover == KH2_CAMERA_SNAP ? kh2_camera_half_angle(kh2_camera_outdoor.fov)
-                                                          : atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
+            const float fov = takeover == KH2_CAMERA_SNAP ? kh2_camera_half_angle(kh2_camera_outdoor.fov) : from_fov;
             /* a new field starts behind the player (YS::PLAYER::start_player_camera) */
-            kh2_camera_start(&s.camera, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
+            kh2_camera_start(&s.camera, from_at, from_eye,
                              angle_radians(takeover == KH2_CAMERA_SNAP ? behind_yaw : cam[WORD_YAW]), fov, radius);
             s.camera.snap = takeover == KH2_CAMERA_SNAP;
             s.first_person = 0;
@@ -716,6 +744,7 @@ static void frame_publish(int camera, int eye)
 }
 
 extern int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half); /* kh2_enemies/shell.cpp */
+extern int khdays_kh2_enemies_event_end_view(float eye[3], float at[3], float *fov_half);
 
 /* A KH2 enemy's event camera (a reaction command's, runtime/kh2_enemies/shell.cpp) in place of the frame's, whichever
  * camera the field has: its eye, look-at and vertical field of view written as the game's camera's, KH2's event
@@ -730,10 +759,25 @@ static int event_frame(int *cam)
             cam[WORD_FOV_COS] = s.event_fov[1];
             cam[WORD_NEAR] = s.event_fov[2];
             s.event_saved = 0;
+            /* how this camera takes up after it (frame_prepare) */
+            if (cam[WORD_STAGE] == 0) {
+                const int how = khdays_kh2_enemies_event_end_view(eye, at, &half);
+                if (how != 0) {
+                    s.after_event = how;
+                    s.after_eye.x = eye[0] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_eye.y = eye[1] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_eye.z = eye[2] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_at.x = at[0] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_at.y = at[1] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_at.z = at[2] * KH2_UNITS_A_DAYS_UNIT;
+                    s.after_half = half;
+                }
+            }
         }
         return 0;
     }
     if (!s.event_saved) {
+        s.event_from_kh2 = s.active;
         s.event_fov[0] = cam[WORD_FOV_SIN];
         s.event_fov[1] = cam[WORD_FOV_COS];
         s.event_fov[2] = cam[WORD_NEAR];

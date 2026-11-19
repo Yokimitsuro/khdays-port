@@ -973,8 +973,8 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   16 (`TYPE_STUN`: his bone 98, his head) and closed (`EFFECT::loop_end`) once he is not; the tool copies
   00effect.bar. His abilities (plrp's 0x1b4, 0x1b6, 0xbb: ability flags 150, 152 and 46, his cure's) hold none that
   keeps him from falling (flag 127, `PARTY::_OVR_is_withstand`).
-- **What the port does not do yet**: his health is shown nowhere (KH2's party gauge has no Days place: the port's
-  KH2 party gauges stand on Days's own partners' portraits); Sora's level, which KH2 gives his party
+- **What the port does not do yet**: his health is shown nowhere -- by choice (2026-11-19): the mission is played
+  in multiplayer too, so no party gauge; Sora's level, which KH2 gives his party
   (lvup), is the battle's (at level 99 his defence would change the damage only past 56, which his 54 never reaches:
   the same at any level); his event cameras
   ("50", "60", "61") are placed for KH2's arena and look elsewhere in Days's rooms.
@@ -1546,7 +1546,20 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
   shake (the three below), 0x31 the camera set from the player's matrix (+ 6 1, `FUN_1402d27a0`) or given back to the
   game (+ 6 0: Cerberus's "30" at its last frame), 0x51 a call back to its object, 0x3c an effect element on its
   object (+ 6). The loop waits for each command's frame before it goes on to the next (`FUN_1402c87f0`), so they play
-  in the file's order.
+  in the file's order. The PS3 build names them (`sa::EVENT::event_ctrl`'s switch, `event_file`'s for those read
+  before): 0x18 `set_bin_seq_focus`, 0x31 `set_bin_seq_objcamera`, 0x4c `set_bin_seq_start_camera` (read before),
+  0x51 `set_bin_tag`.
+- **The camera's start and its end** (the PS3 build's, read 2026-11-19): 0x4c sets `m_startcamera` for the whole
+  sequence: `dk::EventCamera::start` takes the game camera's look-at, eye and field of view (`ObjCamera`'s + 0, + 0x10,
+  + 0x20) as where its own stand and aim, and each field update (`sa::EVENT::camera_ctrl` -> `EventCamera::lookAt`
+  with its last flag) moves them toward the keys' with `dk::ObjCamera::springDamp` -- the look-at at rate 0.1, the eye
+  at 0.07, the field of view and the roll (one vector) at 0.07 about 0.001 (the spring's own 2.5, the damping's 0.5,
+  the positions' rest length 1): the shot eases in from the game's. Without it each frame is the keys' (a cut).
+  0x31 + 6 0 sets `m_interpolate` (unless the sound is in its event mode); at the sequence's end
+  (`event_end_sub`, or `event_cancel`) `dk::EventCamera::end(m_interpolate)` keeps the last view's eye, look-at, roll
+  and field of view, and the game's camera (`ObjCamera::update`: `isEventInterpolation`) takes them as its own where
+  it stands, its springs bringing it home; without it the game's camera takes up where it stood before (a cut). Final
+  Xemnas's "11" (his grab) has both, his "50" the end's.
 - **The screen's trail** (0x17, `FUN_1402da6a0`; drawn each frame by `FUN_14015f250` with `DAT_140abc690`'s quad):
   + 6 1 ends it (`FUN_14015f170(0)`); else it starts: the screen taken (`FUN_140153430`), then each frame laid over the
   new one as a quad of the whole view and taken again -- the picture before at the quad's vertex alpha, + 7 of 0x80
@@ -1556,8 +1569,15 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
   ("00", 98 to 109), 9 in "Jump!", 9 at the blow.
 - **The depth blur** (0x18, `FUN_1402da870` -> `FUN_140172100`; drawn by `FUN_14018a9e0`): + 6 1 ends it; else the
   screen drawn again in four copies a little apart, at alpha 0x30 (0x20 in its other way), at the depth + 8 (at least
-  15000; Cerberus's 20000, 5000, 1000) with the depth test, so only what lies beyond it blurs; + 7 its way. **Not
-  played**: the depth is the GS's and its scale against Days's depth was not worked out.
+  15000; Cerberus's 20000, 5000, 1000) with the depth test, so only what lies beyond it blurs; + 7 its way. The PS3
+  build: `dk::Focus::start(depth, + 7 == 0)`, `Focus::end`, drawn by `Focus::update` -- + 7 0 is its far way
+  (`AddDeFocusFarInit`, `AddDeFocusFarTempDraw`: the screen drawn to a buffer of its own first), four copies 1 dot
+  (16 GS units) off up, left, down and right at the depth with alpha 0x20, one at 0x80, then five at a depth of their
+  own (`_UNK_00084be0`) at 0x40, 2 dots off; the other way eight copies. The depth: KH2's projection is the PS2
+  library's `sceVu0ViewScreenMatrix` with the values `kn::Projection::set` asserts (z 1 to 16770000, near 1 cm, far
+  4000000 cm), so the GS depth of a point d cm ahead is 16770003 / d - 3.19: 20000 is 8.4 m, 15000 11.2 m. Final
+  Xemnas's "40", "50", "70", "71" and "72" turn it on and off (20000) in 42 commands. **Not played**: the far way's
+  passes through its own buffer were not all read (`AddDeFocusFarInit_dt`, `AddDeFocusFarTempDraw_dt`).
 - **The camera shake** (0x27, `FUN_1402da950` -> `FUN_140528bc0`; moved each frame by `FUN_140528920` until its time is
   up): the eye moved by `(r - 0.5) x amplitude x envelope` on each axis, r at random (rand()), the amplitudes + 6, + 8,
   + 0xa (cm; Cerberus's 150, 150, 0 and 80, 100, 0), x and z turned with the camera's yaw (`FUN_1401aadc0`), for
@@ -1591,8 +1611,12 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
   file's order as the frame reaches each: the shake's offset (a new one each KH2 tick) moves the event camera's eye;
   the trail goes to the host in the frame package (`trail`) and is laid over the field's 3D after its antialiasing
   (`shaders/trail3d.hlsl`, docs/RENDERING.md), at KH2's 60 frames a second whatever the picture's rate. Both end
-  with the sequence. The roll is not drawn (Cerberus's are 0), nor the depth blur, nor 0x31's camera from the player's
-  matrix (told in the trace when a sequence starts). Played with Cerberus (2026-11-09): the four shots in turn, the HD
+  with the sequence. With 0x4c its camera springs from the game's (`Playing::springs`, every other KH2 tick, KH2's
+  cm); with 0x31 + 6 0 reached the port's KH2 camera (`runtime/camera/kh2_camera_hooks.c`: the setting "KH2 camera")
+  takes up from the sequence's last view, its own targets kept -- after any of these sequences it takes up where it
+  stood, as KH2's does, not anew from Days's camera; Days's own camera (the setting off) has no springs: a cut. The
+  roll is not drawn (Cerberus's are 0), nor the depth blur, nor 0x31's camera from the player's matrix (+ 6 1; told in
+  the trace when a sequence starts). Played with Cerberus (2026-11-09): the four shots in turn, the HD
   PACK's KH2 Roxas in its mouth, in the air for "Jump!" and on its heads for the blow; a room smaller than KH2's arena
   leaves some shots outside its walls (KH2's event cameras meet no collision). Days's own Roxas model plays none of
   KH2's motion: it stays at the hold's place, Cerberus's middle, inside its body.
@@ -1930,7 +1954,11 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   Sorcerer they made where they stand) is taken at the next frame's start, not Days's. 1:220's step stops at the
   room's walls as KH2's sweep does (a body's sphere half a metre round swept along it, stopped at the first wall).
   Until 2026-11-13 it stepped the whole length: Days's collision pushes back only one standing in a wall, so a step
-  through one (Roxas's 2.5 m before his hold) left it outside.
+  through one (Roxas's 2.5 m before his hold) left it outside. A KH2 actor put by 1:148, 1:153 or 1:217 (2026-11-19)
+  stops short of the first wall between the player it goes for and the point, swept as a step at the higher of the
+  two: KH2 puts it there unchecked, its arenas being larger than Days's rooms -- Final Xemnas's warp (`mode_bomb`: 18 m
+  from the player, the player's way from the world's middle turned 157 to 203 degrees at random -- across KH2's
+  arena) left him outside the coliseum made from he00, behind its gate; a leap onto a rock (Scar's) still lands, the sweep passing over it.
 - **The room's walls stop its way** (2026-11-14): each tick its way along the ground -- its motion's root, its
   steering, its slide, a vacuum's pull, on the ground or in the air -- is swept by a sphere of its Days sphere's radius
   (half a metre at least), its centre that radius and a step (30 cm) over its feet, against the room's walls: up to the

@@ -126,6 +126,15 @@ std::vector<std::uint8_t> made_up_event() {
     put16(body, 7);
     put16(body, 1);
     command(b, 0x27, body);
+    // the camera given back at the last frame (Final Xemnas's "11": + 6 0), and its start from the game's (0x4c)
+    body.clear();
+    put16(body, 60);
+    put16(body, 0);
+    command(b, 0x31, body);
+    body.clear();
+    put16(body, 1);
+    put16(body, 0x4d8);
+    command(b, 0x4c, body);
     put16(b, 0);  // the end
     put16(b, 0);
     return b;
@@ -138,10 +147,13 @@ int main() {
     const kh2::Event ev = kh2::read_event(bytes.data(), bytes.size());
     check(ev.name == "re_test-00", "the name from command 0");
     check(ev.length == 60, "the length from command 8");
-    check(ev.commands == std::vector<int>({0, 0xf, 8, 0x13, 6, 0x17, 0x27}), "every command in order");
-    check(ev.timed.size() == 2 && ev.timed[0].command == 0x17 && ev.timed[1].command == 0x27,
+    check(ev.commands == std::vector<int>({0, 0xf, 8, 0x13, 6, 0x17, 0x27, 0x31, 0x4c}), "every command in order");
+    check(ev.timed.size() == 3 && ev.timed[0].command == 0x17 && ev.timed[1].command == 0x27 &&
+              ev.timed[2].command == 0x31,
           "the timed commands in the file's order");
-    if (ev.timed.size() == 2) {
+    check(ev.start_camera, "the camera's start from the game's (0x4c)");
+    if (ev.timed.size() == 3) {
+        check(ev.timed[2].frame == 60 && ev.timed[2].objcamera == 0, "the camera given back at the last frame");
         const kh2::EventTrail& trail = ev.timed[0].trail;
         check(ev.timed[0].frame == 10 && !trail.stop && trail.alpha == 0x3c && trail.width == 514 &&
                   trail.height == 418 && trail.turn == 0.0F,
