@@ -6084,6 +6084,14 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   puts the player first (1:217 to (0, 0, 0), turned to -z), as KH2's arena has them; shots of "50" (frames 135 to 285)
   stand 13 to 16 m from the middle, beyond the coliseum's walls (8.7 m), and show them. Hit in a corner by Roxas's
   aerial blows he rose up a pillar to 5.7 m (motion 10) before his next attack took him down.
+- **Vexen, his disc, his count and his freeze** (2026-11-19, window runs in the coliseum, level 99): his disc homed
+  on the player only while his entrance lasted (`1:140` on its target record, on the player, gave 0), then flew off
+  in a straight line, 3 cm farther each update -- the gauge stopped at 68; with the player there it fills while the
+  disc touches him (0 to 100 in about 25 s standing still), but a full gauge left the count at 0 (`4:41`'s amount and
+  index read the other way round) and emptied it; set right, the count went 1 to 5 in 160 s of a chase, the
+  Anti-Sora came at 116 s (count 1) and the gauge's warning at 241 s (count 5). His freeze (atkp 1816) held the
+  player from 145 s to the run's end; now frozen at 89.27 s, the ice shattered and the player let go at 94.37 s (the
+  strike's reaction), a reaction command offered meanwhile ("Forcejear" in the Spanish game's).
 
 ## 38. Days's commands on KH2's reaction command bar
 

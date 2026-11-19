@@ -157,6 +157,14 @@ KINDS = {
     "P_EX100_LAST": "Sora (Final Xemnas's)",
     # the partner KH2 gives the player in Final Xemnas's battle (FRIENDS): KH2's party AI moves him (kn::Friend)
     "P_EH000_LAST": "Riku (Final Xemnas's partner)",
+    # FINAL MIX's Absent Silhouettes and data battles of the Castle Oblivion members (their battle objects, _BTL: one
+    # object and one script each for both, the data battle's at battle level 99), Vexen's Anti-Sora with him
+    "N_CM040_BTL": "Vexen",
+    "P_EX100_HTLF_BTL": "Anti-Sora (Vexen's)",
+    "N_CM020_BTL": "Lexaeus",
+    "N_CM000_BTL": "Marluxia",
+    # FINAL MIX's Sephiroth (Hollow Bastion's Dark Depths)
+    "N_HB590_BTL": "Sephiroth",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -186,6 +194,10 @@ VOICES = {
     "B_EX140_LV99": "n_sniper",
     "B_EX170_LAST_LV99": "n_xemnas_last",
     "P_EH000_LAST": "eh0_riku",
+    "N_CM040_BTL": "n_vexen",
+    "N_CM020_BTL": "n_lexaeus",
+    "N_CM000_BTL": "n_marluxia",
+    "N_HB590_BTL": "sephiroth",
 }
 # The party member KH2 gives the player in a boss's battle, as the battle's FRIEND_1 (its area's program: op 0xf, 5 --
 # W_FRIEND_ONLY -- the world's partner alone; 03system.bin's member table names him for the world): he comes with the

@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 8276a9679585d924506c43d1b5f4297ee44a9d9e3215055fb14a886411d1ef90
+# tools d7c5353ca01622905bee8ada1e11fbf7e4a74ee127b8a33e018326a1573b5905
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -113,8 +113,11 @@ kh2_fifth msn/us/EH15_MS104.bar
 kh2_fifth msn/us/EH20_MS113_RE.bar
 kh2_fifth msn/us/EH21_MS101.bar
 kh2_fifth msn/us/HB04_MS403.bar
+kh2_fifth msn/us/HB32_FM_VEX.bar
 kh2_fifth msn/us/HB33_FM_LAR.bar
+kh2_fifth msn/us/HB33_FM_LEX.bar
 kh2_fifth msn/us/HB34_FM_ZEX.bar
+kh2_fifth msn/us/HB38_FM_MAR.bar
 kh2_fifth msn/us/HE07_MS103.bar
 kh2_fifth msn/us/HE17_MS105.bar
 kh2_fifth msn/us/HE18_MS108.bar
@@ -348,6 +351,18 @@ kh2_fifth obj/M_EX930.mset
 kh2_fifth obj/M_EX960.a.us
 kh2_fifth obj/M_EX960.mdlx
 kh2_fifth obj/M_EX960.mset
+kh2_fifth obj/N_CM000_BTL.a.us
+kh2_fifth obj/N_CM000_BTL.mdlx
+kh2_fifth obj/N_CM000_BTL.mset
+kh2_fifth obj/N_CM020_BTL.a.us
+kh2_fifth obj/N_CM020_BTL.mdlx
+kh2_fifth obj/N_CM020_BTL.mset
+kh2_fifth obj/N_CM040_BTL.a.us
+kh2_fifth obj/N_CM040_BTL.mdlx
+kh2_fifth obj/N_CM040_BTL.mset
+kh2_fifth obj/N_HB590_BTL.a.us
+kh2_fifth obj/N_HB590_BTL.mdlx
+kh2_fifth obj/N_HB590_BTL.mset
 kh2_first 00battle.bin
 kh2_first 00effect.bar
 kh2_first 00objentry.bin
@@ -642,6 +657,9 @@ kh2_sixth obj/P_EH000_LAST.a.us
 kh2_sixth obj/P_EH000_LAST.mdlx
 kh2_sixth obj/P_EH000_LAST.mset
 kh2_sixth obj/P_EX100.mdlx
+kh2_sixth obj/P_EX100_HTLF_BTL.a.us
+kh2_sixth obj/P_EX100_HTLF_BTL.mdlx
+kh2_sixth obj/P_EX100_HTLF_BTL.mset
 kh2_sixth obj/P_EX100_LAST.mdlx
 kh2_sixth obj/P_EX100_LAST.mset
 kh2_sixth obj/W_EH000.a.us
@@ -668,10 +686,14 @@ kh2_sixth voice/us/battle/n_dancer_hb.win32.scd
 kh2_sixth voice/us/battle/n_dragoon.win32.scd
 kh2_sixth voice/us/battle/n_gambler.win32.scd
 kh2_sixth voice/us/battle/n_larxene.win32.scd
+kh2_sixth voice/us/battle/n_lexaeus.win32.scd
+kh2_sixth voice/us/battle/n_marluxia.win32.scd
 kh2_sixth voice/us/battle/n_roxas.win32.scd
 kh2_sixth voice/us/battle/n_sniper.win32.scd
+kh2_sixth voice/us/battle/n_vexen.win32.scd
 kh2_sixth voice/us/battle/n_xemnas.win32.scd
 kh2_sixth voice/us/battle/n_xemnas_last.win32.scd
 kh2_sixth voice/us/battle/n_zexion.win32.scd
 kh2_sixth voice/us/battle/scar.win32.scd
+kh2_sixth voice/us/battle/sephiroth.win32.scd
 kh2_sixth voice/us/battle/shock_boss.win32.scd

@@ -749,8 +749,8 @@ public:
     // 1:41 and the game's own (an enemy's end: 75): a signal to every script of the field and its mission, their
     // trigger 10 (id, argument), as KH2's YS::SIGNAL::Call queues it
     virtual void signal(int /*id*/, int /*argument*/) {}
-    // a call of kind 4 on the field's KH2 mission (its counts, its bar, its end), its arguments (the counter's index
-    // first, 4:5's and 4:41's value second): what it gives back
+    // a call of kind 4 on the field's KH2 mission (its counts, its bar, its end), its arguments as the script gives
+    // them (4:6, 4:20, 4:29 the counter's index; 4:5 and 4:41 the value, then the index): what it gives back
     virtual int mission(unsigned /*number*/, int /*first*/, int /*second*/)
     {
         return 0;
@@ -783,6 +783,9 @@ public:
     {
         return 0.0F;
     }
+    // the field's mission's warning on a piece of `kind` (5 a counter, 6 a gauge) `index` turned on or off
+    // (YS::MISSION::WarningCount, WarningGauge: its set_warning, reset_warning)
+    virtual void mission_warning(int /*kind*/, int /*index*/, bool /*on*/) {}
     // 1:169: an effect let go of the object it follows (its bound flag cleared, FUN_1402be1c0): it stays where it is
     virtual void effect_unbind(std::uint32_t /*handle*/) {}
     // 2:24: the object that owns an attack (its + 0x10: what 2:10 was given), null none

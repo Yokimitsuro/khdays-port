@@ -206,6 +206,7 @@ struct Piece final {
     int shown = std::numeric_limits<int>::min(), shown_most = std::numeric_limits<int>::min();
     unsigned countdown = 0; // the timer's large figures made (dk::TIMER's flag bits: 3, 2, 1, 0)
     bool closing = false;
+    bool alerting = false; // its alert's clips playing (alert_update)
     float x = 0, y = 0; // its base's place in its column
     float top = 0;      // its highest dot below its place standing (its base's clip 4): its column's top in DS pixels
     bool middle = false; // laid out by the middle of the screen (kWideColumnMove): its x KH2 PC's, moved
@@ -330,6 +331,7 @@ void open_gauge(Piece &p)
 
 void open(Piece &p)
 {
+    p.alerting = false; // (made anew: an alert on plays again)
     // its top standing: its base's (4), its second's (10, its last frame: a gauge's opens with a flash far above it)
     // and a digit's or its bar's (12) at the base's active point
     const seq::SequenceData &d = p.pictures->sequence;
@@ -463,6 +465,21 @@ void gauge_update(Piece &p)
     p.sprites[std::size_t(p.digits[0])].scale_x = share;
     p.sprites[std::size_t(p.digits[1])].scale_x = 1.0F - share;
     p.sprites[std::size_t(p.digits[2])].ox = float(int(share * float(ex(*p.pictures, 14))));
+}
+
+// dk::COUNTER::alert and dk::MISSION_GAUGE::alert, their releaseAlert (the PS3 build's): a counter's or a gauge's
+// warning on, its base plays clip 0 and its second piece 6 -- a counter's then 1 and 7 (dk::COUNTER::alertLoop) --;
+// off, 4 and 10 again, nothing after
+void alert_update(Piece &p)
+{
+    if (p.kh2.alert == p.alerting || p.sprites.size() < 2)
+        return;
+    p.alerting = p.kh2.alert;
+    const bool counter = p.kh2.kind == 5;
+    set(p, 0, p.alerting ? 0 : 4);
+    set(p, 1, p.alerting ? 6 : 10);
+    p.sprites[0].next = p.alerting && counter ? 1 : -1;
+    p.sprites[1].next = p.alerting && counter ? 7 : -1;
 }
 
 // dk::Sprite::update, a KH2 tick: its clip a frame on; at its end the next, or gone; gone with its base
@@ -907,6 +924,8 @@ extern "C" void khdays_ui_kh2_mission_2d_frame(unsigned)
                     gauge_update(p);
                 else
                     counter_update(p);
+                if (p.kh2.kind != 4)
+                    alert_update(p);
             }
             for (unsigned t = 0; t < delta && alive(p); ++t)
                 tick(p);

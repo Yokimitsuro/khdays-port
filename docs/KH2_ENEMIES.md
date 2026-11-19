@@ -240,10 +240,10 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:101 | whether the object an AI handle names plays another's motion (`FUN_14042d360`: + 0x18c bit 14; `FUN_14040d810`'s range 20 then offers that other's command) | a player an enemy holds |
 | 1:89 | this tick's move along a way at a speed (`FUN_14042f8d0` -> `FUN_1403b9a70`) | as KH2; on a player an enemy holds, his (the Magnum Loader's Quick Blade dashes him to it) |
 | 1:111 | steering along a way at a speed, each tick till another | as KH2; on a held player, his (the Armored Knight's Rising Sun flies him) |
-| 1:29 | (its value) the motion given (`FUN_1403c6cc0`), what the player's controller then plays (+ 0x184, 1:238): the Armored Knight's flight runs while the two are the same | the motion's number |
+| 1:29 | (its value) the motion given (`FUN_1403c6cc0`), what the player's controller then plays (+ 0x184, 1:238): the Armored Knight's flight runs while the two are the same. The capture is a motion of his own (`YS::MOTION::capture`, `_capture`): his damage reaction's motion takes its place (Vexen's freeze ends with the strike of its shattering ice) | the motion's number; a held player struck by an attack with a reaction (atkp + 10 neither 0 nor 255) is let go (until 2026-11-19 kept: Vexen's freeze held for ever) |
 | 0:42, 0:68 | the way a vector points along the ground, `atan2(x, z)` (`FUN_14041d250`); a vector turned about the x (`FUN_14041d100` -> `FUN_1403b75f0`, `FUN_1401411b0`'s turn: y cos - z sin, y sin + z cos) -- Rising Sun's launch, ahead turned up, then about the up (0:13) | as KH2 |
 | 6:3, 6:8, 6:5 | KH2's search for an aim (`FUN_14053fb60`, `FUN_140540080`, `FUN_14053fb80`): made (its capacity, a reach of 0 to 1000, no cone), an object's aims listed (its shapes of kind 3 in its groups on), the nearest (or farthest) of KH2's actors' aims from a point within the reach and the cone, passed over when listed and listed once found (FUN_1403bee60's record: the object, its group, none, -1) | as KH2, over the field's KH2 enemies (Days's own have no KH2 shapes) |
-| 1:140 | a record names something: its + 8 an object, or its + 0 an actor in play with a shape of kind 3 in its groups on (`FUN_1403bde30`) | as KH2 |
+| 1:140 | a record names something: its + 8 an object, or its + 0 an actor in play with a shape of kind 3 in its groups on (`FUN_1403bde30`; the PS3 build's `YS::TARGET::is_exist`: `OBJ::is_exist`, `is_enable_collision`, a collision of `TYPE` 3) | as KH2, a player always there (KH2's Sora has his shape of kind 3): until 2026-11-19 a record on the player read as gone, and Vexen's disc, homing on him through one, flew off in a straight line |
 | 1:131, 1:132 | a record copied into KH2's pool of records and given back (`FUN_1403bda80`, `FUN_140430420`) | the record itself; nothing |
 | 1:191 | the record at an object's + 0xdc8's + 4: the player's aim (his lock-on), which Rising Sun goes for when it names one | a record of the port's, empty: no lock of Days's is passed on |
 | 1:221 | whether the player can take a command now (`FUN_1403b6950`, `FUN_1403ba070`: his state against the command's flags) | yes |
@@ -292,7 +292,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:17 | it made to leave at once (`trap_obj_leave_force`: its class's + 0x38) | an ally goes ("Allies", below); an enemy's Days enemy stays, its script going on |
 | 0:9 | a routine started as a thread beside the one running, with a value (`trap_thread_start`, `FUN_14041da20` -> `FUN_1403e1e30`: in the list of the running thread's parent -- the main's own when the main runs; a loose thread's own --, run after it, `FUN_1403e1c80`; tagged with the first value at + 0x3c, its list's threads of that tag ended first, `FUN_1403e1f00`) | as KH2: a child thread of that parent, tagged (`Thread::tag`); a handle back (Xemnas's) |
 | 10:19 | whether the object is a limit's (`trap_sysobj_is_limit`, `FUN_140536890`: + 0x126 bit 0) | as KH2: none of Days's is |
-| 4:3, 4:5, 4:6, 4:11, 4:14, 4:15, 4:16, 4:20, 4:21, 4:22, 4:29, 4:41, 4:54, 4:55 | the field's mission: completed, a counter's count set, one more, failed, its pieces shown, hidden, its boss dead, one less, whether its pieces are up, left, a counter's count, so many more, locked, whether it is -- the counters' calls their index first (`YS::MISSION`, `MISSION_COUNT`, `MISSION2D`) | the boss's KH2 mission ("KH2's missions", below) |
+| 4:3, 4:5, 4:6, 4:11, 4:14, 4:15, 4:16, 4:20, 4:21, 4:22, 4:29, 4:41, 4:54, 4:55 | the field's mission: completed, a counter's count set, one more, failed, its pieces shown, hidden, its boss dead, one less, whether its pieces are up, left, a counter's count, so many more, locked, whether it is -- 4:6, 4:20 and 4:29 the counter's index; 4:5 and 4:41 the value, then the index (`YS::MISSION::SetCount(n, index)`, `AddCount(n, index)`: read the other way round until 2026-11-19) (`YS::MISSION`, `MISSION_COUNT`, `MISSION2D`) | the boss's KH2 mission ("KH2's missions", below) |
 | 6:16 | a target record emptied (`Ts::trap_target_clear`, `FUN_1403bda50`: none, 0, none, -1) | as KH2 |
 | 6:46, 6:47 | a stop put on every object of the field but two (`Ts::trap_obj_rc_stop_all`, `FUN_14053ea60`: each object's stop record at + 0x64c given the stop's number and a value, `FUN_14040a920` -- four slots of a number and a value, their kinds' flags gathered at + 0, from a table, `FUN_1403eed10`, not read); that stop taken off every object (`trap_obj_stop_end_all`, `FUN_14040a770`) | the KH2 enemies and allies but those two held whole, script and motions, while a stop is on them (as Days's Stop holds them; the stop kinds' own flags not read): Demyx's 14 |
 | 2:77, 2:78, 2:79, 2:80 | a vacuum made at a point with a strength, its handle back (`trap_vacuum_create`, `FUN_1403f8f20`: 0x34 bytes in the game's list, `DAT_142ae7dc0` -- + 0 the point, + 0x10 the kinds of object it lets be, a bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least and + 0x20 its most, the three the strength, + 0x24 its turning, 0, + 0x28 its near range, 100, + 0x2c its rate, 0.01); one let go; a kind it lets be; its point (NaN made 0). Each object's move adds their pull (`FUN_1403b8ca2` -> `FUN_1403f9130`): none on one of no weight (its entry's + 0x50), + 0x120 bit 2 or + 0x18c bit 25 set; each vacuum not letting its kind be (its entry's + 4, 0 for the player) and within reach pulls it along the ground toward its point at weight / 100 x the speed, kept between the least and the most, times (distance - near range) x rate kept between -1 and 1 | as KH2 on the KH2 enemies and allies (`vacuum_pull` in `shell.cpp`); a vacuum's turning not applied (none of the port's kinds turns one), nor any pull on Days's players: Demyx's water clones' let the player be and pull Demyx (weight 500) and each other (10) |
@@ -890,6 +890,20 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   violet sights, then the yellow), Roxas moving under it, reaction commands 491 and 598 taken, the shake, the
   sights' closing (layout 3) and "20" after. Not seen: his end.
 - **Final Xemnas** `B_EX170_LAST_LV99` and **Riku** `P_EH000_LAST` (2026-11-16): "Final Xemnas and Riku", below.
+- **Vexen** `N_CM040_BTL` (his Absent Silhouette and his data battle, one object; voice bank `n_vexen`, his KH2 mission
+  `HB32_FM_VEX`) and his **Anti-Sora** `P_EX100_HTLF_BTL` (2026-11-19): his mission's gauge (0 to 100) and count (0 to
+  5) at the left. A task of his (`0:47`, `2:20`) lays a disc on the floor (his element 3) that homes on the player
+  (its own steering in the script: `1:140` on its target record, `6:9`, `0:46`, `0:45`, the floor found with
+  `6:51`); within 110 cm of him its touch shows (element 26) and the gauge fills by 1.67 / k a tick (k 2.37, then 8,
+  9, 11, 14 as the count rises), past 160 cm it lets go; a full gauge adds 1 to the count (4:41: `AddCount(1, 0)`)
+  and empties, the fifth sets the gauge's warning (4:57). With a count he summons the Anti-Sora (motion 238, its
+  entry 2356, `1:218` its count as its level; `lv1_battle` ...), and gathers it back (`collect`: it leaves). His
+  freeze (atkp 1816, his task `0x2da6`): the player captured in his motion 252 (`AR70`) inside an ice block, a
+  240-tick timer, then the ice shattered (sound 390049, `2:17` with atkp 1816): the strike's reaction frees him.
+  Calls: 4:57; with them 1:140 on a player, 4:5 and 4:41's order (the count first), a held player let go when
+  struck by an attack with a reaction -- each wrong before, his gauge never filling past his entrance, his count never
+  rising, his freeze held for ever. Seen (window runs, 2026-11-19): the count 1 to 5 in 160 s of a chase, the
+  Anti-Sora at 116 s, the gauge's warning at 241 s; frozen at 89 s, the ice shattered and the player free at 94 s.
 
 ### Final Xemnas and Riku (2026-11-16)
 
@@ -1249,9 +1263,10 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
 - **Signals**: the PS3 build's `YS::SIGNAL::Call(id, argument)` queues one; every object's script (trigger 10,
   `YS::OBJ::_OVR_signal_callback`) and the mission's hear it. An enemy's end sends 75 with its serial
   (`YS::ZAKO::_OVR__dead`: entries of kind 4); a counter reaching its most sends 123, reaching 0 14, with its index,
-  while the pieces are up (`MISSION_COUNT::set`); the time up 74 (`dk::timerTask`). The counters' calls name the
-  counter first (4:5 `trap_mission_set_count` its index and the count, 4:6, 4:20 and 4:29 its index, 4:41 its index
-  and how many). The mission's script counts its count down on 75 (4:20),
+  while the pieces are up (`MISSION_COUNT::set`); the time up 74 (`dk::timerTask`). The counters' calls: 4:6, 4:20
+  and 4:29 the counter's index; 4:5 `trap_mission_set_count` the count, then the index, and 4:41 how many, then the
+  index (`YS::MISSION::SetCount(n, index)`, `AddCount(n, index)`, the PS3 build's; until 2026-11-19 the port read
+  both the other way round, and Vexen's full gauges never counted). The mission's script counts its count down on 75 (4:20),
   locks itself completed on 14 and failed on 74 (4:54), then ends so (4:3, 4:11; its boss dead 4:16, left 4:22).
   Demyx counts the clones on 75 too, while the mission's bar is up (4:21). The port queues signals and tells every
   KH2 enemy, ally and the mission at the next frame; an enemy's end (its health out, an entry of kind 4) sends 75.
@@ -1284,7 +1299,7 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   event sequences are not played, and its end changes nothing of Days's mission (a failure does not fail it).
 - **Its pieces on the screen** (`ui/kh2_mission_2d.cpp`), as KH2's `dk::TIMER` and `dk::COUNTER` build them (the PS3
   build's, read): sprites of the sequence's clips, each playing its clip and at its end the next or gone (`dk::Sprite`)
-  -- the base (3 coming, then 4; 5 leaving; 0 and 1 the warning, 4:47's, not called by Demyx's), its second (the clock,
+  -- the base (3 coming, then 4; 5 leaving; 0 and 1 the warning, below), its second (the clock,
   the note: 9, then 10; 11 leaving), the digits (12-21; 22 a counter's dim leading zero; 23 and 24 the timer's
   separators); a child placed at its base's active point plus its offset (the digits a digit's width, the clip's
   `ex`, apart) and faded with the base's active alpha (`getParentSeqAlphaOnly`). The timer shows minutes, seconds and
@@ -1294,6 +1309,16 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   (`INFO_BASE`), half a DS dot a KH2 dot, under Days's own pieces at the top of that side as KH2's are under its
   INFORMATION window (the hearts and clock at the left, the target's name and health at the right): on one screen
   placed as those pieces are. While Days's INFORMATION banner is up at the top they are not drawn.
+- **Warnings** (the PS3 build's, read 2026-11-19): a counter's or a gauge's (`MISSION2D` + 0xc bit 3) goes on and off
+  as its value is set (`MISSION_COUNT::set`, `MISSION_GAUGE::set` -> `MISSION2D::check_warning`): with a warning above
+  0, on once the value falls to it -- or, the piece starting at or below it, once the value reaches it -- else off
+  (Saïx's berserk gauge from 50 down); its script sets it whatever the value: 4:57 a gauge's (`trap_mission_warning_
+  gauge` -> `YS::MISSION::WarningGauge(on, index)`: Vexen's, `HB32_FM_VEX`), 4:50 and 4:58 a counter's on and off
+  (`WarningCount(index, on)`). On, its base plays clip 0 and its second piece 6 (`dk::COUNTER::alert`,
+  `dk::MISSION_GAUGE::alert`), a counter's then 1 and 7 (`dk::COUNTER::alertLoop`); off, 4 and 10 again
+  (`releaseAlert`). `MISSION2D::set_warning` also plays the piece's warning sound (+ 0x28: `4:46`, `4:53`) when it has
+  one -- not played by the port (no mission it runs sets one). A timer's warning (`dk::INFORMATION::alertTimer`, 4:47)
+  is not drawn.
 - **Seen** (Demyx, `HE17_MS105`, a recorded walk, Roxas keeping away and striking): the mission set going (a count
   of 10, 60 seconds), Demyx in his hard round (`btl_hard`) making his water clones (`move_target`: `appear_mission`,
   `idle_mission`, `atk_water`, `atk_move`), Roxas defeating eight (each 75: the count 10 down to 2), the time up (74),

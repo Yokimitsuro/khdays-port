@@ -1641,6 +1641,7 @@ void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &a
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = false);
 int attack_power(int atkp);
 int attack_team(int atkp);
+bool attack_reacts(int atkp);
 void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp);
 Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false, int argument = 0);
 
@@ -2747,14 +2748,19 @@ public:
             for (auto &[days, e] : *list)
                 for (auto r = e->fx.begin(); r != e->fx.end(); ++r)
                     if (r->handle == handle) {
+                        if (trace_level() >= 2)
+                            khdays_log("kh2 enemies: effect %08x ended at once by a script", handle);
                         e->fx.erase(r);
                         return;
                     }
     }
     void effect_loop_end(std::uint32_t handle) override
     {
-        if (Enemy::Running *r = running_effect(handle))
+        if (Enemy::Running *r = running_effect(handle)) {
+            if (trace_level() >= 2)
+                khdays_log("kh2 enemies: effect %08x closed by a script (its loops end)", handle);
             r->fx->stop();
+        }
     }
     void offer(Actor &by, int command, Object *source) override
     {
@@ -2852,8 +2858,35 @@ public:
                 signal(14, index);
             n = 0;
         }
+        check_warning(m, *c, n);
         c->value = n;
         khdays_log("kh2 enemies: mission %s's count %d", m.name.c_str(), n);
+    }
+    // YS::MISSION2D::check_warning (the PS3 build's), as a counter's or a gauge's value is set: with a warning above 0,
+    // on once the value falls to it -- or, when the piece starts at or below it, once the value reaches it -- else off
+    void check_warning(const Kh2Mission &m, MissionPiece &p, int value)
+    {
+        if (p.warning <= 0)
+            return;
+        const bool on = p.start <= p.warning ? value >= p.warning : value <= p.warning;
+        if (on != p.alert) {
+            p.alert = on;
+            khdays_log("kh2 enemies: mission %s's %s %d warns%s", m.name.c_str(), p.kind == 6 ? "gauge" : "counter",
+                       p.index, on ? "" : " no more");
+        }
+    }
+    // YS::MISSION::WarningCount, WarningGauge (4:50, 4:58, 4:57): a counter's or a gauge's warning set or reset by its
+    // script, whatever its value
+    void mission_warning(int kind, int index, bool on) override
+    {
+        if (!kh2_mission)
+            return;
+        MissionPiece *p = mission_piece(*kh2_mission, kind, index);
+        if (p == nullptr || p->alert == on)
+            return;
+        p->alert = on;
+        khdays_log("kh2 enemies: mission %s's %s %d warns%s (its script)", kh2_mission->name.c_str(),
+                   kind == 6 ? "gauge" : "counter", index, on ? "" : " no more");
     }
     // YS::MISSION_GAUGE::set (the PS3 build's): gauge `index` kept between 0 and its most; reaching 0 from above
     // sends 136, its most from below 137, with its index, while its pieces are up
@@ -2872,6 +2905,7 @@ public:
                 signal(137, index);
             level = most;
         }
+        check_warning(m, *g, int(level));
         g->level = level;
         g->value = int(level);
         if (trace_level() >= 2)
@@ -2935,10 +2969,11 @@ public:
         case 11: end("failed"); break;
         case 16: end("over: its boss defeated"); break;
         case 22: end("left"); break;
-        case 5: set_count(m, first, second); break;
+        // (4:5 and 4:41 name the count first, then the counter: YS::MISSION::SetCount(n, index), AddCount(n, index))
+        case 5: set_count(m, second, first); break;
         case 6: set_count(m, first, count(first) + 1); break;
         case 20: set_count(m, first, count(first) - 1); break;
-        case 41: set_count(m, first, count(first) + second); break;
+        case 41: set_count(m, second, count(second) + first); break;
         case 29: return count(first);
         case 14: m.shown = !m.over; break;
         case 15: m.shown = false; break;
@@ -3417,6 +3452,7 @@ void start_mission(const std::string &name)
                 p.kind = code;
                 const std::int32_t start = s32(at + 4), most = s32(at + 8);
                 p.warning = s32(at + 12);
+                p.start = start;
                 if (count >= 4) {
                     const std::uint32_t picture = std::uint32_t(s32(at + 16));
                     p.index = int(picture >> 24);
@@ -3598,6 +3634,11 @@ void landed(Enemy &e, unsigned object, int atkp)
     mod().memory.set_u32(e.attack_record + 0x94, a.address()); // its owner
     const ai::Value values[2] = {ai::Value::of_address(it->second->address()), ai::Value::of_address(e.attack_record)};
     a.event(15, values);
+    // held in another's motion (1:29: YS::MOTION::capture, a motion of his own started), struck by an attack with a
+    // reaction: his damage reaction's motion takes its place, as KH2's MOTION::change does, and the holder's script
+    // sees it (1:238) -- Vexen's freeze ends with its shatter (2:17, atkp 1816); until 2026-11-19 he stayed frozen
+    if (held.count(object) != 0 && attack_reacts(atkp))
+        let_go(object, "struck: his damage reaction");
 }
 
 // The current motion's attacks (its ranges 10 and 33: an atkp entry and a collision group) that cover its time: each
@@ -4033,6 +4074,13 @@ int attack_power(int atkp)
 int attack_team(int atkp)
 {
     return attack_param(atkp).team;
+}
+
+// Whether an attack gives what it strikes a reaction (its + 10: 0 and 255 none)
+bool attack_reacts(int atkp)
+{
+    const int r = attack_param(atkp).reaction;
+    return r != 0 && r != 255;
 }
 
 // KH2's damage patterns (00battle.bin's patn: patterns.h), read once from the mod's kh2/00battle.bin
@@ -5262,9 +5310,10 @@ std::uint32_t cast(Enemy &e, int number, unsigned player, bool on_weapon, const 
         const std::uint32_t handle = r.handle;
         e.fx.push_back(std::move(r));
         if (tracing())
-            khdays_log("kh2 enemies: %08x casts %s's element %d (effect %zu, emitter %zu, bone %d, sound %d%s)", e.days,
-                       k.name.c_str(), number, it->second.effect, it->second.emitter, it->second.bone,
-                       it->second.sound, on_weapon ? ", on the player's weapon" : player != 0 ? ", on the player" : "");
+            khdays_log("kh2 enemies: %08x casts %s's element %d (effect %zu, emitter %zu, bone %d, sound %d%s) as %08x",
+                       e.days, k.name.c_str(), number, it->second.effect, it->second.emitter, it->second.bone,
+                       it->second.sound, on_weapon ? ", on the player's weapon" : player != 0 ? ", on the player" : "",
+                       handle);
         return handle;
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: %s's effect %d cannot be played (%s)", k.name.c_str(), number, x.what());
@@ -7707,8 +7756,12 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
         }
     }
     for (std::size_t i = e.fx.size(); i-- > 0;)
-        if (e.fx[i].fx->done() || (e.fx[i].fade_step != 0.0F && e.fx[i].fade <= 0.0F))
+        if (e.fx[i].fx->done() || (e.fx[i].fade_step != 0.0F && e.fx[i].fade <= 0.0F)) {
+            if (trace_level() >= 2)
+                khdays_log("kh2 enemies: %08x's effect %08x over (%s)", e.days, e.fx[i].handle,
+                           e.fx[i].fx->done() ? "ended" : "faded out");
             e.fx.erase(e.fx.begin() + std::ptrdiff_t(i));
+        }
 }
 
 // How the model whose draw begins is placed, from the matrices the game left (khdays_g3d.h): three ways are seen --

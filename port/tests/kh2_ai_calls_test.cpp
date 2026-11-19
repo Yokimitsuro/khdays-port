@@ -1425,7 +1425,7 @@ void test_hydra_friends()
     // the field's mission: one less, whether its bar is up, its count
     call(rig, phil, 4, 20, {ai::Value::of_int(0)});
     CHECK(call(rig, phil, 4, 21, {}).i() == 1 && call(rig, phil, 4, 29, {ai::Value::of_int(1)}).i() == 7);
-    call(rig, phil, 4, 41, {ai::Value::of_int(1), ai::Value::of_int(3)}); // counter 1, three more
+    call(rig, phil, 4, 41, {ai::Value::of_int(1), ai::Value::of_int(3)}); // one more on counter 3 (the count first)
     CHECK((world.asked.size() == 4u && world.asked.front() == std::tuple{20u, 0, 0}));
     CHECK((world.asked[2] == std::tuple{29u, 1, 0} && world.asked[3] == std::tuple{41u, 1, 3}));
     call(rig, phil, 1, 17, {self});
@@ -1899,8 +1899,8 @@ struct PortRoyalWorld final : kh::World {
     {
         if (number == 29)
             return counts[first];
-        if (number == 5)
-            counts[first] = second;
+        if (number == 5) // (the count, then the counter's index: YS::MISSION::SetCount(n, index))
+            counts[second] = first;
         return 0;
     }
 };

@@ -177,8 +177,12 @@ struct MissionPiece final {
     float level = 0.0F;     // a gauge's level (MISSION_GAUGE's + 0x2c, a float)
     int most = 0;           // a counter's most; a timer's end (its frames: counting down, its start's; up, its most's)
     int warning = 0;        // its warning (MISSION2D's: seconds for a timer)
+    int start = 0;          // its start (MISSION2D's + 0x14: whether its warning is reached going up or down)
     bool with_most = false; // a counter shown "count / most" (its most's bit 30: MISSION_COUNT's type 1)
     bool down = false;      // a timer counting down (its start above 0)
+    // a counter's or a gauge's warning on (MISSION2D's + 0xc bit 3: MISSION2D::check_warning as its value is set, or
+    // its script's 4:50 / 4:57): its alert's clips (dk::COUNTER::alert, dk::MISSION_GAUGE::alert)
+    bool alert = false;
 };
 // The field's KH2 mission as its pieces show it (ui/kh2_mission_2d.cpp): its file (the mod's kh2/msn/<name>.bar), a
 // number another for each mission set going, the KH2 ticks it has run (60 a second), whether its pieces are up (4:14,

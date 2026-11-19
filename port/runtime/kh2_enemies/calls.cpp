@@ -750,10 +750,16 @@ void add_actor_fields(ai::Calls &calls)
     // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
     // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
     // the slot left empty; 1:162 the actor put on one of KH2's lists (FUN_1403bd410): nothing here
-    // ... or its + 0's an actor in play with a shape of kind 3 in its groups on (what 6:5 finds)
+    // ... or its + 0's an actor in play with a shape of kind 3 in its groups on (what 6:5 finds; the PS3 build's
+    // YS::TARGET::is_exist: OBJ::is_exist, is_enable_collision, a collision of TYPE 3) -- a player's always (KH2's
+    // Sora has his): until 2026-11-19 a target record on the player read as gone, and Vexen's disc, homing on him
+    // through one, stopped and flew off in a straight line
     calls.set(1, 140, [](ai::Machine &m, std::span<ai::Value> a) {
         bool there = Object::at(m.memory(), m.memory().u32(a[0].bits + 8)) != nullptr;
-        if (Object *o = there ? nullptr : Object::at(m.memory(), m.memory().u32(a[0].bits)))
+        Object *o = there ? nullptr : Object::at(m.memory(), m.memory().u32(a[0].bits));
+        if (o != nullptr && is_player(o))
+            there = true;
+        else if (o != nullptr)
             if (Actor *x = o->actor();
                 x != nullptr && x->world != nullptr && (x->u32(field::kFlags) & 0x10080000u) == 0)
                 there = !x->world->shapes(*x, 3).empty();
@@ -2913,11 +2919,12 @@ void add_world(ai::Calls &calls)
                 }
         m.memory().set_u32(a[0].bits + 4, found);
     });
-    // the field's KH2 mission (World::mission): 4:3 complete, 4:5 a counter's count set (its index, the count), 4:6
-    // one more (its index), 4:11 failed, 4:14 its pieces shown, 4:15 hidden, 4:16 its boss dead, 4:20 one less (its
-    // index), 4:21 whether its pieces are up, 4:22 left, 4:29 a counter's count (its index), 4:41 so many more (its
-    // index, how many), 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT, MISSION2D; the PS3 build's names
-    // trap_mission_set_count ...)
+    // the field's KH2 mission (World::mission): 4:3 complete, 4:5 a counter's count set (the count, then its index:
+    // YS::MISSION::SetCount(n, index)), 4:6 one more (its index), 4:11 failed, 4:14 its pieces shown, 4:15 hidden,
+    // 4:16 its boss dead, 4:20 one less (its index), 4:21 whether its pieces are up, 4:22 left, 4:29 a counter's count
+    // (its index), 4:41 so many more (how many, then its index: AddCount(n, index) -- until 2026-11-19 read the other
+    // way round, Vexen's full gauges never counted), 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT,
+    // MISSION2D; the PS3 build's names trap_mission_set_count ...)
     for (const unsigned n : {3u, 5u, 6u, 11u, 14u, 15u, 16u, 20u, 21u, 22u, 29u, 41u, 54u, 55u})
         calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
             Actor *me = running(m);
@@ -2936,6 +2943,21 @@ void add_world(ai::Calls &calls)
         World *w = running(m)->world;
         a[0] = ai::Value::of_float(w != nullptr ? w->mission_gauge(12, a[0].i(), 0.0F) : 0.0F);
     });
+    // 4:57 a gauge's warning on or off (trap_mission_warning_gauge -> YS::MISSION::WarningGauge(on, its index): Vexen's
+    // once his count of full gauges reaches 5); 4:50 and 4:58 a counter's on and off (trap_mission_warning_count,
+    // trap_mission_reset_warning_count -> MISSION::WarningCount(its index, on)): World::mission_warning
+    calls.set(4, 57, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->mission_warning(6, a[1].i(), a[0].bits != 0);
+    });
+    calls.set(4, 50, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->mission_warning(5, a[0].i(), true);
+    });
+    calls.set(4, 58, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->mission_warning(5, a[0].i(), false);
+    });
     // 4:48 a digit of a counter set (trap_mission_set_count_figure_num, FUN_140433710: its place n -- 0 the ones --,
     // the digit, the counter's index; its count + (digit - (count / 10^n) % 10) x 10^n): as 4:29 then 4:5 (the
     // hyenas' counter, by their unit's argument, which Days's waves leave 0: not reached there)
@@ -2948,7 +2970,7 @@ void add_world(ai::Calls &calls)
         for (int k = 0; k < place; ++k)
             power *= 10;
         const std::int64_t count = w->mission(29, index, 0);
-        w->mission(5, index, int(count + (digit - (count / power) % 10) * power));
+        w->mission(5, int(count + (digit - (count / power) % 10) * power), index);
     });
     // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
     // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)
