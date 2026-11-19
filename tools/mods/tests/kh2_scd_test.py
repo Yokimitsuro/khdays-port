@@ -46,6 +46,7 @@ def made_up_sounds_bank(
     recordings: list[tuple[int, int, int, bytes, bytes] | None],
     head: int = 0x10,
     tracks: int = 4,
+    weights: bool = False,
 ) -> bytes:
     """A bank with its sounds' table at 0x50 (each sound `head` bytes, its volume at +8, then its (track, recording)
     references; None one with no track) and its recordings' table after them, as made_up_bank lays recordings."""
@@ -57,7 +58,12 @@ def made_up_sounds_bank(
         entry = bytearray(head)
         entry[0] = len(refs)
         struct.pack_into("<fI", entry, 8, volume, n)
-        out += entry + b"".join(struct.pack("<HH", *r) for r in refs)
+        if weights and len(refs) > 1:  # a random sound's 8-byte references: track, recording, weight so far, its place
+            out += entry + b"".join(
+                struct.pack("<HHHH", *r, 100 * (k + 1) // len(refs), k) for k, r in enumerate(refs)
+            )
+        else:
+            out += entry + b"".join(struct.pack("<HH", *r) for r in refs)
     table = len(out)
     struct.pack_into("<4H", out, 0x30, len(sounds), tracks, len(recordings), 0)
     struct.pack_into("<6I", out, 0x38, 0, table, 0, 0, 0, 0)
@@ -133,6 +139,11 @@ class Bank(unittest.TestCase):
             # the last sound's references found after a header as long as the others'
             self.assertEqual(sounds[2].recordings, [0, 1])
             self.assertEqual(len(kh2_scd.recordings(bank)), 2)
+        # a sound picking one of its tracks at random (8-byte references) among 4-byte ones
+        bank = made_up_sounds_bank(
+            [(0.5, [(0, 1)]), (1.0, [(1, 0), (2, 1), (3, 0)]), (0.5, [(0, 0)])], [recording, recording], weights=True
+        )
+        self.assertEqual([s.recordings for s in kh2_scd.sounds(bank)], [[1], [0, 1, 0], [0]])
         with self.assertRaises(kh2_scd.ScdError):
             kh2_scd.sounds(made_up_sounds_bank([(1.0, [(0, 5)])], [recording]))  # a recording it has not
         with self.assertRaises(kh2_scd.ScdError):

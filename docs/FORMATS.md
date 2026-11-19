@@ -337,10 +337,13 @@ sample for sample against ffmpeg's decoding of the same recordings.
   tracks', the recordings', the bank's number), then u32 offsets (the tracks' table's, the recordings' table's, ...).
   Each table: a u32 offset an entry, 0 an empty place. The sounds' table is right after the header (at 0x50).
 - **A sound**: u8 its tracks' count (0 none), ..., + 8 a float (its volume: 0.32 to 1 in the banks read), + 0xc its
-  number; its tracks' references last, `{u16 track, u16 recording}` each. A bank's sounds lie end to end, every
+  number; its tracks' references last, `{u16 track, u16 recording}` each -- or `{u16 track, u16 recording, u16
+  weight so far, u16 its place}` in a sound that plays one of its tracks at random (the weights cumulative, of 100:
+  se363's sound 21, Sephiroth's, seven tracks at 20, 40, 60, 70 ... 100). A bank's sounds lie end to end, every
   header as long as the others (16 or 64 bytes, the longer one holding the sound's name): a sound's references are
-  the bytes before the next sound's, the last one's after a header of that length. KH2's sound id `bank x 1000 + n`
-  is bank `bank`'s sound `n` (docs/KH2_ENEMIES.md, "Sounds"). The tracks (their commands) are not read.
+  the bytes before the next sound's (4 or 8 bytes each, as they fill them), the last one's after a header of that
+  length. KH2's sound id `bank x 1000 + n` is bank `bank`'s sound `n` (docs/KH2_ENEMIES.md, "Sounds"). The tracks
+  (their commands) are not read; the tools take a sound's first track's recording.
 - **A recording**: `{u32 data size, channels, rate, codec, loop start, loop end, extra size, -}`, the codec's extra
   header, then its data. Codec 12 is Microsoft ADPCM, its extra a WAVEFORMATEX (`wFormatTag` 2, the block's bytes,
   `wSamplesPerBlock` 32, the seven predictor pairs); codec 6 is Ogg Vorbis. Rates are the files' own (47,995-48,005

@@ -904,6 +904,18 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   struck by an attack with a reaction -- each wrong before, his gauge never filling past his entrance, his count never
   rising, his freeze held for ever. Seen (window runs, 2026-11-19): the count 1 to 5 in 160 s of a chase, the
   Anti-Sora at 116 s, the gauge's warning at 241 s; frozen at 89 s, the ice shattered and the player free at 94 s.
+- **Sephiroth** `N_HB630` (FINAL MIX's, Hollow Bastion's Dark Depths; voice bank `sephiroth`, his KH2 mission
+  `HB01_MS601`) (2026-11-19): `N_HB590_BTL`, which bears his name too, is a plain battle template of the story's (22
+  states, a 5 KB script, no effects of its own) that never attacks; his fight is `N_HB630`'s (a 27 KB script, 16
+  effects). Calls: 1:353 (`trap_obj_start_mpdrive` -> `BTLOBJ::start_mpdrive`): his Heartless Angel (atkp 1697)
+  leaves the player 1 HP (1:228, 1:155) and no MP, his MP recharging -- Days's players have no MP gauge: nothing.
+  His bank se363 holds a sound of eight-byte references (one of seven tracks at random, FORMATS.md): the tool read it
+  wrong and took none of his sounds; 30 of his 34 now (the other four the player's bank 500's). Seen (window runs,
+  2026-11-19): his spin slash, split flash, warps, upper and air slash; his grab (AQ91, 72 frames) ended by its
+  strike (atkp 1354). **Not played**: his reaction command 664 (offered during his split flash, motion 204): the
+  player's counter (AQ90, atkp 1719) strikes him, and KH2 settles the two attacks as a reflection (both reflected:
+  his trigger 19), which his script's thread waits for -- the port has no reflection of attacks yet (see Lexaeus):
+  both stood still, the player in his AQ90 for good.
 
 ### Final Xemnas and Riku (2026-11-16)
 

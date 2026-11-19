@@ -713,6 +713,10 @@ void add_actor_fields(ai::Calls &calls)
         if (a[0].bits != 0)
             m.memory().set_u32(a[0].bits + 0x1c8, a[1].bits);
     });
+    // 1:353 an object's MP recharge started for a time (trap_obj_start_mpdrive -> YS::BTLOBJ::start_mpdrive): Sephiroth's
+    // Heartless Angel leaves the player 1 HP (1:155) and no MP. Days's players have no MP gauge (their magic goes by
+    // its deck's charges): nothing
+    calls.set(1, 353, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:75 a slot of its motion set hooked (trap_obj_motion_hook, FUN_14042f460 -> FUN_1403c7c10: the slot's data at
     // the motion controller's + 0x160 when there is one), 1:76 none (FUN_1403c8f10), 1:77 whether one is (+ 0x160 not
     // 0): Motions::hook
@@ -1147,8 +1151,10 @@ void add_actor_fields(ai::Calls &calls)
     // 1:145 the zone of the room an object stands in (trap_obj_touch_zone, FUN_14042b6f0: + 0xcf4, KH2's area's event
     // zones -- Oogie Boogie's 122 to 124, the platforms the player is on): Days's rooms have none, 0
     calls.set(1, 145, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 0:24 a value printed for KH2's debugging (trap_stputi, FUN_14041ca20: empty in the game)
+    // 0:24 a value printed for KH2's debugging (trap_stputi, FUN_14041ca20: empty in the game); 0:25 a float so
+    // (trap_stputf: Sephiroth's)
     calls.set(0, 24, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 25, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:37 a part of KH2's map shown (trap_bg_show, FUN_14042e6a0: DAT_140abcbd8's bit, the map's and its effects'
     // parts): the room is Days's, which has no such parts -- nothing (the Hydra's)
     calls.set(1, 37, [](ai::Machine &, std::span<ai::Value>) {});

@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools d7c5353ca01622905bee8ada1e11fbf7e4a74ee127b8a33e018326a1573b5905
+# tools 66335c1b30fbe78c0bbce72256f4ea07b8809de0821eaa5b47290aeab2fed03e
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -112,6 +112,7 @@ kh2_fifth msn/us/EH14_MS103.bar
 kh2_fifth msn/us/EH15_MS104.bar
 kh2_fifth msn/us/EH20_MS113_RE.bar
 kh2_fifth msn/us/EH21_MS101.bar
+kh2_fifth msn/us/HB01_MS601.bar
 kh2_fifth msn/us/HB04_MS403.bar
 kh2_fifth msn/us/HB32_FM_VEX.bar
 kh2_fifth msn/us/HB33_FM_LAR.bar
@@ -360,9 +361,6 @@ kh2_fifth obj/N_CM020_BTL.mset
 kh2_fifth obj/N_CM040_BTL.a.us
 kh2_fifth obj/N_CM040_BTL.mdlx
 kh2_fifth obj/N_CM040_BTL.mset
-kh2_fifth obj/N_HB590_BTL.a.us
-kh2_fifth obj/N_HB590_BTL.mdlx
-kh2_fifth obj/N_HB590_BTL.mset
 kh2_first 00battle.bin
 kh2_first 00effect.bar
 kh2_first 00objentry.bin
@@ -635,6 +633,9 @@ kh2_fourth ard/us/po08.ard
 kh2_fourth ard/us/po09.ard
 kh2_fourth ard/us/po10.ard
 kh2_fourth ard/us/tr00.ard
+kh2_sixth obj/N_HB630.a.us
+kh2_sixth obj/N_HB630.mdlx
+kh2_sixth obj/N_HB630.mset
 kh2_sixth obj/N_HE020_BTL.a.us
 kh2_sixth obj/N_HE020_BTL.mdlx
 kh2_sixth obj/N_HE020_BTL.mset

@@ -85,8 +85,10 @@ def sounds(bank: bytes) -> list[Sound | None]:
     """The bank's sounds in order, None for an empty place or one with no track. The sounds' table is the first
     after the tables' header (at 0x50, its count the header's first): a u32 offset a sound. A sound: u8 its tracks'
     count, ..., +8 a float (its volume), +0xc its number; its tracks' references last, a u16 track and a u16
-    recording each. The sounds lie end to end, each header as long as the bank's others (16 or 64 bytes in the PC's
-    banks): a sound's references are the bytes before the next sound, the last one's after the bank's header."""
+    recording each -- 4 bytes, or 8 in a sound that picks one of its tracks at random (its weights after them,
+    cumulative, of 100: se363's sound 21, Sephiroth's). The sounds lie end to end, each header as long as the bank's
+    others (16 or 64 bytes in the PC's banks): a sound's references are the bytes before the next sound, as long as
+    they fit its tracks, the last one's after the bank's header."""
     if bank[:8] != MAGIC:
         raise ScdError("not a SEDBSSCF sound bank")
     if len(bank) < TABLES + 0x20:
@@ -102,6 +104,7 @@ def sounds(bank: bytes) -> list[Sound | None]:
         if at and after > at and at < len(bank):
             head = after - at - 4 * bank[at]
             heads[head] = heads.get(head, 0) + 1
+    # (a sound of 8-byte references counts as one of a longer header here: the usual one wins)
     usual = max(heads, key=lambda h: heads[h]) if heads else 0x10
     out: list[Sound | None] = []
     for n, at in enumerate(places):
@@ -110,13 +113,14 @@ def sounds(bank: bytes) -> list[Sound | None]:
             continue
         tracks = bank[at]
         after = places[n + 1] if n + 1 < len(places) and places[n + 1] > at else at + usual + 4 * tracks
-        refs = after - 4 * tracks
+        size = 8 if after - at - usual == 8 * tracks else 4  # each reference's
+        refs = after - size * tracks
         if refs < at + 0x10 or after > len(bank):
             raise ScdError(f"sound {n}'s tracks lie outside it")
         volume = struct.unpack_from("<f", bank, at + 8)[0]
         played = []
         for t in range(tracks):
-            track, recording = struct.unpack_from("<HH", bank, refs + 4 * t)
+            track, recording = struct.unpack_from("<HH", bank, refs + size * t)
             if track >= tracks_count or recording >= recordings_count:
                 raise ScdError(f"sound {n}'s track {t} names a track or recording the bank has not")
             played.append(recording)

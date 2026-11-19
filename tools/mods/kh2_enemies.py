@@ -163,8 +163,9 @@ KINDS = {
     "P_EX100_HTLF_BTL": "Anti-Sora (Vexen's)",
     "N_CM020_BTL": "Lexaeus",
     "N_CM000_BTL": "Marluxia",
-    # FINAL MIX's Sephiroth (Hollow Bastion's Dark Depths)
-    "N_HB590_BTL": "Sephiroth",
+    # FINAL MIX's Sephiroth (Hollow Bastion's Dark Depths: N_HB630; N_HB590_BTL is a plain battle template of the
+    # story's, which never attacks)
+    "N_HB630": "Sephiroth",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -197,7 +198,7 @@ VOICES = {
     "N_CM040_BTL": "n_vexen",
     "N_CM020_BTL": "n_lexaeus",
     "N_CM000_BTL": "n_marluxia",
-    "N_HB590_BTL": "sephiroth",
+    "N_HB630": "sephiroth",
 }
 # The party member KH2 gives the player in a boss's battle, as the battle's FRIEND_1 (its area's program: op 0xf, 5 --
 # W_FRIEND_ONLY -- the world's partner alone; 03system.bin's member table names him for the world): he comes with the
