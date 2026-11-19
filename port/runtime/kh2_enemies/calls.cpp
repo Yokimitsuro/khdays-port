@@ -373,6 +373,22 @@ void add_math(ai::Calls &calls)
     calls.set(2, 25, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 0x18u)));
     });
+    // 2:26 an attack's reflection taken as played (trap_attack_exec_reflect, the PS3 build's: its + 4's 0x40): its
+    // owner then plays no reflect motion nor state of it (YS::PIERROT::_OVR_exec_reflect, shell.cpp's reflect_enemy) --
+    // Lexaeus's trigger 19 on his own attack, met by a player's
+    calls.set(2, 26, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (a[0].bits != 0)
+            m.memory().set_u32(a[0].bits + 4, m.memory().u32(a[0].bits + 4) | 0x40u);
+    });
+    // 1:358 a sheet's attack level (trap_sheet_set_attack_level, the PS3 build's: its + 0x24c, a byte): the record of
+    // its motions' attacks' atkp entries (YS::ATTACK_OBJ's constructor gives it ATTACKPARAM::Get as the sub-number;
+    // shell.cpp's attack_key) -- Lexaeus's 0 to 3 as his fight goes on
+    calls.set(1, 358, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (a[0].bits == 0)
+            return;
+        const std::uint32_t at = a[0].bits + 0x24c;
+        m.memory().set_u32(at, (m.memory().u32(at) & ~0xffu) | (a[1].bits & 0xffu));
+    });
     // 1:230 a table's record of 12 bytes (its first two words whole numbers): the first over the second
     // (FUN_1404310f0; marked a whole number)
     calls.set(1, 230, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -806,7 +822,13 @@ void add_actor_fields(ai::Calls &calls)
             m.memory().read(params + 4, &type, 1);
         a[0] = ai::Value::of_int(type == 5 || type == 6 ? 1 : 0);
     });
-    calls.set(1, 225, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:225 whether an object is invincible (trap_obj_is_star: its motion's range 27 sets YS::MOTION's FLAG_STAR):
+    // Sephiroth asks it of the player his attack landed on (his trigger 15) before following it up
+    calls.set(1, 225, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Object *o = object_of(m, a[0]);
+        const Actor *x = running(m);
+        a[0] = ai::Value::of_int(o != nullptr && x != nullptr && x->world != nullptr && x->world->star(*o) ? 1 : 0);
+    });
     // 1:157 an event sequence started by a name of up to four letters from the actor's .a.us entries of type 0x16
     // (FUN_1403db2f0), its camera placed from the third argument when given (FUN_1403ad270): a reaction command's
     // (Cerberus's "00" as it takes the player, "10" to "30" as each step begins)

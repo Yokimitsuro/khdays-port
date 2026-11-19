@@ -2755,7 +2755,15 @@ HOOKS["ov107@020c5cfc"] = [
         "    { extern int khdays_kh2_enemies_untouched(void *enemy); if (khdays_kh2_enemies_untouched(obj)) return 0; }\n"
         # nor from a player KH2 lets make no attack now (turned into a form, or his control taken: 1:242, 1:42)
         "    { extern int khdays_kh2_enemies_disarmed(void *enemy, void *source);\n"
-        "      if (khdays_kh2_enemies_disarmed(obj, source)) return 0; }\n",
+        "      if (khdays_kh2_enemies_disarmed(obj, source)) return 0; }\n"
+        # a player's blow a KH2 enemy's attack reflects (KH2's check_reflect): answered with no damage, as an enemy's
+        # barrier answers it below (+ 0x1c4's 0x10); his block packet marks the attack he blocked guarded
+        "    { extern int khdays_kh2_enemies_reflected(void *enemy, void *source, int flags);\n"
+        "      if (khdays_kh2_enemies_reflected(obj, source, (int)packet->flagsLo)) {\n"
+        "          packet->flags24Lo = 1;\n"
+        "          packet->field_28 = 0;\n"
+        "          return 1;\n"
+        "      } }\n",
     ),
     (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out (a KH2 enemy's: its kinds, the packet's high
         # flags -- Days's element bits -- go with it)

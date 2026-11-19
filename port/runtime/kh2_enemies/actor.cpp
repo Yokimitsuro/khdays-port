@@ -181,6 +181,11 @@ void StateMachine::go(Actor &a, const StateEntry &e)
     locked_ = (e.flags & 2) != 0;
     waiting_ = (e.flags & 1) == 0;
     wait_or_begin(a);
+    // YS::ACT::exec: one under priority 300 skips its ticks while a damage motion plays -- its first too (tick holds it
+    // after): entered as a reflect motion starts (its state cleared, the main thread enters the next at once) it waits
+    // for the motion to end
+    if (t != nullptr && !waiting_)
+        t->held = a.damage_motion && e.priority < 300 && (e.flags & 2) == 0;
     if (entered)
         entered(e.name);
     if (e.on_enter != 0)

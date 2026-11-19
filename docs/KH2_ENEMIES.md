@@ -377,6 +377,79 @@ hits KH2 enemies as his blow (Days's damage his last hit's times the entry's pow
 growth, its effect, or its enemy's defeat, and its memory is let go. Its team (`2:37`) is kept; whose effects its hits
 show (`2:22`) is Days's.
 
+## Attacks reflected (2026-11-19)
+
+KH2 settles two attacks that meet before either hits (the PS3 build's `ATTACK_WORK_MANAGER::check_reflect`, read
+2026-11-19): two attacks of other teams, each still able to hit the other's owner, their collisions touching, each owner
+within the other's cone (`ATTACK_WORK::is_reflect_range`), and the table `IsReflectTable` (0x720cbc) allowing their two
+types -- 0 ATTACK, 1 S_ATTACK, 2 GUARD, 3 S_GUARD, 4 SPECIAL, 5 CURE, 6 C_CURE; an ATTACK reflects an ATTACK, a GUARD
+and an S_GUARD, an S_ATTACK an S_GUARD alone, the rest nothing. Then each is reflected (`ATTACK_WORK::reflect`): neither
+hits the other's owner any more (`ATTACK_CHECK::hit`), one that does not reflect itself NULL is marked reflected (+ 4's
+0x200, the other's owner at + 0x84: the PC's 2:39 and 2:44), its owner plays its side (`exec_reflect`), and its script's
+routine for it runs (2:74).
+
+The atkp entry's fields (OpenKH's names): + 0x13 `RefactSelf` and + 0x14 `RefactOther` (0 REFLECT, 1 GUARD, 2 NULL: what
+the attack does once reflected, and what it makes of the attack it reflects), + 0x15 `ReflectMotion`, + 0x16
+`ReflectHitBack` (a short, KH2's cm; under 0 50), + 0x18 `ReflectAct` (a state's name, at that offset from the record),
++ 0x20 `ReflectRC` (none of 00battle.bin's sets one), + 0x22 `ReflectRange` (degrees: 0 any way) and + 0x23
+`ReflectAngle` (a signed byte, half degrees). The cone: the way from the other's owner to the attack's own owner along
+the ground (`ATTACK::get_dir`) against the owner's facing turned by twice + 0x23 (`MATH::VectorRotY`), reflected when
+their dot is under -cos(+ 0x22).
+
+- **An enemy's side** (`YS::PIERROT::_OVR_exec_reflect`): the state's + 0x18 routine (`ACT::reflect`, event 7) and
+  trigger 19, both given its attack and the other (the other read first); then, unless its attack's + 4 has 0x40 (2:26,
+  `trap_attack_exec_reflect`, sets it) or it reflects itself NULL, its `ReflectMotion` (`BTLOBJ::exec_reflect_default`:
+  started at once, its idle after; slid back against its facing by `ReflectHitBack` plus its sheet's hitback addition, a
+  tenth of it a tick) with `ACT::clear`, its `ReflectAct` entered (`ACT::start`), and 0x40 set. A reflect motion (140 to
+  150, `BTLOBJ::is_reflect_motion`) holds its states as a damage motion does (`ACT::is_damage_motion`).
+- **The player's side** (`YS::PARTY::_OVR_exec_reflect`): his attack reflecting itself NULL, or the other making NULL of
+  it -- a spark (the system effects' 13) and no more; the other making GUARD of it, on the ground -- the spark 12, he
+  faces it and is pushed 200 away (`BTLOBJ::set_hitback`), motion 42; else -- the spark 13 and `exec_reflect_default`'s
+  50, motion 41 (43 in the air).
+
+In the port, for KH2's enemies alone (Days's own play as they always have):
+
+- **A Days blow** stands for KH2's player's plain attack: an ATTACK reflecting itself REFLECT from any way. Landing on a
+  KH2 enemy (`Ov107_AiState_ApplyHit`, its join `khdays_kh2_enemies_reflected`) it meets the enemy's attacks standing
+  then -- its motion's ranges 10 and 33 at its time, and its own (2:10) -- that it can still hit him with (each range's
+  once), of a type that reflects an ATTACK, within their cone, one of their spheres reaching the line from his middle to
+  the enemy's (Days's blow has no shape of KH2's: as thick as his body). Reflected: Days's hit is answered with no
+  damage (as an enemy's barrier answers it, + 0x1c4's 0x10), the attack's range has struck him, the enemy plays its
+  side, and he his: Days's player has no KH2 motions 41 and 42, so he staggers as a Days hit staggers him
+  (`Ov022_ReceiveHit`'s end: his flag 0x10, his flags2's 0x100, the push his drift) with no damage and no hit counted --
+  Days's hit would count one (`Ov002_World_AddStat`, a mission panel's count) --, pushed as far as the reflection says
+  (half of it his push, as `hitback_push`). The spark is drawn on the attack's sphere toward him (KH2 draws it on the
+  blow's).
+- **His block** stands for KH2's guard (a GUARD reflecting itself NULL). Days's block (`Ov022_TryBlockHit`) sends the
+  attacker its block packet (low flags 0x11) through `Ov107_AiState_ApplyHit`: the KH2 attack he was struck with is
+  reflected once Days's hit is over (the enemy's side; Days's block plays his). A guard reflects an ATTACK alone, so the
+  port's KH2 hits on a Days player are unblockable (the request's 8) when their attack is an S_ATTACK or a SPECIAL --
+  KH2's unguardable attacks: Sephiroth's split flash (1353) and Heartless Angel (1697).
+- **The attack level** (1:358, `trap_sheet_set_attack_level`: the sheet's + 0x24c) is the sub-number its motions'
+  attacks are made with (`YS::ATTACK_OBJ`'s constructor; `ATTACKPARAM::Get(id, sub)` finds the record of id << 16 | sub
+  << 8, the record's + 0 its sub-number times 256): Lexaeus raises his from 0 to 3, his strikes' power from 50 to 600
+  and their reaction from small to a blow. Days's player takes his stand-in's damage all the same: the reaction and its
+  push change, not the damage.
+- Not made: KH2's reflected motion in the air throws the enemy back up (its class's blow) -- the port plays the motion
+  alone; an attack's own reflection mark (`ATTACK_WORK::exec_refmark`, its PAX's); a script attack's sub-number (2:10's
+  fourth) is not looked up; a Days spell's hit is taken as a blow; a held player's own attack ranges (AQ90's guard, atkp
+  1719) against the enemy's attacks. KH2 checks the two attacks' collisions every frame they stand; Days's blow is met
+  only as it lands on the enemy's body, so a clash needs the enemy's attack standing at that moment -- rarer than in KH2
+  (Lexaeus's ATTACKs stand a few frames: his motion 204's 2 to 20, 201's 61 to 73).
+- **A state entered while a damage motion plays** waits for it to end, its first tick too (`ACT::exec` skips a state
+  under priority 300 while `ACT::is_damage_motion`): the reflect motion clears the state and the main thread enters the
+  next at once -- until 2026-11-19 that one's motion cut the reflect motion in the same tick.
+- **Invincible players** (a held motion's range 27: `CheckRangeCallback` sets the motion's `FLAG_STAR`, 0x400000 of +
+  0x20; `1:225`, `trap_obj_is_star`, asks it): KH2's attacks land on them all the same -- trigger 15 -- with no damage
+  nor reaction; Sephiroth's script asks 1:225 of the player his attacks land on. The port skipped them.
+
+Seen (window runs, 2026-11-19, Lexaeus's data battle in the coliseum): Days's block (Y) of his strike (atkp 1843)
+reflected it at 89.79 s -- his motion 140 played (his recoil and counter: its range 10 strikes with 1881 at its frame
+160), its reaction command offered ("Megadescarga"), taken at once (708, the player in AR30 and his power count rising),
+the player let go at 94.87 s, Lexaeus fighting on at 97.28 s; his S_ATTACKs (1842, 1913, 1965, 1966) landed through the
+block. With every blow taken as meeting 1843 (a local test switch): his trigger 19 gives the player's blow his motion
+(its owner a player: no 2:26), the spark 12 on his body, his next state held till 140 ended. A plain chase gave one blow
+during an ATTACK of Sephiroth's (1144), its sphere 0.14 m off it.
 ## Coverage
 
 `tools/research/kh2_ai.py --coverage` (each kind's script, its state routines walked, against
@@ -912,10 +985,22 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   His bank se363 holds a sound of eight-byte references (one of seven tracks at random, FORMATS.md): the tool read it
   wrong and took none of his sounds; 30 of his 34 now (the other four the player's bank 500's). Seen (window runs,
   2026-11-19): his spin slash, split flash, warps, upper and air slash; his grab (AQ91, 72 frames) ended by its
-  strike (atkp 1354). **Not played**: his reaction command 664 (offered during his split flash, motion 204): the
-  player's counter (AQ90, atkp 1719) strikes him, and KH2 settles the two attacks as a reflection (both reflected:
-  his trigger 19), which his script's thread waits for -- the port has no reflection of attacks yet (see Lexaeus):
-  both stood still, the player in his AQ90 for good.
+  strike (atkp 1354). His reaction command 664 (offered during his split flash, motion 204) is no reflection (his
+  script has no trigger 19; the player's guard in it, AQ90's atkp 1719, a GUARD, reflects no S_ATTACK): its trigger 11
+  holds the player in AQ90 (range 27 throughout: `FLAG_STAR`, invincible), the split flash (atkp 1353) lands on him
+  all the same, and his trigger 15, the RC under way, enters `rc_success`; his thread waits for the player's motion to
+  change. The port skipped an invincible player's hits altogether, so the flash never landed and both stood still
+  (2026-11-19, "Attacks reflected": it lands now, with no damage). Seen (a window run, 2026-11-19): 664 taken at
+  84.21 s, the flash landing at 84.41 s, `rc_success`, his strike (1354), the player let go at 85.75 s. **Open**:
+  warped to the coliseum's edge (5.7, 8.5), his split flash's dash was stopped by its wall and never reached the
+  player who took 664 -- held in AQ90 till the run's end (KH2's arena, the Dark Depths, has no wall there).
+- **Lexaeus** `N_CM020_BTL` (his Absent Silhouette and data battle; voice bank `n_lexaeus`, his KH2 mission
+  `HB33_FM_LEX`: the two power counts, SORA and LEXAEUS) (2026-11-19): his last two calls, 1:358 (his attack level,
+  0 to 3: his motions' attacks' records, "Attacks reflected") and 2:26 (his trigger 19 on a reflection by a party
+  member's attack: no motion of his). Most of his attacks are S_ATTACKs (his script's own, 1842, 1913, 1931, 1965,
+  1966, and his motions' 1852 and 1864): no block stops them. His ATTACKs (1843, 1844, 1881, 1912) are reflected by a
+  block or a blow; 1843 alone reflects itself REFLECT, into his motion 140 -- his recoil and counter, which offers his
+  reaction command (the others NULL: he goes on); seen in window runs ("Attacks reflected").
 
 ### Final Xemnas and Riku (2026-11-16)
 

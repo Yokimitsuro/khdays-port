@@ -6092,6 +6092,14 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   Anti-Sora came at 116 s (count 1) and the gauge's warning at 241 s (count 5). His freeze (atkp 1816) held the
   player from 145 s to the run's end; now frozen at 89.27 s, the ice shattered and the player let go at 94.37 s (the
   strike's reaction), a reaction command offered meanwhile ("Forcejear" in the Spanish game's).
+- **Attacks reflected: Lexaeus and Sephiroth** (2026-11-19, window runs in the coliseum, level 99): Roxas's block (Y) of
+  Lexaeus's strike (atkp 1843) at 89.79 s turned it back -- his motion 140 (recoil, then a counter at its frame 160),
+  "Megadescarga" offered and taken at once (708), the player let go at 94.87 s, Lexaeus on at 97.28 s; his S_ATTACKs
+  (1842, 1965, 1966) landed through the block all through the run. Before the state hold his next state's motion (201,
+  `atk_nagi`) replaced 140 in the same tick. Chasing and striking, Roxas's blows never landed during an ATTACK of his in
+  two runs, and once during one of Sephiroth's (1144, its sphere 0.14 m off). Sephiroth's reaction command 664 at 84.21
+  s: his split flash landed on the invincible player at 84.41 s, `rc_success`, the player free at 85.75 s; at 117.77 s,
+  warped to (5.7, 8.5), the coliseum's wall stopped the flash's dash and the player stayed in AQ90 to the run's end.
 
 ## 38. Days's commands on KH2's reaction command bar
 

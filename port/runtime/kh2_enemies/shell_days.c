@@ -228,7 +228,7 @@ int khdays_kh2_shell_difficulty(void)
     return GameState_GetField(0x40a, 2) & 3;
 }
 
-int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3])
+int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3], int unguarded)
 {
     if (!khdays_game_ram(actor) || !khdays_game_ram(victim)) {
         return 0;
@@ -240,9 +240,30 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
     for (int i = 0; i < 3; ++i) {
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(push[i]);
     }
-    const int hit = Ov107_InvokeHitCallback(victim, actor, actor, slot, v, 0) != 0;
+    /* the request's 8 (Ov022_TryBlockHit's: no block) */
+    const int hit = Ov107_InvokeHitCallback(victim, actor, actor, slot, v, unguarded ? 8 : 0) != 0;
     words_done(v);
     return hit;
+}
+
+#define PLAYER_FLAGS 0x0u    /* u64 */
+#define PLAYER_FLAGS2 0x464u /* u64 */
+#define PLAYER_DRIFT 0x47cu  /* fx32 x3: the push he is moved by, halved each frame (Ov022_IntegrateRecoilVec) */
+#define PLAYER_STAGGER 0x10u
+#define PLAYER_STAGGER_LOCAL 0x100u
+
+void khdays_kh2_shell_player_recoil(unsigned actor, const float push[3])
+{
+    /* the host's alone, as Ov022_ReceiveHit (through func_ov022_02088398) runs there */
+    if (Session_GetLocalPlayerIndex() != 0 || !khdays_game_ram(actor) || !khdays_game_ram(actor + PLAYER_DRIFT + 8u) ||
+        rd16(actor + PLAYER_HP) == 0) {
+        return;
+    }
+    *(unsigned long long *)KHDAYS_W(actor + PLAYER_FLAGS) |= PLAYER_STAGGER;
+    *(unsigned long long *)KHDAYS_W(actor + PLAYER_FLAGS2) |= PLAYER_STAGGER_LOCAL;
+    for (int i = 0; i < 3; ++i) {
+        *(int *)KHDAYS_W(actor + PLAYER_DRIFT + 4u * (unsigned)i) = to_fx(push[i]);
+    }
 }
 
 #define SCENE_COLLISION 0x7cu /* a scene's room collision (the actor's + 0x4's) */

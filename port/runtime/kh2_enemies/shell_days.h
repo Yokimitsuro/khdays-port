@@ -56,9 +56,16 @@ typedef struct KhdaysKh2Player {
 int khdays_kh2_shell_players(unsigned actor, KhdaysKh2Player *out, int room);
 
 /* `victim` (a player's object) hit by the enemy at `actor` with its attack `slot` (+0x28c: its power, kind), pushed
- * along `push` (a unit way): Ov107_InvokeHitCallback, as Days's enemies' attacks hit (Ov120_SweepAttack_Step).
- * Whether the hit was taken. */
-int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3]);
+ * along `push` (a unit way): Ov107_InvokeHitCallback, as Days's enemies' attacks hit (Ov120_SweepAttack_Step);
+ * `unguarded` one his block does not stop (the request's 8: Ov022_TryBlockHit lets it through). Whether the hit was
+ * taken. */
+int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float push[3], int unguarded);
+
+/* The player's actor (Ov022_ActorUpdate's) staggered and pushed along `push` with no damage nor hit counted: what
+ * Ov022_ReceiveHit ends with (its flag 0x10, its flags2's 0x100, the push his drift), on the host alone -- a KH2
+ * attack's reflection throws him back (YS::PARTY::_OVR_exec_reflect); Days's own hit would count it taken (its
+ * World_AddStat, a mission's count of hits) and take HP. Nothing when he has none left. */
+void khdays_kh2_shell_player_recoil(unsigned actor, const float push[3]);
 
 /* A segment of Days's world (from, to: metres) against the room's collision the enemy at `actor` stands in (its
  * scene's, + 0x4's + 0x7c, as Ov107_AiState_ResolveContacts and Collision_ProbeGround cast it): where it first meets

@@ -793,6 +793,12 @@ public:
     {
         return nullptr;
     }
+    // 1:225 (trap_obj_is_star): whether an object is invincible now -- a player held in a motion whose range 27 runs
+    // (YS::MOTION's FLAG_STAR)
+    virtual bool star(const Object & /*o*/)
+    {
+        return false;
+    }
 };
 
 // Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)

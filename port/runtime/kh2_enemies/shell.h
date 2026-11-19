@@ -39,6 +39,11 @@ int khdays_kh2_enemies_damage(void *actor, int amount, int kinds);
 int khdays_kh2_enemies_untouched(void *actor);
 int khdays_kh2_enemies_no_contact(void *actor);
 
+/* Ov107_AiState_ApplyHit (prepare.py's join): a Days player's (`source`'s) hit on a KH2 enemy reflected by an attack of
+ * its standing then (KH2's check_reflect): 1, the hit answered with no damage. His block packet (its low flags 0x11,
+ * Ov022_TryBlockHit's) of the KH2 attack he is struck with marks it guarded: 0. 0 for any other object or hit. */
+int khdays_kh2_enemies_reflected(void *actor, void *source, int flags);
+
 /* Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on it to land now as one hit (the last of
  * Cerberus's reaction command), its damage in `amount`; 0 none. */
 int khdays_kh2_enemies_blow(void *actor, int *amount);
