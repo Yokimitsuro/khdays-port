@@ -410,6 +410,48 @@ void read_effects(KindFiles &k, const std::string &folder)
     }
 }
 
+// KH2's system effects (YS::EFFECT::Init: 00effect.bar's PAX, its entry of type 0x12, "syst" -- YS::SystemPax, which
+// YS::EFFECT::GetSystemPax gives: a party member's knock-out stars, its element 14), read once from the mod's
+// kh2/00effect.bar; no HD pictures of their own (KH2 has none), the resident ones cut as any effect's. Empty without
+const KindFiles &system_effects()
+{
+    static KindFiles k;
+    static bool read = false;
+    if (read)
+        return k;
+    read = true;
+    k.name = "00effect";
+    const auto pax = bar_entry(read_file(kh2_file("00effect.bar")), 0x12);
+    if (pax.empty()) {
+        khdays_log("kh2 enemies: no KH2 system effects (the mod's kh2/00effect.bar): a party member knocked out shows "
+                   "no stars");
+        return k;
+    }
+    try {
+        for (auto &b : kh2::read_effect(pax.data(), pax.size()))
+            k.fx.push_back(std::make_shared<const kh2::EffectBlock>(std::move(b)));
+        k.fx_elements = pax_elements(pax);
+        const auto common = read_file(kh2_file("effect/texcommon.dpd"));
+        if (!common.empty())
+            k.common = kh2::read_effect_block(common.data(), common.size(), 0);
+        for (std::size_t b = 0; b < k.fx.size(); ++b) {
+            auto pages = std::make_unique<khdays::kh2_fx::Pages>("kh2/00effect.bar#" + std::to_string(b));
+            pages->add({k.fx[b].get()}, "", 0);
+            pages->add({&k.common}, "kh2/fx/texcommon");
+            pages->tracing = tracing();
+            k.fx_pages.push_back(std::move(pages));
+        }
+        khdays_log("kh2 enemies: KH2's system effects read (%zu effects, %zu elements)", k.fx.size(),
+                   k.fx_elements.size());
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: KH2's system effects cannot be played (%s)", x.what());
+        k.fx.clear();
+        k.fx_elements.clear();
+        k.fx_pages.clear();
+    }
+    return k;
+}
+
 // Its model's own effects (the .mdlx's PAX: BAR entry 0x12, Hades's "hade", his hair's flame) read as its .a.us's,
 // their HD pictures in the model's own folder after its textures' (a model file's pictures run through its entries
 // in BAR order: its texture container's, then its PAX's)
@@ -1488,6 +1530,7 @@ struct Friend final {
     bool knocked = false;
     float knocked_for = 0.0F;
     int hurt_motion = -1;
+    std::uint32_t stars = 0; // its knock-out stars (the system effects' 14, + 0xb44), 0 none
     std::map<std::size_t, std::size_t> struck;
     std::shared_ptr<PartyWeapon> weapon; // its weapon, none when its kind names none
 };
@@ -1497,7 +1540,11 @@ void friend_start(Enemy &e);
 bool member_stun(Friend &f, Enemy &e);
 bool member_hurting(Friend &f, Enemy &e);
 void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp);
-bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up = 0.0F);
+// The KH2 collision type of a shape (its kind's low byte: YS::COLLISION's TYPE_*): 1 TYPE_OBJ, an object's body (what
+// LASER::check_obj_hit tests, YS::OBJ::get_collision(1)); 2 TYPE_HIT, the spheres on its bones an attack strikes; 16
+// TYPE_STUN, where its knock-out stars stand
+constexpr int kTypeObj = 1, kTypeHit = 2, kTypeStun = 16;
+bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up, int type);
 
 // The party members an enemy's attacks may reach: each standing, its health known
 template <typename F> void each_member(F &&f)
@@ -3588,7 +3635,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
             }
             // the party members it reaches (the player's team's: KH2's attack strikes every team but its owner's)
             each_member([&](Enemy &m, Friend &f) {
-                if (e.struck[r].count(m.days) != 0 || !member_reached(m, to_kh2(c), sh.radius))
+                if (e.struck[r].count(m.days) != 0 || !member_reached(m, to_kh2(c), sh.radius, 0.0F, kTypeHit))
                     return;
                 e.struck[r].insert(m.days);
                 member_hurt(e, m, f, int(std::int16_t(range.params[0])));
@@ -5328,7 +5375,7 @@ void attack_objects(Enemy &e)
                 const Vec3 centre = to_kh2(c);
                 each_member([&](Enemy &m, Friend &f) {
                     if (o.struck.count(m.days) != 0 ||
-                        !member_reached(m, centre, radius, radius == height ? 0.0F : height))
+                        !member_reached(m, centre, radius, radius == height ? 0.0F : height, kTypeHit))
                         return;
                     o.struck.insert(m.days);
                     member_hurt(e, m, f, o.atkp);
@@ -6390,9 +6437,11 @@ void friend_tick(Friend &f, Enemy &e, Vec3 &place)
     const FriendParams &p = *f.params;
     // its set's mode (YS::MOTION::id_to_num): 1 in battle, 2 out of it, turned over with its weapon
     e.motions->mode = (the_field().in_battle() ? 1 : 2) ^ (f.weapon != nullptr ? 1 : 0);
-    // knocked out, his time runs out (YS::FRIEND::exec_stun, his pre_exec) and his damage reaction plays out: the
-    // party AI waits meanwhile (he cannot be controlled)
-    if (member_stun(f, e) || member_hurting(f, e)) {
+    // knocked out, his time runs out (YS::FRIEND::exec_stun, his pre_exec); the party AI waits while he lies (54: its
+    // motion grants no control, MOTION's flags + 0x160 bits 2 to 4 and 30, kn::Friend::normal_exec) and while his
+    // damage reaction plays out. A member whose set has no 54 (this Riku) fights on knocked out, as KH2's does
+    const bool knocked = member_stun(f, e);
+    if ((knocked && e.actor->motion.id == 54) || member_hurting(f, e)) {
         f.attacking = false;
         f.speed = 0.0F;
         f.action = -1;
@@ -6687,21 +6736,42 @@ void friend_blows(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
 
 // ------------------------------------------------------------------------------------------------- a party member hurt
 
-// A party member's body (its kind's cylinder, shape 0x300: its radius round, its height up from its place and offset;
-// KH2's cm) reached by an attack's sphere, or its cylinder `up` high from it (its centre in KH2's world: its foot, y
-// down): YS::COLLISION::check of the attack on its collision 1
-bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up)
+// One of a party member's shapes of that type where it stands now (KH2's world: a sphere's centre, a cylinder's foot),
+// false when it has none (its groups on)
+bool member_shape(const Enemy &m, int type, Vec3 &at, const Shape **shape = nullptr, std::size_t nth = 0)
 {
-    if (!m.actor)
+    if (!m.actor || m.pose.empty())
         return false;
+    KhdaysKh2Shell s{};
+    std::copy(m.place, m.place + 3, s.place);
+    const std::set<int> on = groups_on(m);
+    std::size_t n = 0;
     for (const Shape &sh : m.kind->shapes) {
-        if (sh.kind != 0x300 || sh.radius <= 0.0F)
+        if ((sh.kind & 0xff) != type || on.count(sh.group) == 0 || sh.radius <= 0.0F || n++ != nth)
             continue;
-        const Vec3 p = m.actor->place();
-        const float base = p[1] + sh.at[1], top = base - sh.height; // (KH2's y down)
-        const float dx = centre[0] - p[0] - sh.at[0], dz = centre[2] - p[2] - sh.at[2];
-        const float gap = std::max(0.0F, std::max(top, centre[1] - up) - std::min(base, centre[1]));
-        return std::sqrt(dx * dx + dz * dz + gap * gap) < radius + sh.radius;
+        float d[3];
+        days_point(m, s, sh.bone, sh.at, d);
+        at = to_kh2(d);
+        if (shape != nullptr)
+            *shape = &sh;
+        return true;
+    }
+    return false;
+}
+
+// A party member's collision of KH2's `type` (kTypeObj, kTypeHit) reached by an attack's sphere, or its cylinder `up`
+// high from it (its centre in KH2's world: its foot, y down): YS::COLLISION::check -- a shape on a bone a sphere there
+// (its height 0), one on none a cylinder its height up from its place
+bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up, int type)
+{
+    Vec3 c{};
+    const Shape *sh = nullptr;
+    for (std::size_t nth = 0; member_shape(m, type, c, &sh, nth); ++nth) {
+        const float top = c[1] - sh->height; // (KH2's y down)
+        const float dx = centre[0] - c[0], dz = centre[2] - c[2];
+        const float gap = std::max(0.0F, std::max(top, centre[1] - up) - std::min(c[1], centre[1]));
+        if (std::sqrt(dx * dx + dz * dz + gap * gap) < radius + sh->radius)
+            return true;
     }
     return false;
 }
@@ -6764,20 +6834,44 @@ void member_add_hp(Friend &f, Enemy &m, int amount)
 // nor playing another's set's motion). Whether it lies
 bool member_stun(Friend &f, Enemy &e)
 {
-    if (!f.knocked)
-        return false;
     Actor &a = *e.actor;
-    f.knocked_for -= the_field().in_battle() ? 1.0F : the_field().system_value(0x5c, 8.0F);
-    if (f.knocked_for <= 0.0F) {
-        member_add_hp(f, e, int(float(f.hp_most) * the_field().system_value(0x58, 0.5F)));
-        return f.knocked;
+    if (f.knocked) {
+        f.knocked_for -= the_field().in_battle() ? 1.0F : the_field().system_value(0x5c, 8.0F);
+        if (f.knocked_for <= 0.0F)
+            member_add_hp(f, e, int(float(f.hp_most) * the_field().system_value(0x58, 0.5F)));
     }
-    if (a.motion.id != 54 && !member_hurting(f, e) && !a.jump.on && !a.hooked() && e.motions->capture_id() < 0 &&
-        a.play(54, 0.0F, 0.0F)) { // MOTION::change(54), not while a script holds him or his set takes another's
-        a.motion.queued.clear();
-        a.damage_motion = true;
+    // knocked out and free (OBJ::can_control: no damage reaction of its, not attacking; not in the air, not held by a
+    // script nor playing another's set's motion): its stars started (ryj::PAX::start, the system effects' 14) and its
+    // lying asked (MOTION::change(0x36): nothing when its set has no 54 -- this Riku's -- and its AI goes on); else its
+    // stars closed (EFFECT::loop_end) once its motion is not 54
+    const bool free = f.knocked && !member_hurting(f, e) && !f.attacking && !a.jump.on && !a.hooked() &&
+                      e.motions->capture_id() < 0;
+    const auto stars = std::find_if(e.fx.begin(), e.fx.end(), [&f](const Enemy::Running &x) {
+        return f.stars != 0 && x.handle == f.stars;
+    });
+    if (free) {
+        if (stars == e.fx.end())
+            f.stars = cast(e, 14, 0, false, &system_effects());
+        if (a.motion.id != 54 && a.play(54, 0.0F, 0.0F)) {
+            a.motion.queued.clear();
+            a.damage_motion = true;
+        }
+    } else if (a.motion.id != 54 && f.stars != 0) {
+        if (stars != e.fx.end())
+            stars->fx->stop();
+        f.stars = 0;
     }
-    return true;
+    // its stars where its stun collision is (YS::EFFECT::pos: its TYPE_STUN shape's place, each tick)
+    if (const auto r = std::find_if(e.fx.begin(), e.fx.end(),
+                                    [&f](const Enemy::Running &x) { return f.stars != 0 && x.handle == f.stars; });
+        r != e.fx.end()) {
+        Vec3 at{};
+        if (member_shape(e, kTypeStun, at)) {
+            r->in_world = true;
+            r->at = at;
+        }
+    }
+    return f.knocked;
 }
 
 // Its damage reaction's motion still playing (YS::BTLOBJ's damage motions: the reaction's, its landing's after a
@@ -7089,13 +7183,13 @@ bool laser_hits(LaserDome &d, LaserDome::Laser &l, Enemy &caster)
     const int motion = dome_motion(caster, nullptr, m);
     const float loop = motion >= 0 ? m->actor->motions->loop_from(motion) : 0.0F;
     const bool in_loop = loop > 0.0F && loop < m->actor->motions->length(motion) && m->actor->motion.time >= loop;
-    if (motion >= 254 && motion <= 256 && !in_loop && member_reached(*m, l.at, 200.0F)) {
+    if (motion >= 254 && motion <= 256 && !in_loop && member_reached(*m, l.at, 200.0F, 0.0F, kTypeObj)) {
         dome_point(d.bounces, l.at, {0x80, 0, 0, 0x1e});
         sound(caster, 374066);
         l.phase = 6;
         return true;
     }
-    if (!member_reached(*m, l.at, 50.0F))
+    if (!member_reached(*m, l.at, 50.0F, 0.0F, kTypeObj))
         return false;
     member_hurt(caster, *m, *f, 1143);
     dome_point(d.hits, l.at, {0x80, 0, std::uint8_t(kh2_chance() >> 24), 0x1e});

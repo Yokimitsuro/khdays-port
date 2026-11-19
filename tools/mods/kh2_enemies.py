@@ -219,6 +219,7 @@ SHARED = (
     ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows; the weapons' bones"),
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
     ("00objentry.bin", "KH2's objects' entries: the numbers scripts find objects by (1:114, 1:222)"),
+    ("00effect.bar", "KH2's system effects (YS::SystemPax): a party member's knock-out stars"),
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/: sys.bar the commands' names, jm.bar the enemies'
 JOURNAL = "jiminy.bar"  # menu/us/: KH2's journal, its characters' titles by object (the enemies' names: jm.bar's)

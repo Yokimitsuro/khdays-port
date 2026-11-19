@@ -81,6 +81,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "original" / "03system.bin").write_bytes(b"commands")
             (kh2 / "original" / "00battle.bin").write_bytes(b"attacks")
             (kh2 / "original" / "00objentry.bin").write_bytes(b"entries")
+            (kh2 / "original" / "00effect.bar").write_bytes(b"system effects")
             (kh2 / "original" / "msg" / "us").mkdir(parents=True)
             (kh2 / "original" / "msg" / "us" / "sys.bar").write_bytes(b"names")
             # the journal (no character of a kind here) and its messages
@@ -122,6 +123,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "fx" / "W_EX010" / "-0.dds").read_bytes(), b"trail's page 0")
             self.assertEqual((mod / "kh2" / "03system.bin").read_bytes(), b"commands")
             self.assertEqual((mod / "kh2" / "00battle.bin").read_bytes(), b"attacks")
+            self.assertEqual((mod / "kh2" / "00effect.bar").read_bytes(), b"system effects")
             self.assertEqual((mod / "kh2" / "00objentry.bin").read_bytes(), b"entries")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "sys.bar").read_bytes(), b"names")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "jm.bar").read_bytes(), b"journal names")

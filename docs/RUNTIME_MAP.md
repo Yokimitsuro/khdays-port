@@ -6070,6 +6070,10 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   from above a burst of sticks. KH2's effects' pictures read as the GS reads them (plain linear, not alpha-weighted):
   the halos red, not their cores' beige. The double's blades (elements 1 and 2, bound and fading with it) hung in the
   air while it was faded out; drawn now only while it shows (its dance, 123 to 130 s; its `run3`).
+- **Riku knocked out as KH2 has him** (2026-11-19, a window run): knocked out at 129 s by a blow of 90, he went on
+  fighting (his set has no 54: KH2's AI acts on), his stars (00effect.bar's 14) over his head from his reaction's end,
+  closed in each of his attacks and started again after it (nine times), up at 159 s with 25; hit by Xemnas's blows
+  on his bones' hit spheres (`TYPE_HIT`), no longer on his room-collision cylinder.
 
 ## 38. Days's commands on KH2's reaction command bar
 

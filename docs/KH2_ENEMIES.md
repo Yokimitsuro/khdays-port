@@ -947,8 +947,9 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
 - **His air fight** (`atk_air_fight`, `rc_air_fight`): Riku rides in Xemnas's AQ10 (1:29: his own part, "0190") till
   it ends, then his AI takes him back.
 - **Riku hurt** (`kn::Friend::_OVR_exec_damage` -> `YS::FRIEND` -> `YS::PARTY::_OVR_exec_damage` ->
-  `BTLOBJ::add_damage`, `_OVR_exec_damage_reaction`): Xemnas's blows, his attacks' objects and the lasers reach his
-  body (his shape 0x300's cylinder). His health is his character's in `00battle.bin`'s plrp (13: 100), full
+  `BTLOBJ::add_damage`, `_OVR_exec_damage_reaction`): Xemnas's blows and his attacks' objects strike the spheres on
+  his bones of collision type 2 (`YS::COLLISION`'s `TYPE_HIT`; the type a shape's kind's low byte), the lasers his
+  body of type 1 (`TYPE_OBJ`, a cylinder 85 high, 40 round: `LASER::check_obj_hit`'s `get_collision(1)`). His health is his character's in `00battle.bin`'s plrp (13: 100), full
   (`SHEET::AllocFriend`). The damage (`SHEET::calc_damage` for an attacker with no sheet: the current level's
   `LEVELPARAM`, lvpm, at the attacker's battle entry's level -- enmp + 2, 99): the level's strength less his defence
   (lvup's at that level: 54 at 99), kept between the level's least and most (10 and 30 at 99), x the attack's power
@@ -964,12 +965,16 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   outside a battle (sstm + 0x5c), taking no damage (an attack still stops on him), then gets up (`FRIEND::stun_recov`)
   with his most health x sstm + 0x58 x sstm + 0x54 (a quarter: 25); a cure on him meanwhile wakes him with half of it.
   A party member lies in 54 meanwhile and gets up in 55 (`exec_stun`'s `MOTION::change(0x36)`, `stun_recov`'s 0x37),
-  but this Riku's set (`P_EH000_LAST.mset`) has neither (entries 216 to 223 are DUMM): he stands. His abilities
-  (plrp's 0x1b4, 0x1b6, 0xbb: ability flags 150, 152 and 46, his cure's) hold none that keeps him from falling (flag
-  127, `PARTY::_OVR_is_withstand`). KH2's party AI waits for him meanwhile in the port (whether `kn::Friend` acts while
-  knocked out is not read: `normal_exec` tests the knock-out only for its mode 0xc).
-- **What the port does not do yet**: his health is shown nowhere (KH2's party gauge has no Days place); the PAX
-  effect over his head while he lies (the system PAX's 14) is not played; Sora's level, which KH2 gives his party
+  but this Riku's set (`P_EH000_LAST.mset`) has neither (entries 216 to 223 are DUMM): `MOTION::change` finds no motion
+  and leaves his own playing, and `kn::Friend::normal_exec` acts whenever his motion grants control (the motion's flags,
+  + 0x160 bits 2 to 4 and 30) -- so this Riku fights on knocked out, unhurt, and only a member that lies waits. Over
+  his head while he is free (not in a reaction nor an attack, on the ground) KH2's system effects' 14 plays, his
+  stars (`ryj::PAX::start(YS::SystemPax, 14)`: 00effect.bar's PAX, "syst"), placed each tick on his collision of type
+  16 (`TYPE_STUN`: his bone 98, his head) and closed (`EFFECT::loop_end`) once he is not; the tool copies
+  00effect.bar. His abilities (plrp's 0x1b4, 0x1b6, 0xbb: ability flags 150, 152 and 46, his cure's) hold none that
+  keeps him from falling (flag 127, `PARTY::_OVR_is_withstand`).
+- **What the port does not do yet**: his health is shown nowhere (KH2's party gauge has no Days place: the port's
+  KH2 party gauges stand on Days's own partners' portraits); Sora's level, which KH2 gives his party
   (lvup), is the battle's (at level 99 his defence would change the damage only past 56, which his 54 never reaches:
   the same at any level); his event cameras
   ("50", "60", "61") are placed for KH2's arena and look elsewhere in Days's rooms.
