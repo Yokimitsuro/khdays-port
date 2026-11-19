@@ -6114,6 +6114,11 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   20 m. The same runs on Lexaeus, Final Xemnas, Marluxia and Vexen: Final Xemnas's dome then struck the chasing
   player down (208 s) and Marluxia fell to him (168 s); Vexen still climbs the corner (8.8, 4 to 7.5, -8.8) as he did
   before these changes (open).
+- **The screen's white** (2026-11-19, Sephiroth's reaction command 664, window runs): his `rc_success` asks 0:31 for 1
+  frame and 0:32 for 1 a frame later -- the white at 1.00 for a tick, then 0.00. Laid in the game's MASTER_BRIGHT
+  registers for the frame drawn, the whole screen stayed white for the 195 frames shot after (A and B 0x4010: the
+  game kept the value); laid in the frame package (`KD_MASTER`, the information), with the fade back stretched 60
+  times by a local test switch, the window went white (mean 231 of 255) and back to its own in about a second.
 
 ## 38. Days's commands on KH2's reaction command bar
 

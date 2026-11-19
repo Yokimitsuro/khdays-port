@@ -1457,6 +1457,24 @@ struct ScreenShake final {
 };
 std::optional<ScreenShake> screen_shake;
 
+// KH2's screen faded to white and back (0:31 func_screen_whiteout, 0:32 func_screen_whitein: its fader, white): how
+// white the screen is (0 to 1) and how much that changes a tick, till it is all white or clear
+struct ScreenWhite final {
+    float level = 0.0F, step = 0.0F;
+};
+ScreenWhite screen_white;
+
+void screen_white_tick()
+{
+    if (screen_white.step == 0.0F)
+        return;
+    screen_white.level = std::clamp(screen_white.level + screen_white.step, 0.0F, 1.0F);
+    if (screen_white.level <= 0.0F || screen_white.level >= 1.0F)
+        screen_white.step = 0.0F;
+    if (trace_level() >= 2)
+        khdays_log("kh2 enemies: the screen's white at %.2f", double(screen_white.level));
+}
+
 // ryj::SHAKE::exec, a KH2 tick: each wave's count on by the tick (back by its period), its size by its speed (kept
 // within 0 and 16), the offset sin(count / period x 2 pi - pi) x size; its life down by the tick, nothing at 0
 void screen_shake_tick()
@@ -2651,6 +2669,18 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: the screen shakes for %.0f ticks (%.0f by %.0f dots)", double(life),
                        double(size_x), double(size_y));
+    }
+    void screen_white(bool out, float frames) override
+    {
+        if (frames > 0.0F) {
+            ::screen_white.step = (out ? 1.0F : -1.0F) / frames;
+        } else {
+            ::screen_white.level = out ? 1.0F : 0.0F;
+            ::screen_white.step = 0.0F;
+        }
+        if (tracing())
+            khdays_log("kh2 enemies: the screen fades %s white over %.0f frames", out ? "to" : "back from",
+                       double(frames));
     }
     int bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit) override
     {
@@ -8877,6 +8907,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     event_end = {};
     scope.reset();
     screen_shake.reset();
+    screen_white = {};
     pictures.clear();
     drawn_weapons.clear();
     shell_draws.clear();
@@ -8996,6 +9027,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                 send_shouts();
             lights.tick();
             screen_shake_tick();
+            screen_white_tick();
             laser_tick();
             if (kh2_mission) { // its script, its timer (KH2's 60 ticks a second); its pieces' time
                 Kh2Mission &m = *kh2_mission;
@@ -9513,6 +9545,11 @@ extern "C" int khdays_kh2_enemies_screen_trail(float out[4])
     out[2] = playing->trail->size[1];
     out[3] = playing->trail->angle;
     return 1;
+}
+
+extern "C" float khdays_kh2_enemies_screen_white(void)
+{
+    return screen_white.level;
 }
 
 extern "C" int khdays_kh2_enemies_camera_warp(void)

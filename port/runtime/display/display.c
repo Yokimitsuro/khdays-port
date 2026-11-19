@@ -1253,6 +1253,31 @@ static void trace_2d_frame(const KhdaysFramePackage *p, KhdaysGpuInput *in, u32 
     khdays_gpu2d_describe(in, 1, stderr);
 }
 
+/* A brightness word (MASTER_BRIGHT's: the factor in bits 0-4, the mode in 14-15) made at least `factor` white. */
+static uint32_t whiter(uint32_t word, unsigned factor)
+{
+    const unsigned own = (word & 31u) > 16u ? 16u : (word & 31u);
+    return (((word >> 14) & 3u) != 1u || own < factor) ? (word & ~0xc01fu) | 0x4000u | factor : word;
+}
+
+/* A KH2 enemy's screen faded to white (khdays_kh2_enemies_screen_white: its script's 0:31 and 0:32) laid over this
+ * frame's picture as the master brightness toward white on both engines (MASTER_BRIGHT's mode 1), where it is whiter
+ * than the game's own: in what the host reads of the frame -- each engine's 2D description (KD_MASTER, the one-screen
+ * picture's brightness) and its information (the composition's). The game's registers are left alone: written there
+ * for a frame (2026-11-19), the game kept the white for good. */
+static void whiten(KhdaysFramePackage *p)
+{
+    const float white = khdays_kh2_enemies_screen_white();
+    const unsigned factor = white > 0.0f ? (unsigned)lroundf(white * 16.0f) : 0u;
+    if (factor == 0) {
+        return;
+    }
+    for (int e = 0; e < 2; ++e) {
+        p->info[e].master_bright = (uint16_t)whiter(p->info[e].master_bright, factor);
+        p->desc2d[e][KD_MASTER] = whiter(p->desc2d[e][KD_MASTER], factor);
+    }
+}
+
 /* Draws this frame into a package and hands it to the host (or shows it
  * directly without a window). `t0`, `ta` and `t1` get the times the drawing
  * started, engine A was done, and the 2D was done. */
@@ -1272,6 +1297,7 @@ static void draw_frame(u32 frame, int want, int capture, KhdaysGpuInput *in, LAR
         fill_info(0, &p->info[0]);
         fill_info(1, &p->info[1]);
         capture_2d(p, in);
+        whiten(p);
         QueryPerformanceCounter(ta);
     } else {
         draw_reference_2d(p, in, frame, want, ta);

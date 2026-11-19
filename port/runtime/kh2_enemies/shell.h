@@ -128,6 +128,10 @@ int khdays_kh2_enemies_event_end_view(float eye[3], float at[3], float *fov_half
  * its quad's width and height over the view's, its turn in radians; 0 when none. */
 int khdays_kh2_enemies_screen_trail(float out[4]);
 
+/* How white a KH2 enemy's script has the screen (0:31 func_screen_whiteout, 0:32 func_screen_whitein): 0 to 1, laid
+ * over the frame as the DS's master brightness toward white (runtime/display/display.c). */
+float khdays_kh2_enemies_screen_white(void);
+
 /* KH2's lights a KH2 enemy's script has on (a boss darkening the field: Xaldin, Demyx, the Groundshaker's red): what
  * the room's colours (runtime/mods/models.cpp, a mission world's room) and the other models' are multiplied by, 1 each
  * as they are (up to 2); 0 when no light changes either. A light ends with the area, or when no KH2 enemy is left to

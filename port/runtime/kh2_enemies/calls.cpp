@@ -331,11 +331,18 @@ void add_math(ai::Calls &calls)
             m.memory().report("its script prints \"" + name_at(m.memory(), a[0].bits) + "\"");
     });
     // 0:31 the screen faded to white over n frames, 0:32 back from white (func_screen_whiteout, _whitein in the PS3
-    // build: FUN_14041dd70, FUN_14041ddb0 -> FUN_140156ce0, FUN_140156c90 on FUN_140156dc0's fader, white), 0:88 back
-    // from black (trap_screen_fadein, FUN_14041de70; KH2's hit asks 0:32 for 10 frames): Days's screen fades are its
-    // own, so none is shown (Jafar's whiteout)
-    calls.set(0, 31, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(0, 32, [](ai::Machine &, std::span<ai::Value>) {});
+    // build: FUN_14041dd70, FUN_14041ddb0 -> FUN_140156ce0, FUN_140156c90 on FUN_140156dc0's fader, white): the world's
+    // (World::screen_white; until 2026-11-19 none was shown -- Sephiroth's reaction command 664 flashes it a frame,
+    // Jafar fades it). 0:88 back from black (trap_screen_fadein, FUN_14041de70; KH2's hit asks 0:32 for 10 frames):
+    // Days's screen fades are its own, so none is shown
+    calls.set(0, 31, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->screen_white(true, a[0].f());
+    });
+    calls.set(0, 32, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->screen_white(false, a[0].f());
+    });
     calls.set(0, 88, [](ai::Machine &, std::span<ai::Value>) {});
     // 0:15 a bit of KH2's story (FUN_14039a980: DAT_1409ab540's bits, 0xffff none): none of them in Days's field
     calls.set(0, 15, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });

@@ -824,8 +824,9 @@ calls above (Jafar's among them, below) (1:40, 2:2, 2:86, 0:82, 0:91, 1:250, 1:3
   (`mode_revenge_boss`, `rvg_normal`); his combos, 30 a hit, took Roxas down to his last hit points, then (after an
   Elixir) to none: game over 72 seconds into the fight. His reaction commands' event sequences are read ("00", "10":
   1:164).
-- **Not shown**: the screen's fades (0:31 to white, 0:32 and 0:88 back), a model's texture animations (1:85, 1:86) and
-  a light's fog (1:257 to 1:260) -- Days's screen, the port's KH2 models and Days's field have none of them yet.
+- **Not shown**: the screen's fade back from black (0:88), a model's texture animations (1:85, 1:86) and a light's
+  fog (1:257 to 1:260) -- Days's screen, the port's KH2 models and Days's field have none of them yet. The fade to
+  white and back (0:31, 0:32) is shown since 2026-11-19 ("Effects", the screen's white).
 
 ### Shenzi, Banzai and Ed (2026-11-13)
 
@@ -1907,6 +1908,28 @@ effect's view was the world: what KH2 draws facing the screen (`pppRyjMegaBirth`
 stood fixed in the world -- the Mole Driller's dust, a swirl facing the camera, stood up edge on beside it (2026-11-11).
 The port takes the frame's own camera then, its list's first flush's (`khdays_g3d_list_camera`); the whole of a
 draw (its view times its projection) is the same either way.
+
+**The screen's white** (0:31 `func_screen_whiteout`, 0:32 `func_screen_whitein`: its fader, white, over a number of
+frames): how white KH2's script has the screen, a KH2 tick at a time, laid over the frame as the DS's master
+brightness toward white (MASTER_BRIGHT's mode 1) where it is whiter than the game's own -- in the frame package the
+host reads (each engine's 2D description, `KD_MASTER`, which the one-screen picture applies, and its information), not
+in the game's registers: written there for a frame, the game kept the white for good (2026-11-19). The port's own HUD
+pieces (portraits, the health bars, the reaction command's bar) are drawn apart and stay as they are. Sephiroth's
+reaction command 664 flashes it a frame as `rc_success` begins (0:31 1, a frame, 0:32 1); his grab's thread (770) as
+it floats the player; Jafar fades it. Seen (window runs, the fade back stretched by a local test switch): the field and
+the game's HUD white, then back.
+
+**Hit marks** (read in the PS3 build, not yet played by the port): `YS::ATTACK_WORK::hit` gives a struck object a mark
+from its attacker's PAX at the hit's point (`ATTACK_WORK::hitmark`: `YS::EFFECT::CategoryStart`, `ryj::PAX::search_id`
+-- the first element whose 64-bit mask, the PAX's 0x50-byte records' + 8, holds the key), the key the attack's
+category (atkp + 0xb, n: bit 31 + n) and its mode (1 a plain hit; 4 one on an invincible object, `is_star`, or one
+`ATTACK_CHECK` had already counted); `ATTACK::force_strike` also binds one to the struck (the category with 0x400 on
+the player, 0x800 on another), plays the atkp's + 0x1c sound and the struck's own damage effect (its PAX, 0x200 and
+the atkp's + 0x24). Sephiroth's PAX holds them (element 3: category 1, modes 1, 2, 4; 5, 8, 23, 26, 31, 35, 38:
+categories 2 to 8, mode 1; 6: category 2 on the player); his split flash (1353, category 6) on the player in AQ90
+(invincible) finds none (element 31: category 6, mode 1 alone), and neither it nor AQ90's guard (1719: category 0)
+has a sound or a damage effect: KH2 marks that clash with nothing of the hit's own -- its look is the flash's elements
+(204: 44, 42, 41, 43 at its frames 44 to 56) and the screen's white.
 
 ## Sounds
 

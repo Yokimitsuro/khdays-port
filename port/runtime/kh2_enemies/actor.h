@@ -503,6 +503,9 @@ public:
                               float /*size_y*/, float /*speed_x*/, float /*speed_y*/)
     {
     }
+    // 0:31, 0:32: the screen faded to white (`out`) or back from it over `frames` frames (YS::func_screen_whiteout,
+    // func_screen_whitein)
+    virtual void screen_white(bool /*out*/, float /*frames*/) {}
     // 0:80: whether this game's own player holds the button of KH2's field pad bit `bit` now (trap_pad_is_button: bit
     // n of YS::SOFTPAD::Get(0)'s held mask; the field's table, YS::SoftPadTableField, makes them from the pad: 8 the
     // jump's CANCEL, 9 square, 10 triangle, 11 R1, 14 to 16 and 28 the D-pad, 22 Select, 23 L1, 24 to 27 circle,
