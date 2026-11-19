@@ -28,6 +28,11 @@ namespace field {
 constexpr std::uint32_t kSelf = 0x4;        // its own handle (what an AI handle's + 4 holds)
 constexpr std::uint32_t kEntry = 0x8;       // its object entry's record (YS::OBJ's Entry: + 0 its number; 1:222)
 constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 23 in the air (1:60)
+// YS::OBJ's Spec (YS::SPEC, the PS3 build's layout: floats, its walk and run speeds, its jump's height, its turn speed,
+// its fall's most, its speed up and down, its acceleration; 1:97 gives a script its place): made by YS::OBJ's own
+// constructor (YS::SPEC::SPEC), a party member's from its tables (YS::SPEC::set)
+constexpr std::uint32_t kSpec = 0x128;
+constexpr std::uint32_t kTurnSpeed = kSpec + 0xc; // 1:80's step when it is given none
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
 constexpr std::uint32_t kMotionNow = 0x184; // the motion its controller plays (1:238: a reaction command's wait)
 constexpr std::uint32_t kStatus = 0x18c;    // bit 1 the motion ended (1:14), bit 9 held by a reaction (1:78, 2:5)

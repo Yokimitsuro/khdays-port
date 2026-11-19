@@ -395,6 +395,17 @@ Actor::Actor(std::shared_ptr<const ai::Script> script, ai::Memory &memory, const
     : Object(memory, std::move(kind))
 {
     machine_ = std::make_unique<ai::Machine>(std::move(script), memory_, calls, this);
+    // its Spec as YS::SPEC::SPEC makes it (YS::OBJ's constructor; YS::ENEMY's and YS::BTLOBJ's change none of it):
+    // walking 2, running 8, a jump 160 high, turning pi / 16 (0x3e490fdb), up and down 0, accelerating 0.95; its
+    // fall's most is YS::PREF::System's + 0x14, not read: 0. Until 2026-11-19 all 0: 1:80 with no step of its own
+    // never turned it -- Sephiroth walked to the player along the way he faced, into the coliseum's walls, and his
+    // split flash then went off the other way
+    constexpr float kPi = 3.14159265358979F;
+    set_f(field::kSpec + 0x0, 2.0F);
+    set_f(field::kSpec + 0x4, 8.0F);
+    set_f(field::kSpec + 0x8, 160.0F);
+    set_f(field::kTurnSpeed, kPi / 16.0F);
+    set_f(field::kSpec + 0x18, 0.95F);
 }
 
 Actor::~Actor()

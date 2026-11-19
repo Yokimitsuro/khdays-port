@@ -191,7 +191,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 0:79 | memory given back four calls later (a ring of four, `FUN_1403f63a0`) | as KH2 |
 | 1:3 | the player's actor (`DAT_142a105d0`) | the nearest of Days's players |
 | 1:4, 1:79 | face a direction (yaw = `atan2(x, z)` at + 0x7a8; 1:79 also the facing at + 0x680, its w the yaw) | as KH2 |
-| 1:80 | turn toward a direction by a step at most (the step x 2.0, `DAT_1405b18ec`; 0 the actor's + 0x134): 1 while it turns, 0 once it faces it (`FUN_1403b9f70`) | as KH2 |
+| 1:80 | turn toward a direction by a step at most (the step x 2.0, `DAT_1405b18ec`; 0 the actor's + 0x134, its Spec's TurnSpeed): 1 while it turns, 0 once it faces it (`FUN_1403b9f70`) | as KH2; the Spec as `YS::SPEC::SPEC` makes it (2026-11-19: walk 2, run 8, jump 160, turn pi / 16, accel 0.95; its fall's most, `YS::PREF::System` + 0x14, not read) -- all 0 before, so a walk with no step of its own never turned (Sephiroth's `move_walk_target` walked him into the coliseum's walls, his split flash then sent the other way) |
 | 1:5, 1:6, 1:7 | a state table cleared, a state registered, the table and handle given to the state machine (+ 0x390) | as KH2 |
 | 1:8, 1:9, 1:10, 1:127 | enter a state, queue one (15 at most), whether one is queued or running, clear the queue | as KH2 |
 | 1:11, 1:61 | play motion `id` blended over `blend` frames, 1:61 from a frame (`FUN_1403c86a0` on the motion controller at + 0x158): above 2 the motion stands at that frame while the blend runs ("When single-frame triggers play", below) | the motion from the mod's .mset, blended as KH2 |
@@ -993,9 +993,16 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   all the same, and his trigger 15, the RC under way, enters `rc_success`; his thread waits for the player's motion to
   change. The port skipped an invincible player's hits altogether, so the flash never landed and both stood still
   (2026-11-19, "Attacks reflected": it lands now, with no damage). Seen (a window run, 2026-11-19): 664 taken at
-  84.21 s, the flash landing at 84.41 s, `rc_success`, his strike (1354), the player let go at 85.75 s. **Open**:
-  warped to the coliseum's edge (5.7, 8.5), his split flash's dash was stopped by its wall and never reached the
-  player who took 664 -- held in AQ90 till the run's end (KH2's arena, the Dark Depths, has no wall there).
+  84.21 s, the flash landing at 84.41 s, `rc_success`, his strike (1354), the player let go at 85.75 s. His split
+  flash missed and held the player in AQ90 for good (2026-11-19) -- three of the port's: his walk to the player
+  (`move_walk_target`, 1:80 with no step: his Spec's turn speed, then 0) never turned him, so he walked into the
+  coliseum's walls and dashed off the other way; his flash's own turn to its target (range 22) was not read; and
+  AQ90, a loop, never gave the player back (the queue's idle taken at a loop's end, above). A fourth stopped him in
+  it: his grab's thread on the player (770: 1:58 to float him, then 1:95, 1:179, 1:180 once his motion changes) ran
+  on the running actor -- the player's motion was not his own again when let go, so it waited to the next reaction
+  command and then dropped Sephiroth, his split flash's 204 replaced by a landing (5) and his state waiting for its
+  range for ever. Seen since (window runs): 17 of 17 reaction commands 664 ending in `rc_success`, the flash facing
+  the player at its frame 49 (1.00).
 - **Lexaeus** `N_CM020_BTL` (his Absent Silhouette and data battle; voice bank `n_lexaeus`, his KH2 mission
   `HB33_FM_LEX`: the two power counts, SORA and LEXAEUS) (2026-11-19): his last two calls, 1:358 (his attack level,
   0 to 3: his motions' attacks' records, "Attacks reflected") and 2:26 (his trigger 19 on a reflection by a party
@@ -1510,7 +1517,11 @@ Dusk's (group 5: 69, Reversal).
   him till it ends, or till a press of his (A, B, Y: his attack, jump, guard) while its range 2 is on -- the PS3
   build's YS::MOTION flags name the bit range 2 sets (+ 0x34 bit 4) FLAG_CANCEL, the bits of ranges 0 and 1 FLAG_IDLE
   and FLAG_CONTROL; read as "back to idle", range 2 from frame 0 had let the player go as Roxas's Reversal began -- one
-  at its end lets him go at once (Cerberus's). A defeated enemy's thread takes him no more.
+  at its end lets him go at once (Cerberus's). A defeated enemy's thread takes him no more. A loop gives him back as it
+  goes round (2026-11-19): `YS::MOTION::add_time` (the PS3 build's, read) takes the queue's first at the motion's end
+  and goes round the loop only with nothing queued -- Sephiroth's reaction command 664 holds the player in AQ90 (252,
+  a loop of 84 frames, his idle queued by trigger 11), and a split flash that misses him gave him back never; now after
+  one round, as KH2 (Scar queues nothing while he counts his rounds of 253: unchanged).
 - **An enemy's own next motion** (1:13 on itself, `trap_sysobj_motion_push` -> `YS::MOTION::push_queue`): KH2 keeps a
   ring of motions with their blends at the controller's + 0x44 (its ends + 0x3c and + 0x40), and `YS::MOTION::add_time`
   takes the first as the motion playing reaches its end (else the motion goes round its loop); a motion started empties
@@ -1811,6 +1822,13 @@ length of the way to the start frame (`MOTION::exec` and `calc`), and the root d
 before its objects' scripts run, so a motion a script starts stands at its start frame in that tick (`Actor::begin_tick`).
 An enemy's own motions (`Actor::play`, `Actor::step`, the shell's `cues` and `pose`) and a held player's (above) play
 so; 1:63 is not in its loop while a blend runs.
+
+Two ranges read in the PS3 build's `YS::ANMATR::CheckRangeCallback` (2026-11-19): 22 turns a battle object toward its
+target while it is on (`YS::BTLOBJ::turn_to_target_range`: the way to its target along the ground, unless within 50
+cm, by its value in degrees -- 0 its Spec's turn speed -- through `YS::OBJ::turn_to_dir`); 23 sets a texture
+animation (`YS::OBJ::texanm_set`, its value the animation: AQ90's 88 and 41, Sephiroth's 204's 75 and 77), no effect.
+The port turns its enemies by 22 (not a party member, whose turning is its own); before, none did -- Sephiroth's split
+flash (204: 22 over frames 0 to 57) went off the way he faced as it began.
 
 ## Collision
 

@@ -643,6 +643,8 @@ void add_actor_fields(ai::Calls &calls)
     });
     // 1:180 the motion its jump or fall lands in (trap_obj_set_land_motion; FUN_14042ce30: + 0x11c)
     calls.set(1, 180, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (is_player(object_of(m, a[0])))
+            return; // (one of Days's players: his own landing is Days's)
         self_of(m, a[0])->motion.landing = std::int32_t(a[1].bits);
     });
     // 1:59 whether it flies (trap_obj_is_fly; FUN_14042ef50: its class's flag bit 1 -- class 5, 1:58's
@@ -763,7 +765,7 @@ void add_actor_fields(ai::Calls &calls)
         a[0] = ai::Value::of_int(x->motions != nullptr && x->motions->hooked() ? 1 : 0);
     });
     calls.set(1, 97, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_address(self_of(m, a[0])->address() + 0x128);
+        a[0] = ai::Value::of_address(self_of(m, a[0])->address() + field::kSpec);
     });
     calls.set(1, 179, [](ai::Machine &m, std::span<ai::Value> a) {
         if (is_player(object_of(m, a[0])))
@@ -1852,13 +1854,14 @@ void add_moving(ai::Calls &calls)
     // 1:1 turned to a yaw (FUN_14042bf60 -> FUN_1403b6560)
     calls.set(1, 1, [turn](ai::Machine &m, std::span<ai::Value> a) { turn(m, object_of(m, a[0]), a[1].f()); });
     // 1:80 turned toward a direction by a step at most (FUN_1403b9f70: the step times DAT_1405b18ec, 2.0; 0 the
-    // actor's own turn speed, + 0x134): 1 while it still turns, 0 once it faces it
+    // actor's own turn speed, its Spec's, + 0x134: pi / 16 unless its script set another): 1 while it still turns, 0
+    // once it faces it
     calls.set(1, 80, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *x = object_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         float step = a[2].f();
         if (step == 0.0F)
-            step = x->f(0x134);
+            step = x->f(field::kTurnSpeed);
         step *= 2.0F;
         const float want = std::atan2(v.v[0], v.v[2]), now = x->yaw();
         const float d = wrapped(want - now);
@@ -3472,6 +3475,12 @@ void add_final_xemnas(ai::Calls &calls)
     // rise and height from the flight's speed -- + 0xd0 its vertical speed over YS::SPEC::GRAVITY, + 0xd8 where it
     // tops -- its speed the flight's, + 0x20 = + 0x860): it goes on as it flew, falling under KH2's pull
     calls.set(1, 95, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: the world's steering of him ends
+            // (Sephiroth's grab's thread, 770, lets him fall so; until 2026-11-19 the running actor fell instead)
+            if (running(m)->world != nullptr)
+                running(m)->world->player_steer(*o, {}, 0.0F);
+            return;
+        }
         Actor *x = self_of(m, a[0]);
         const Vec3 v = x->velocity;
         x->dashing = false;

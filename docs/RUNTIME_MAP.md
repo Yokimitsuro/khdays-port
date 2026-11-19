@@ -6106,6 +6106,14 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   KH2's world Days's turned half round x (y and z the other way, as KH2's maps are laid as rooms) they read "89", "71",
   the tens on the left. Lexaeus, Final Xemnas (Riku, the player held, Rescue) and Sephiroth (warps, RC 664) played
   and drew as before (docs/KH2_ENEMIES.md, "Days's side: the shell", its axes).
+- **Sephiroth's split flash** (2026-11-19, window runs, level 100): before, 4 of 11 reaction commands 664 missed (the
+  flash 46 to 180 degrees off the player -- he had walked into the coliseum's corner facing it, never turned by his
+  walk's 1:80) and the player stayed in AQ90; twice the flash was cut by a landing (motion 5, his grab's thread's 1:95
+  on the player falling to him) and he stood till struck. With the Spec's turn speed, range 22 and the player's
+  motion given back: 17 of 17 ending in `rc_success`, the flash facing the player (1.00) at its frame 49 from 1 to
+  20 m. The same runs on Lexaeus, Final Xemnas, Marluxia and Vexen: Final Xemnas's dome then struck the chasing
+  player down (208 s) and Marluxia fell to him (168 s); Vexen still climbs the corner (8.8, 4 to 7.5, -8.8) as he did
+  before these changes (open).
 
 ## 38. Days's commands on KH2's reaction command bar
 

@@ -1168,6 +1168,7 @@ struct Held final {
     Vec3 move{};                  // a script's move of him this tick (1:89), KH2's cm
     Vec3 steer{};                 // a script's steering of him, each tick till another (1:111), KH2's cm
     bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
+    int own_motion = 0;           // which (its number)
     // the blend 1:29 asked for (its fourth value: YS::MOTION::start_motion's blend, above 2 a blend), counted as an
     // enemy's motion's is (Playing, actor.h): its length (0 none or over), its count from 2, the pose before's share
     // left; `fresh` the motion started this tick (it stands at its first frame till the next)
@@ -4354,6 +4355,13 @@ void let_go(unsigned object, const char *why)
     if (const auto o = players.find(object); o != players.end() && o->second) {
         o->second->set_bits(field::kStatus, bit::kOtherMotion, false);
         o->second->set_bits(field::kStatus, bit::kKeepsCarried, false);
+        // his controller's motion his own again (1:238, 1:15): the one asked for, else his idle -- Days plays the rest.
+        // Until 2026-11-19 the enemy's stayed: a thread waiting for it to change (Sephiroth's grab's, 770: the player
+        // falls when given back) waited on to the next reaction command, and then dropped Sephiroth (1:95 on the
+        // player fell to the running actor) out of his split flash
+        const int own = h->second.own_queued ? h->second.own_motion : 0;
+        o->second->set_u32(field::kMotion, std::uint32_t(own));
+        o->second->set_u32(field::kMotionNow, std::uint32_t(own));
     }
     if (tracing())
         khdays_log("kh2 enemies: player %08x let go (%s)", object, why);
@@ -4527,6 +4535,7 @@ void Field::player_own_motion(Object &o, int id)
     // Sun's AB52 does, Roxas's as the Reversal's AR10 or AR22 does); one at its end (Cerberus's) lets him go now
     if (const auto h = held.find(object); h != held.end() && !h->second.ended) {
         h->second.own_queued = true;
+        h->second.own_motion = id;
         if (tracing())
             khdays_log("kh2 enemies: player %08x's own motion %d queued till his motion ends or blends back to idle",
                        object, id);
@@ -5110,7 +5119,10 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                 swing = true;
     }
     weapon_trail(e, object, h, swing && !blending);
-    if (h.own_queued && h.ended) // his own motion asked for: taken at this one's end (Rising Sun's AB52)
+    // his own motion asked for: taken at this one's end (Rising Sun's AB52), a loop's as it goes round --
+    // YS::MOTION::add_time takes the queue's first at the end and goes round the loop only with none queued (a
+    // Sephiroth's split flash that misses: its reaction command's AQ90, 252, a loop, gives the player back)
+    if (h.own_queued && (h.ended || round))
         h.idle = true;
     if (!blending)
         h.cued = h.time;
@@ -6170,6 +6182,33 @@ void motion_states(Enemy &e)
     if (e.reacting)
         on |= bit::kHeld;
     a.set_u32(field::kStatus, (a.u32(field::kStatus) & ~all) | on);
+    // its range 22 (YS::ANMATR::CheckRangeCallback -> YS::BTLOBJ::turn_to_target_range, the PS3 build's): turned toward
+    // its target while it is on -- the way to it along the ground, unless within 50 cm -- by its value in degrees, 0 its
+    // Spec's turn speed (YS::OBJ::turn_to_dir: times the frame's time, 2.0 as 1:80 has it). Sephiroth's split flash
+    // (204, frames 0 to 57) so faces the player till it dashes; until 2026-11-19 none turned (a party member's own
+    // turning is its own)
+    if (const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
+        attr != nullptr && on_motion && the_field().friend_of(a) == nullptr)
+        for (const auto &r : attr->ranges) {
+            if (r.id != 22 || a.motion.time < float(r.start) || a.motion.time >= float(r.end))
+                continue;
+            const Object *target = the_field().player(a);
+            if (target == nullptr)
+                break;
+            const Vec3 to = target->place(), at = a.place();
+            const float dx = to[0] - at[0], dz = to[2] - at[2];
+            if (std::sqrt(dx * dx + dz * dz) <= 50.0F)
+                break;
+            const float value = r.params.empty() ? 0.0F : float(std::uint16_t(r.params[0])) * kPi / 180.0F;
+            const float step = (value == 0.0F ? a.f(field::kTurnSpeed) : value) * 2.0F;
+            float d = std::atan2(dx, dz) - a.yaw();
+            while (d > kPi)
+                d -= 2.0F * kPi;
+            while (d < -kPi)
+                d += 2.0F * kPi;
+            a.set_yaw(a.yaw() + std::clamp(d, -step, step));
+            break;
+        }
     // the motions asked to follow (1:13, 2:87's idle): the first taken as this one blends back (range 2, bit 4) or in a
     // tick it reaches its end (the ended bit, Actor::step's: a loop's as it goes round), the others after it
     if (!a.motion.queued.empty() &&
@@ -6344,10 +6383,11 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         std::string at;
         threads_of(*a.machine().main_thread(), at);
         khdays_log("kh2 enemies: %08x's threads at%s; motion %d at %.1f%s%s; %.3f above the ground, %.1f its fall; at "
-                   "%.2f %.2f %.2f",
+                   "%.2f %.2f %.2f facing %.0f degrees (KH2's), status %08x, steered %.1f",
                    e.days, at.c_str(), a.motion.id, double(a.motion.time), a.jump.on ? ", in a jump" : "",
                    e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall),
-                   double(s.place[0]), double(s.place[1]), double(s.place[2]));
+                   double(s.place[0]), double(s.place[1]), double(s.place[2]), double(a.yaw() * 180.0F / kPi),
+                   a.u32(field::kStatus), double(a.steer_speed));
     }
     if (!e.sent_state.empty() && (e.sent_after -= 1.0F) <= 0.0F) {
         if (a.states().shout(a, e.sent_state, e.sent_from) && tracing())
@@ -6413,8 +6453,12 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         // as KH2's falling class does, with its landing motion (FUN_1403cb940: + 0x11c, 5 by default); a step's
         // gap (Days's ground found a few centimetres off) does not
         const bool told = e.aloft && ground_event(e, 14);
-        if (e.fall_from > kStep && !told)
+        if (e.fall_from > kStep && !told) {
+            if (tracing())
+                khdays_log("kh2 enemies: %08x lands from %.1f (KH2's cm): its landing motion %d over its motion %d at %.1f",
+                           e.days, double(e.fall_from), a.motion.landing, a.motion.id, double(a.motion.time));
             a.touch_down();
+        }
         e.aloft = false;
         e.fall = 0.0F;
         a.set_bits(field::kFlags, bit::kInAir, false);
