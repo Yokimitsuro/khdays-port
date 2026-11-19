@@ -3108,11 +3108,25 @@ void forget(unsigned days)
 // The kind's script on a new actor at the shell's place, facing the nearest player
 std::uint32_t entry_record(const std::string &name);
 
-// How much of its model is drawn: its fade (1:19, 1:20, 1:28), a quarter of it in stealth (1:194)
+// How much of its model is drawn: its fade (1:19, 1:20, 1:28), a quarter of it in stealth (1:194); none hidden (1:133)
 float drawn_fade(const Enemy &e)
 {
+    if (e.actor->hidden)
+        return 0.0F;
     const float fade = std::clamp(e.actor->fade, 0.0F, 1.0F);
     return e.actor->stealth != 0 ? fade * 0.25F : fade;
+}
+
+// The share of an effect's alpha its enemy's fade leaves it: an element bound to it whose flags say it fades with it
+// (+ 0x10 bits 0 and 11: ryj::PAX::MANAGER::exec runs set_obj_fade then, the effect's colour's alpha the object's
+// fade alpha each tick -- YS::OBJ::get_fade_alpha --, 0 while it is hidden, YS::OBJ::is_hide) its fade, every other 1.
+// Final Xemnas's blades (elements 1, 2, 3, 5, 45): his double, faded out but for its dance and its lasers, held them
+// in the air till 2026-11-19
+float effect_object_alpha(const Enemy &e, const Enemy::Running &r)
+{
+    if ((r.element->flags & 0x801u) != 0x801u || r.in_world)
+        return 1.0F;
+    return e.actor->hidden ? 0.0F : std::clamp(e.actor->fade, 0.0F, 1.0F);
 }
 
 // How many of its PAX's elements, from the first, KH2 starts on an object's model as it is made
@@ -7232,14 +7246,13 @@ void laser_tick()
 }
 
 // The dome's lists given to one of its effects in the caster's effects' space (KH2's world from the caster, turned
-// back by its turn, y up) before it runs, and what it wrote back taken after
-constexpr float kEffectUp = -1.0F; // the effects' y against KH2's world's (y down)
+// back by its turn, its y KH2's -- down -- as an effect's place in the world is given, Running::in_world) before it
+// runs, and what it wrote back taken after. Until 2026-11-19 its y was turned over: the dome hung under the floor
 Vec3 to_effect_space(const Enemy &e, const Vec3 &w, bool way)
 {
     const Vec3 from = e.actor->place();
     const Vec3 v = way ? w : Vec3{w[0] - from[0], w[1] - from[1], w[2] - from[2]};
-    const Vec3 t = turned(v, -e.actor->yaw());
-    return {t[0], t[1] * kEffectUp, t[2]};
+    return turned(v, -e.actor->yaw());
 }
 
 void give_dome(const Enemy &e, Enemy::Running &r)
@@ -7450,8 +7463,18 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
         const KindFiles &files = r.files != nullptr ? *r.files : *e.kind;
         if (trace_level() >= 2)
             trace_slivers(e, files, r);
-        if (r.element->effect < files.fx_pages.size() && !hidden_element(files, r.element))
-            khdays::kh2_fx::submit(r.draws, units, *files.fx_pages[r.element->effect]);
+        const float with_object = effect_object_alpha(e, r);
+        if (r.element->effect < files.fx_pages.size() && !hidden_element(files, r.element) && with_object > 0.0F) {
+            if (with_object >= 1.0F) {
+                khdays::kh2_fx::submit(r.draws, units, *files.fx_pages[r.element->effect]);
+            } else { // (a copy: a held effect's draws stand from tick to tick)
+                std::vector<kh2::EffectDraw> faded = r.draws;
+                for (kh2::EffectDraw &d : faded)
+                    for (kh2::EffectVertex &v : d.triangles)
+                        v.a *= with_object;
+                khdays::kh2_fx::submit(faded, units, *files.fx_pages[r.element->effect]);
+            }
+        }
     }
     for (std::size_t i = e.fx.size(); i-- > 0;)
         if (e.fx[i].fx->done() || (e.fx[i].fade_step != 0.0F && e.fx[i].fade <= 0.0F))

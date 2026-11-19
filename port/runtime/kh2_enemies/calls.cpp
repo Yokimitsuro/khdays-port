@@ -805,15 +805,23 @@ void add_actor_fields(ai::Calls &calls)
         if (x != nullptr && x->world != nullptr)
             x->world->event(*x, name_at(m.memory(), a[1].bits), object_of(m, a[2]));
     });
-    // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
-    // (on a player: World::player_hide)
+    // 1:133 / 1:134 the object hidden and shown (YS::trap_obj_hide, trap_obj_show: its class's VTABLE hide, its flags'
+    // FLAG_HIDE_MODEL and FLAG_HIDE_SHADOW set, and show, FLAG_HIDE_MODEL cleared): a KH2 actor's model and the effects
+    // that fade with it not drawn meanwhile (Actor::hidden); a player's, World::player_hide. Until 2026-11-19 only a
+    // player's was
     calls.set(1, 133, [](ai::Machine &m, std::span<ai::Value> a) {
-        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o) && running(m)->world != nullptr)
+        Object *o = object_of(m, a[0]);
+        if (o != nullptr && is_player(o) && running(m)->world != nullptr)
             running(m)->world->player_hide(*o, true);
+        else if (Actor *x = o != nullptr ? o->actor() : nullptr)
+            x->hidden = true;
     });
     calls.set(1, 134, [](ai::Machine &m, std::span<ai::Value> a) {
-        if (Object *o = object_of(m, a[0]); o != nullptr && is_player(o) && running(m)->world != nullptr)
+        Object *o = object_of(m, a[0]);
+        if (o != nullptr && is_player(o) && running(m)->world != nullptr)
             running(m)->world->player_hide(*o, false);
+        else if (Actor *x = o != nullptr ? o->actor() : nullptr)
+            x->hidden = false;
     });
     // 1:201 its facing as a direction (FUN_1403b56e0)
     calls.set(1, 201, [](ai::Machine &m, std::span<ai::Value> a) {

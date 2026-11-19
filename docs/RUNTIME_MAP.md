@@ -6063,6 +6063,13 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   100 60, a laser (25) 16 (30 x the power over 100, x 2 for Proud) --, knocked out at 0 four times in 300 s, up 1800
   ticks (30 s) after with 25; the lasers struck him twice in the dome. Knocked out he stood: this Riku's set has no
   54 nor 55 (DUMM entries 216 to 223), so KH2's MOTION::change finds nothing to lie in.
+- **The dome the right way up, the double's blades** (2026-11-19, window runs, the same mission): the dome's lists had
+  their y turned over -- from above, a field of dots under the characters; given as an effect's place in the world is
+  (KH2's y), it stands round them, its lasers sticks of 8 sprites a metre long (as `RyjMegaBirthUserCtrDrawShapeLine`
+  spaces them; the port had set them the whole length apart): from inside, round lights in rows with dark between,
+  from above a burst of sticks. KH2's effects' pictures read as the GS reads them (plain linear, not alpha-weighted):
+  the halos red, not their cores' beige. The double's blades (elements 1 and 2, bound and fading with it) hung in the
+  air while it was faded out; drawn now only while it shows (its dance, 123 to 130 s; its `run3`).
 
 ## 38. Days's commands on KH2's reaction command bar
 

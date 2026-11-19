@@ -874,6 +874,10 @@ public:
     // its model's parts in stealth (1:194, 1:195: kn::ModelObj::setStealth, resetStealth on + 0x7b0's model, a bit a
     // part group; KH2 draws them as a refraction): the port draws the whole model faint while any is
     std::uint32_t stealth = 0;
+    // hidden by its script (1:133: YS::OBJ's VTABLE hide, its flags' FLAG_HIDE_MODEL and FLAG_HIDE_SHADOW, + 0x10c
+    // 0x300) till shown (1:134: FLAG_HIDE_MODEL cleared): its model not drawn, nor its effects that fade with it
+    // (ryj::PAX::MANAGER::set_obj_fade: YS::OBJ::is_hide)
+    bool hidden = false;
     // its model's parts hidden (1:109 hides one, 1:108 shows it: kn::ModelSKL::hidePart and showPart on + 0x7b0's
     // model, each subpart of that part -- its attribute word's bits 6-10 -- drawn or not; -1 every part): bit n part n
     std::uint32_t hidden_parts = 0;

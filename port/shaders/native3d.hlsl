@@ -136,7 +136,7 @@ Targets ps_main(Corner i)
 #endif
         o.depth24 = (float)depth;
         if (((uint)p.flags & G3D_EFFECT_DEPTH_ONLY) == 0u) {
-            const float4 c = effect_color(p, i.shade.xyz, i.shade.w, st.x, st.y, footprint, i.texels);
+            const float4 c = effect_color(p, i.shade.xyz, i.shade.w, st.x, st.y, i.texels);
             if (c.a <= 0.0f) {
                 discard; // ATST GREATER, AREF 0
             }

@@ -221,7 +221,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:92 | a point of the ground ahead (a ray, then `FUN_1403dc170` with a number) | nothing |
 | 2:8 | whether a hit's reaction kind (+ 0x26, `FUN_1403ce980`'s groups) is past 1: trigger 6's hit, which the Strafer and the cubes turn to their revenge on | as KH2: Days's hits are small reactions (2) |
 | 1:128 | the object's class's virtual + 0x20 (its native code) | nothing |
-| 1:133, 1:134 | the object hidden, shown (`trap_obj_hide`, `trap_obj_show`) | on a Days player his model hidden and shown (Final Xemnas's grab hides Sora on Riku); nothing on an actor |
+| 1:133, 1:134 | the object hidden, shown (`trap_obj_hide`, `trap_obj_show`: its VTABLE hide sets `FLAG_HIDE_MODEL` and `FLAG_HIDE_SHADOW`, show clears the first) | on a Days player his model hidden and shown (Final Xemnas's grab hides Sora on Riku); on a KH2 actor its model and the effects that fade with it (`Actor::hidden`) |
 | 2:9 | the actor's + 0x5c0 made from a number (`FUN_140411350`) | nothing |
 | 2:20 | a routine of the script started as a thread of its own (`trap_magic_start_thread`, `FUN_1403c5ec0`: a machine of its own on the script, `FUN_1403e1970`, put in the game's list of them, `FUN_1403c4e90`; run apart from its object's ticks) | a loose thread of its object's machine (`Machine::start_loose`); the shell runs the field's loose threads once a KH2 tick after the enemies' own ticks, the frame's shouts told after the first (the Sorcerer's turn-giving thread moves the turn its order gave on before its cubes hear it). Until 2026-11-11 they ran inside their object's tick, before its state's routine: the turn never came in time |
 
@@ -901,7 +901,11 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   `Ts::XEMNAS::Get(n)`: one value in, the object back -- until 2026-11-16 the port took two and wrote at address 5) and
   queues states for the other (6:58, `YS::ACT::child_push`, entered on it in `ACT::check_start`): his blades' dance,
   the `_child` lasers, and his dark mode (`mode_dark_start`, `mode_battle_dark`: `atk_shield`, `atk_bomb`) while Sora
-  is held. So in KH2 one Xemnas is seen most of the fight.
+  is held. So in KH2 one Xemnas is seen most of the fight. Both start their blades at their init (1:87 elements 1
+  and 2 on their hands, `trap_obj_effect_start_bind`), the double fading out at once (1:19 over 0): the blades' elements
+  are bound and fade with their object (their flags + 0x10 bits 0 and 11: `ryj::PAX::MANAGER::set_obj_fade` sets
+  the effect's alpha to `YS::OBJ::get_fade_alpha` each tick, 0 while `is_hide`), so the double's are not seen till it
+  fades in (`run3`, its dance). Until 2026-11-19 the port drew them all the same: two blades in the air.
 - **Riku**, KH2's party member (the area's `W_FRIEND_ONLY` partner, the battle's `FRIEND_1`; the tool makes him a
   companion), moved by **KH2's party AI** (`kn::Friend`: `friend_param_data` -- 0x62d0 bytes, read from
   KINGDOM HEARTS II FINAL MIX.exe by the tool -- his follow and battle ranges, `PREF_PARTY` "prty" for his speeds, his
@@ -920,6 +924,13 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   Riku) or striking him (its 50 cm sphere: `LASER::strike`, atkp 1143); it ends 1800 ticks after (a timer his offers'
   thread counts, his player threads' check: `crowd_laser_finish`, 8:5) and he dies (`rc_crowd_laser_finish`, `dead`).
   Its sounds (374040 the hum, 374047, 374065, 374066) are the engine's own: the tool copies them (`ENGINE_SOUNDS`).
+  Each laser is a stick (element 14: `pppRyjMegaBirthUserCtrl3`, the PS3 build's `RyjMegaBirthUserCtrDrawShapeLine`):
+  8 sprites of its shape over a metre along its way, 12.5 cm apart from half a metre behind its place, each 6 x its
+  size byte / 10 (114 cm), the small white core of `-15` with its red halo, tinted (100, 93, 78), added: seen from
+  inside the dome, along their ways, round lights; from the side, sticks. The lists are KH2's world from the caster,
+  its y down as an effect's place in the world is (until 2026-11-19 the port turned it over: the dome hung under the
+  floor, the lines eight metres of separate dots, the halos their cores' colour -- a KH2 effect's picture is now read
+  as the GS reads it, `effect_texel`, not alpha-weighted).
   While it plays **the map is hidden** (8:6, `LAST_XEMNUS_LASER::Optimize`: `dk::Map::setHideGroup(0)` -- every one
   of eh20's 450 draw entries is in group 0, its floor too --, `hideSky`, `Glow::off`; 8:7 shows them again): the
   world black but for the characters and the lasers. The port leaves the room's models out from 8:6 to 8:7

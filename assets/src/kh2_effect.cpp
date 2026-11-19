@@ -4184,25 +4184,28 @@ struct EffectInstance::State {
         }
     }
 
-    // pppRyjMegaBirthUserCtrl3 (FUN_1404db660 + FUN_1404e2fe0): at each of the game's matrices a row of its shape
-    // along the matrix's z row: the record's +0x14 of them, +0x10 apart, centred on the matrix's place; each at
-    // the record's +0xc x the matrix's size, the frame moved on
+    // pppRyjMegaBirthUserCtrl3 (FUN_1404db660 + FUN_1404e2fe0; the PS3 build's RyjMegaBirthUserCtrDrawShapeLine): at
+    // each of the game's matrices a line of its shape along the matrix's z row, the record's +0x10 long: its +0x14 of
+    // them, the length over their count apart, from half the length behind the matrix's place on; each at the
+    // record's +0xc x the matrix's size, the frame moved on. Final Xemnas's lasers: 8 a metre long, a stick each.
+    // Until 2026-11-19 the port set them the whole length apart: lines eight times as long, of dots
     void user_ctrl3(const Key &k, std::vector<EffectDraw> *out)
     {
         const std::int32_t shape = k.s32(4);
         if (matrices.empty() || shape == 0xffff)
             return;
         const auto &shp = block->shapes.at(std::size_t(shape));
-        const float scale = k.f32(0xc), step = k.f32(0x10);
+        const float scale = k.f32(0xc), length = k.f32(0x10);
         const std::int32_t count = k.s32(0x14);
+        const float apart = count > 0 ? length / float(count) : 0.0F;
         for (auto &g : matrices) {
             if (!g.plain && g.bytes[0] == 0)
                 continue;
             const int frame = g.plain ? 0 : g.bytes[1];
             const float size = g.plain ? 1.0F : float(g.bytes[3]) * scale * 0.1F;
             const float alpha = g.plain ? float(k.b(0xb)) : float(g.bytes[0]);
-            float along = float(count) * 0.5F * step * -1.0F;
-            for (std::int32_t n = 0; n < count && out != nullptr; ++n, along += step) {
+            float along = -0.5F * length;
+            for (std::int32_t n = 0; n < count && out != nullptr; ++n, along += apart) {
                 const std::array<float, 4> place{g.matrix[12] + g.matrix[8] * along, g.matrix[13] + g.matrix[9] * along,
                                                  g.matrix[14] + g.matrix[10] * along, 1};
                 sprite_at(shp, frame, place, size, {k.b(8) / 128.0F, k.b(9) / 128.0F, k.b(10) / 128.0F, alpha / 128.0F},

@@ -258,18 +258,51 @@ int4 polygon_color(Polygon p, int alpha, float3 shade, float s, float t, float f
     return int4(r, gg, b, a);
 }
 
-// A KH2 effect's pixel before its blend (the GS's MODULATE): its picture's texel (a replacement) times the vertex
-// colour as a factor (`shade`: 63 the GS's 0x80, 1, up to twice that), its alpha the texel's times the vertex's.
-// Without a picture (TME off) the vertex colour is the colour itself, 0x80 of 0xff: half the factor's. Colour and
-// alpha 0..1.
-float4 effect_color(Polygon p, float3 shade, float valpha, float s, float t, float footprint, int4 texels)
+// A KH2 effect's picture at (s, t) as the GS reads it (TEX1's LINEAR, as KINGDOM HEARTS II's PC build does its
+// effects' HD pictures, which hold no smaller copies): the picture at its full size, the four texels around the place
+// mixed by their distances alone -- colour and alpha as they are, a clear texel's colour counted as any other's --
+// within the polygon's own texels (`b`: polygon_texels) when they lie within one period; 8-bit colour and alpha,
+// 0..1. hd_texel weights the colours by their alpha and reads smaller copies far away, which a Days picture wants:
+// on an added effect that gave a halo its core's colour (Final Xemnas's lasers' red rims came out as their beige
+// cores)
+float4 effect_texel(Polygon p, float s, float t, int4 b)
+{
+    const uint4 e = hd.Load4((uint)p.replacement * 16u);
+    const float ss = (float)(8 << ((p.tex >> 20) & 7u)), ts = (float)(8 << ((p.tex >> 23) & 7u));
+    const uint rs = (p.tex >> 16) & 1u, rt = (p.tex >> 17) & 1u, fs = (p.tex >> 18) & 1u, ft = (p.tex >> 19) & 1u;
+    const float fu = wrapf(s, ss, rs, fs) * (float)e.y / ss - 0.5f, fv = wrapf(t, ts, rt, ft) * (float)e.z / ts - 0.5f;
+    const int x0 = (int)floor(fu), y0 = (int)floor(fv);
+    const float du = fu - (float)x0, dv = fv - (float)y0;
+    const bool inside = b.x >= 0 && b.y >= 0 && b.z < (int)ss && b.w < (int)ts;
+    const int ulo = inside ? (int)floor((float)b.x * (float)e.y / ss) : -100000;
+    const int uhi = inside ? (int)ceil((float)(b.z + 1) * (float)e.y / ss) - 1 : 100000;
+    const int vlo = inside ? (int)floor((float)b.y * (float)e.z / ts) : -100000;
+    const int vhi = inside ? (int)ceil((float)(b.w + 1) * (float)e.z / ts) - 1 : 100000;
+    float4 c = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    for (int k = 0; k < 4; ++k) {
+        const int kx = k & 1, ky = k >> 1;
+        const int x = wrap(clamp(x0 + kx, ulo, max(ulo, uhi)), (int)e.y, rs, fs);
+        const int y = wrap(clamp(y0 + ky, vlo, max(vlo, vhi)), (int)e.z, rt, ft);
+        const uint w = hd.Load((e.x + (uint)y * e.y + (uint)x) * 4u);
+        const float4 texel = float4((float)(w & 255u), (float)((w >> 8) & 255u), (float)((w >> 16) & 255u),
+                                    (float)(w >> 24)) / 255.0f;
+        c += texel * ((kx != 0 ? du : 1.0f - du) * (ky != 0 ? dv : 1.0f - dv));
+    }
+    return c;
+}
+
+// A KH2 effect's pixel before its blend (the GS's MODULATE): its picture's texel (a replacement: effect_texel) times
+// the vertex colour as a factor (`shade`: 63 the GS's 0x80, 1, up to twice that), its alpha the texel's times the
+// vertex's. Without a picture (TME off) the vertex colour is the colour itself, 0x80 of 0xff: half the factor's.
+// Colour and alpha 0..1.
+float4 effect_color(Polygon p, float3 shade, float valpha, float s, float t, int4 texels)
 {
     float3 rgb = float3(128.0f, 128.0f, 128.0f) / 255.0f;
     float a = 1.0f;
     if (((p.tex >> 26) & 7u) != 0u && p.replacement >= 0) {
-        const int4 c = hd_texel(p, s, t, footprint, texels);
-        rgb = (float3)c.xyz / (fine != 0u ? 255.0f : 63.0f);
-        a = (float)c.w / 31.0f;
+        const float4 c = effect_texel(p, s, t, texels);
+        rgb = c.rgb;
+        a = c.a;
     }
     return float4(saturate(rgb * shade / 63.0f), saturate(a * valpha));
 }

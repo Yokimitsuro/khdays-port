@@ -442,6 +442,48 @@ void test_game_matrices()
            "the model at the matrix's place");
 }
 
+// pppRyjMegaBirthUserCtrl3 (0xf2, the PS3 build's RyjMegaBirthUserCtrDrawShapeLine): a line of its shape along each
+// game matrix's z row, the record's length long, its count of them the length over the count apart from half the
+// length behind (Final Xemnas's lasers: 8 a metre long)
+void test_shape_line()
+{
+    EffectBlock b;
+    EffectShapeLayer sl;
+    sl.corners = {{{-1, -1}, {1, -1}, {-1, 1}, {1, 1}}};
+    sl.rect = {0, 0, 1, 1};
+    sl.colour = {0x80, 0x80, 0x80, 0x80};
+    EffectShapeFrame f;
+    f.loop = true;
+    f.layers = {sl};
+    b.shapes.push_back(EffectShape{{f}});
+    std::vector<std::uint8_t> key = made_key(0, 0x20);
+    put(key, 4, std::int32_t(0));            // shape 0
+    put(key, 8, std::uint32_t(0x80808080u)); // its colour
+    put(key, 0xc, 6.0F);                     // its size
+    put(key, 0x10, 100.0F);                  // the line's length
+    put(key, 0x14, std::int32_t(8));         // how many along it
+    EffectLayer layer;
+    layer.life = 10 * 0x1000;
+    layer.commands.push_back(EffectCommand{0xf2, {key}, {}});
+    EffectEmitter e;
+    e.length = 10 * 0x1000;
+    e.layers = {layer};
+    b.emitters.push_back(e);
+    EffectInstance fx(std::make_shared<const EffectBlock>(b), 0, 1);
+    EffectGameMatrix g;
+    g.matrix = identity();
+    g.plain = false;
+    g.bytes = {0x80, 0, 0, 10};
+    fx.set_matrices({g});
+    const EffectCamera cam{identity(), identity(), identity()};
+    std::vector<EffectDraw> draws;
+    fx.tick(cam, &draws);
+    expect(draws.size() == 8, "eight sprites along the line");
+    for (std::size_t i = 0; i < draws.size() && i < 8; ++i)
+        expect(!draws[i].triangles.empty() && near(draws[i].triangles[0].z, -50.0F + 12.5F * float(i)),
+               "each the length over the count further, from half the length behind");
+}
+
 int main()
 {
     try {
@@ -458,6 +500,7 @@ int main()
         test_uv_scroll();
         test_lightning();
         test_game_matrices();
+        test_shape_line();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect: %s\n", e.what());
         return 1;
