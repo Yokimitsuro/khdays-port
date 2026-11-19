@@ -719,8 +719,22 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 69, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_float(self_of(m, a[0])->f(0x19c));
     });
+    // 1:84 an object's sheet (+ 0x5c0): a player's his own (World::player_sheet -- until 2026-11-19 the running
+    // enemy's: Sephiroth's Heartless Angel read his own health for the player's and left himself 1)
     calls.set(1, 84, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        const Actor *x = running(m);
+        if (o != nullptr && o->actor() == nullptr && x != nullptr && x->world != nullptr) {
+            a[0] = ai::Value::of_address(x->world->player_sheet(*o));
+            return;
+        }
         a[0] = ai::Value::of_address(self_of(m, a[0])->u32(0x5c0));
+    });
+    // 1:361 a sheet's level (trap_sheet_level, the PS3 build's SHEET::get_level: its PartRam's, + 0x244, byte + 0xf; 0
+    // none -- an enemy's): Marluxia's doom counts down from the player's
+    calls.set(1, 361, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t part = a[0].bits != 0 ? m.memory().u32(a[0].bits + 0x244) : 0u;
+        a[0] = ai::Value::of_int(part != 0 ? std::int32_t((m.memory().u32(part + 0xc) >> 24) & 0xffu) : 0);
     });
     // 1:348 a sheet's hitback addition (trap_sheet_set_hitback_addition, FUN_140431260: its + 0x1c8), which its
     // object's hits' slides add to their speed (FUN_1403d4960; 2:3): Saïx's claymore's 200 on its owner's sheet while
@@ -1014,6 +1028,16 @@ void add_actor_fields(ai::Calls &calls)
     // YS::SHEET::_add_hp: kept between the bar's least and most; the bar's health given back): the first bar's given to
     // Days's enemy (at least 1)
     calls.set(1, 155, [](ai::Machine &m, std::span<ai::Value> a) {
+        // a player's (no actor of the port's): Days's player's HP (World::add_player_health) -- until 2026-11-19 the
+        // running enemy's
+        if (Object *o = object_of(m, a[0]); o != nullptr && o->actor() == nullptr) {
+            const Actor *me = running(m);
+            a[0] = ai::Value::of_int(me != nullptr && me->world != nullptr
+                                         ? me->world->add_player_health(*o, std::int32_t(a[1].bits),
+                                                                        std::int32_t(a[2].bits))
+                                         : 0);
+            return;
+        }
         Actor *x = self_of(m, a[0]);
         const std::uint32_t sheet = x->u32(0x5c0);
         if (sheet == 0) {
@@ -2719,9 +2743,15 @@ void add_world(ai::Calls &calls)
     // 1:128 the object's class's virtual + 0x20 with a value (its native code; trigger 13 calls it with 0); 2:9 the
     // actor's + 0x5c0 made from a number (FUN_140411350): neither is the script's own behaviour, nothing here
     calls.set(1, 128, [](ai::Machine &, std::span<ai::Value>) {});
-    // 1:209 the class's virtual + 0xb0 unless + 0x9b8 bit 2 (FUN_1403d3f10); 1:74 the class made class 0 (the old
-    // one's virtual + 0x10, the new one's + 8; FUN_1403b4da0) and + 0xba8 cleared: native code, not the script's
-    calls.set(1, 209, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:209 the class's virtual + 0xb0 unless + 0x9b8 bit 2 (FUN_1403d3f10; trap_obj_dead, the PS3 build's: its death);
+    // 1:74 the class made class 0 (the old one's virtual + 0x10, the new one's + 8; FUN_1403b4da0) and + 0xba8
+    // cleared: native code, not the script's. On a player his death, Days's: his HP to 0 (World::add_player_health) --
+    // Marluxia's doom counted down to 0 (his trigger 15); an enemy's not made
+    calls.set(1, 209, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && o->actor() == nullptr)
+            if (const Actor *me = running(m); me != nullptr && me->world != nullptr)
+                me->world->add_player_health(*o, -0x7fffffff, 0);
+    });
     calls.set(1, 74, [](ai::Machine &m, std::span<ai::Value> a) {
         if (is_player(object_of(m, a[0])))
             return; // a Days player's class is Days's
@@ -3054,8 +3084,15 @@ void add_world(ai::Calls &calls)
     });
     // 1:272 whether the object is counted defeated (trap_obj_is_dead, FUN_14042dd10: + 0x9b8 bit 2, 1:328's dead mark,
     // which its end sets too): Zexion asks it of his books
+    // A player's: knocked out, Days's HP 0 (Marluxia's doom watches it: once he is up again, the count at least 1)
     calls.set(1, 272, [](ai::Machine &m, std::span<ai::Value> a) {
-        const Object *o = object_of(m, a[0]);
+        Object *o = object_of(m, a[0]);
+        if (o != nullptr && o->actor() == nullptr) {
+            const Actor *me = running(m);
+            const bool down = me != nullptr && me->world != nullptr && me->world->player_health(*o) == 0;
+            a[0] = ai::Value::of_int(down ? 1 : 0);
+            return;
+        }
         a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kFade) & bit::kDeadMark) != 0 ? 1 : 0);
     });
     // 1:305, 1:306 the camera's eye and the point it looks at (trap_camera_eye, trap_camera_at: FUN_14019ce40(1)'s

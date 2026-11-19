@@ -251,7 +251,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:149, 0:44 | an effect of the actor's on another object, its handle (`FUN_14042d5c0` -> `FUN_1403b6670`); an effect's loops closed (`trap_effect_loop_end`, `FUN_14041e190` -> `FUN_1402be8e0`: `ryj::EFFECT::loop_end`), so it ends once its objects have | as KH2 (on a held player, on his bones) |
 | 2:45 | the number of a hit's attack (`trap_damage_attack_param_id`: `YS::DAMAGE`'s `AttackParam`, + 0x20, its u16 at + 2): the Wight Knight asks it of its hits (492, 1149, 568) | 0: a Days hit names no KH2 attack |
 | 1:222, 1:114 | its object entry's number (`trap_obj_get_entry_id`: + 8, `YS::OBJ`'s `Entry`, its record's + 0); the field's first object of an entry's number into an AI handle (`trap_obj_search_by_entry`, `FUN_1403b4110`: 0x236 the player) | as KH2: each kind's `00objentry.bin` record (96 bytes: + 0 its number, + 4 its kind -- 4 an enemy, 3 a boss --, + 8 its name, + 0x28 its motion set's) put at its actors' + 8 |
-| 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1) |
+| 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1); a player's to Days's player's HP (`Ov022_ActorSetHp`) -- until 2026-11-19 to the running enemy's |
 | 1:167 | a state entered as 1:8 does when its priority (its record's + 4) is at least the current state's (`trap_obj_act_start_pri`: `FUN_1403caa90`; + 0x128 the current one's, which entering sets -- `FUN_1403cad00` --, 0 none): the Dancer's | as KH2 |
 | 0:60 | an assertion (`trap_assert`: `FUN_14041e710`, empty in the PC's build): in the Rapid Thruster's and the Armored Knight's states' event routines | nothing, as KH2 |
 | 1:0 | an object made by its entry's number (`trap_sysobj_appear`: `FUN_14042b130` -> `FUN_1403df930`, its class by its entry's kind, at the world's origin facing pi -- `DAT_140623df0`, `DAT_140623b78` --, its script started), its AI handle given back: the Sorcerer's cubes `M_EX870` make the Sorcerer (315: their entry's + 0x50 names it) and put it where they stand (1:148, 1:79) | an enemy's entry (kinds 3, 4, 0xc): a Days enemy of the maker's class made where the maker stands (`khdays_enemies_make`); another's: an ally there ("Allies"); its kind's script set going at its first tick, as KH2's (`FUN_1403e1240` runs nothing: what its maker gives it next, 1:218, is there as it starts -- the Hydra's heads' necks); nothing (0) for an entry the mod has no kind for |
@@ -260,7 +260,8 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:194, 1:195 | parts of its model in stealth and back (`trap_obj_set_stealth`, `_reset_`: `kn::ModelObj::setStealth` on + 0x7b0's model, a bit a part group; KH2 draws them as a refraction) | the whole model drawn at a quarter of its fade while any part is |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
-| 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`) | nothing (native code) |
+| 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`; the PS3 build's `trap_obj_dead`: its death) | a player's: Days's player's HP to 0, his own defeat; an enemy's nothing |
+| 1:272 on a player | whether he is dead (`trap_obj_is_dead`) | knocked out: Days's HP 0 |
 | 1:278 | n things made at the actor (`FUN_14042a980`: n times `FUN_1403dc950` on the manager at `DAT_142af8b48`) -- **likely its prizes** | nothing: Days gives the stand-in's |
 | 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing; 0:2's text in the trace (`KHDAYS_TRACE_KH2_ENEMIES`: "avoid start", "high_attack_min") |
 | 0:15 | a bit of KH2's story (`FUN_14039a980`: `DAT_1409ab540`'s bits, 0xffff none) | 0: none in Days's field |
@@ -270,6 +271,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:29 | another object plays a motion of this one's set from a frame (`FUN_1403c6cc0`: its set made this one's, + 0x2b8; + 0x180) -- the Magnum Loader's rider, on its message 309. A slot of type 0x14 holds a part per character, named by its object entry's + 7 (its weapon joint: "0010" Sora's body, "0011" his keyblade, "0190" Riku's body, "0191" his weapon) | as KH2, on another of the port's actors: its own part when the slot has one (its own set kept for its own motions, its weapon its "...1"; ended as it plays another), else the set given to it (Final Xemnas's air fight carries Riku in his AQ10 so) |
 | 1:58 | flying (`trap_obj_fly`) at a velocity of its own (`FUN_140421ce0`: + 0x20 the vector made one long times its w, + 0x108 a value, class 5, whose movement `FUN_140421c80` keeps + 0x108 of it an evaluation, eased toward the steering) | as KH2 (class 5 ends with 1:74 or a jump) |
 | 1:66, 1:69, 1:84, 1:97, 1:179 | + 0x120's 0x8000000 set; the float at + 0x19c; the object at + 0x5c0 (2:9's); where + 0x128 lies; + 0x118 (its fall's motion) set | as KH2 |
+| 1:84 on a player, 1:361 | a player's sheet (KH2's player's `YS::SHEET`: + 0 his health's bar, + 0x244 his `PartRam`); a sheet's level (`trap_sheet_level`, `SHEET::get_level`: the PartRam's byte + 0xf, 0 without one) | his sheet made of Days's player's (his HP and most; his level, his member record's, `gPartyMembers` + 2, at most KH2's 99) -- until 2026-11-19 1:84 on a player gave the running enemy's own |
 | 1:83 | a point given on a bone (0x4000 the actor itself, in its own axes) in the world (`FUN_1403b50f0`: the bone's matrix, the point through it) | the pose the enemy has now |
 | 1:90 | a state's name shouted (`trap_obj_act_shout`): `FUN_1403cacd0` lists it with the shouter, `FUN_1403c9d40` sends the list to every object once a frame -- with a delay each its own time at random below it (+ 0x4c0 .. + 0x4d0, KH2's chance), else at once -- and each runs its own state of that name's shout routine (the state record's + 0x14, event 5; `FUN_1403ca950` through `FUN_1403e2000`), given its own handle and the shouter's; no state is entered | every KH2 enemy of the field, at the next frame's first tick, once the field's loose threads ran (2:20). Until 2026-11-10 the port entered the state at once: the Silver Rock, whose `rc_address_shift_appear` shouts its own name, entered it again and again within one tick and the game stood still |
 | 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it |
@@ -1001,6 +1003,20 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   1966, and his motions' 1852 and 1864): no block stops them. His ATTACKs (1843, 1844, 1881, 1912) are reflected by a
   block or a blow; 1843 alone reflects itself REFLECT, into his motion 140 -- his recoil and counter, which offers his
   reaction command (the others NULL: he goes on); seen in window runs ("Attacks reflected").
+- **Marluxia** `N_CM000_BTL` (his Absent Silhouette and data battle; voice bank `n_marluxia`, his KH2 mission
+  `HB38_FM_MAR`) (2026-11-19): his doom. `battle_start` (code word 0x4209) reads the player's level (1:84 on the
+  player, 1:361: `trap_sheet_level`) and, at its motion's mark 2 (1:151), starts a thread (0x43b7) whose count begins
+  there: its figures are his effects 28 to 37 (a digit each, 28 + the digit) over the player's head, laid along the
+  camera's left (its way, 1:306 less 1:305, flat, turned -90 degrees by 0:13: 35 apart, about its middle). His trigger
+  15 takes 1 off it for each attack of his list that lands on a player not invincible (1:225), and at 0 or below calls
+  1:209 on the player: his death (Days's: his HP to 0). The player's hits on him add 13, 7, 3 or 1 (its thread
+  0x2b7); the player knocked out and up again (1:272), it stands at 1 at least. Three of the port's calls on a
+  player gave the running enemy's own (`self_of`): 1:84 his sheet, 1:155 his health -- Sephiroth's Heartless Angel
+  read his own health for the player's and left himself 1 -- and 1:209 did nothing; a player has a sheet of his own
+  now (Days's HP and most, his level: his member record's, at most KH2's 99 -- the doom's two figures; a Days player
+  at 100 began at "00"). Seen (window runs, 2026-11-19): the count from 99 down by his hits, 1 a hit; with the level
+  set to 3 (a local test switch) the player fell at 0 (90.11 s). **Open**: its two figures stand the other way round
+  (95 shown "59"): the KH2 enemies' world is a mirror of KH2's (the next fix).
 
 ### Final Xemnas and Riku (2026-11-16)
 

@@ -1077,6 +1077,13 @@ void trace_calls(ai::Calls &calls)
 }
 
 std::map<unsigned, std::unique_ptr<Object>> players; // each of Days's players as KH2's scripts see them
+std::map<unsigned, unsigned> player_actors;           // each player's actor (Ov022_ActorUpdate's), by his object
+// each player's sheet as KH2's scripts ask it (World::player_sheet): its record and its PartRam's, in their memory
+struct PlayerSheet final {
+    std::uint32_t sheet = 0, part = 0;
+    int told_hp = -1, told_level = -1;
+};
+std::map<unsigned, PlayerSheet> player_sheets;
 // A Days hit as KH2's scripts read it, trigger 6's argument: + 0x26 its reaction's kind, 2 a small one (2:8 asks
 // whether it is past 1, FUN_1403ce980; the Strafer's and the cubes' revenge turn on it)
 std::unique_ptr<Object> days_hit;
@@ -2960,6 +2967,53 @@ public:
     {
         const auto h = held.find(days_object(o));
         return h != held.end() && h->second.unhittable;
+    }
+    std::uint32_t player_sheet(const Object &o) override
+    {
+        const unsigned object = days_object(o);
+        const auto actor = player_actors.find(object);
+        if (object == 0 || actor == player_actors.end())
+            return 0;
+        PlayerSheet &s = player_sheets[object];
+        if (s.sheet == 0) {
+            s.sheet = mod().memory.add(0x270, "a player's sheet", true);
+            s.part = mod().memory.add(0x20, "a player's PartRam", true);
+        }
+        const int hp = std::max(0, khdays_kh2_shell_player_hp(actor->second));
+        const int most = std::max(1, khdays_kh2_shell_player_most_hp(actor->second));
+        const int level = khdays_kh2_shell_player_level(actor->second);
+        mod().memory.set_u32(s.sheet, std::uint32_t(hp));
+        mod().memory.set_u32(s.sheet + 4, std::uint32_t(most));
+        mod().memory.set_u32(s.sheet + 8, 0);
+        mod().memory.set_u32(s.sheet + 0x244, s.part);
+        mod().memory.set_u32(s.sheet + 0x268, o.address());
+        // (KH2's levels end at 99: Marluxia's doom counts down from it in two figures -- a Days player at 100 began
+        // at "00")
+        mod().memory.set_u32(s.part + 0xc, std::uint32_t(std::clamp(level, 0, 99)) << 24);
+        if (tracing() && (s.told_hp != hp || s.told_level != level)) {
+            s.told_hp = hp, s.told_level = level;
+            khdays_log("kh2 enemies: player %08x's sheet: health %d of %d, level %d", object, hp, most, level);
+        }
+        return s.sheet;
+    }
+    int player_health(const Object &o) override
+    {
+        const auto actor = player_actors.find(days_object(o));
+        return actor != player_actors.end() ? khdays_kh2_shell_player_hp(actor->second) : -1;
+    }
+    int add_player_health(const Object &o, int amount, int bar) override
+    {
+        const unsigned object = days_object(o);
+        const auto actor = player_actors.find(object);
+        if (object == 0 || actor == player_actors.end() || bar != 0)
+            return 0;
+        const int hp = std::max(0, khdays_kh2_shell_player_hp(actor->second));
+        const int most = std::max(1, khdays_kh2_shell_player_most_hp(actor->second));
+        const int now = std::clamp(hp + amount, 0, most);
+        khdays_kh2_shell_player_set_hp(actor->second, now);
+        if (tracing())
+            khdays_log("kh2 enemies: player %08x's health %d to %d (a script's %d)", object, hp, now, amount);
+        return now;
     }
     int mission(unsigned number, int first, int second) override
     {
@@ -8760,6 +8814,12 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     waiting_threads.clear();
     player_of_node.clear();
     players.clear();
+    player_actors.clear();
+    for (const auto &[object, s] : player_sheets) {
+        mod().memory.remove(s.sheet);
+        mod().memory.remove(s.part);
+    }
+    player_sheets.clear();
     recoils.clear();
     delivering = {};
     days_hit.reset();
@@ -9425,6 +9485,7 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
     }
     if (node != 0)
         player_of_node[node] = object;
+    player_actors[object] = unsigned(KHDAYS_REF(actor));
     // thrown back by a reflection of his blow (reflect_player)
     if (const auto r = recoils.find(object); r != recoils.end()) {
         khdays_kh2_shell_player_recoil(unsigned(KHDAYS_REF(actor)), r->second.data());

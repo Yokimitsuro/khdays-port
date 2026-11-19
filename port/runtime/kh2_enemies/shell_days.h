@@ -103,6 +103,14 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
 
 /* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */
 int khdays_kh2_shell_player_hp(unsigned actor);
+/* Its most HP (+0x16, nHpMax), -1 the same. */
+int khdays_kh2_shell_player_most_hp(unsigned actor);
+/* Its level: its member record's (gPartyMembers + 0x104 x its nId, + 0x9: + 2, the level less 1), 0 when not known (the
+ * record not made: its + 6 0) -- what KH2's player's sheet gives a script (1:361, YS::SHEET::get_level). */
+int khdays_kh2_shell_player_level(unsigned actor);
+/* Its HP made `hp` (Ov022_ActorSetHp: kept to its most, its knock-out at 0), on the host alone -- KH2's script adding
+ * to its player's health (1:155: Sephiroth's Heartless Angel leaves him 1). */
+void khdays_kh2_shell_player_set_hp(unsigned actor, int hp);
 
 /* A player's actor's pad this frame, as Ov022_TranslateCommandToAction reads it before it locks him: the buttons pressed
  * (+0x18: 1 the command, 0x800 the jump) in `pressed`, the way his D-pad holds in `heading` -- the game's own heading

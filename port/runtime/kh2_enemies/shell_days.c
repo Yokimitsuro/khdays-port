@@ -441,6 +441,42 @@ int khdays_kh2_shell_player_hp(unsigned actor)
     return actor != 0 && khdays_game_ram(actor + PLAYER_HP) ? (int)rd16(actor + PLAYER_HP) : -1;
 }
 
+#define PLAYER_HP_MOST 0x16u /* u16 */
+#define PLAYER_MEMBER 0x9u   /* u8: its member record's number (nId) */
+#define PARTY_MEMBERS 0x0204c678u /* gPartyMembers: four records of 0x104 bytes */
+#define MEMBER_SIZE 0x104u
+#define MEMBER_LEVEL 0x2u /* u8: its level less 1 */
+#define MEMBER_MADE 0x6u  /* u16: not 0 once made (runtime/net/roomlist.c's own_level) */
+
+extern void Ov022_ActorSetHp(KhdaysRef actor, int hp);
+
+int khdays_kh2_shell_player_most_hp(unsigned actor)
+{
+    return actor != 0 && khdays_game_ram(actor + PLAYER_HP_MOST) ? (int)rd16(actor + PLAYER_HP_MOST) : -1;
+}
+
+int khdays_kh2_shell_player_level(unsigned actor)
+{
+    if (actor == 0 || !khdays_game_ram(actor + PLAYER_MEMBER)) {
+        return 0;
+    }
+    const unsigned member = *(const unsigned char *)KHDAYS_W(actor + PLAYER_MEMBER);
+    const unsigned record = PARTY_MEMBERS + MEMBER_SIZE * (member & 3u);
+    if (!khdays_game_ram(record + MEMBER_MADE) || rd16(record + MEMBER_MADE) == 0) {
+        return 0;
+    }
+    return (int)*(const unsigned char *)KHDAYS_W(record + MEMBER_LEVEL) + 1;
+}
+
+void khdays_kh2_shell_player_set_hp(unsigned actor, int hp)
+{
+    /* the host's alone: its actors' HP are the game's (a guest's copy follows) */
+    if (Session_GetLocalPlayerIndex() != 0 || actor == 0 || !khdays_game_ram(actor + PLAYER_HP_MOST)) {
+        return;
+    }
+    Ov022_ActorSetHp(actor, hp);
+}
+
 int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
 {
     if (actor == 0 || !khdays_game_ram(actor + PLAYER_ANGLE_BIAS + 1u) || pressed == NULL || heading == NULL) {

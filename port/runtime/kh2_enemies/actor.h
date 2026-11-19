@@ -799,6 +799,24 @@ public:
     {
         return false;
     }
+    // 1:84 on a player (no actor of the port's): his sheet as KH2's player has one (YS::SHEET, 0x270 bytes: + 0 his
+    // health's bar, its now, most and least; + 0x244 his PartRam, its + 0xf his level, 1:361), made anew from Days's
+    // player each time it is asked; 0 none (an object no player's)
+    virtual std::uint32_t player_sheet(const Object & /*player*/)
+    {
+        return 0;
+    }
+    // 1:155 on a player: `amount` added to his health's bar `bar` (YS::SHEET::_add_hp: kept between its least and
+    // most), Days's player's HP; his health then, 0 none
+    virtual int add_player_health(const Object & /*player*/, int /*amount*/, int /*bar*/)
+    {
+        return 0;
+    }
+    // a player's health now (Days's player's HP), -1 an object no player's: 1:272 counts him dead at 0
+    virtual int player_health(const Object & /*player*/)
+    {
+        return -1;
+    }
 };
 
 // Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)
