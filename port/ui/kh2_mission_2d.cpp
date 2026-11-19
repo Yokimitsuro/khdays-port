@@ -72,14 +72,21 @@ constexpr float kWideColumnMove = 85.0F, kKh2Middle = 256.0F;
 // Sora's face, its sequence's part 0, and "SORA" written on its bar, part 1), shows the player playing: his portrait
 // by his HP gauge (character_portraits.h), turned to face the middle, in the face's place, and his character's name
 // over the bar's, the bar's plain stretch beside it laid over that first -- where the name and the plain stretch lie
-// in the bar's part our measures of its HD picture, in its IMGD's dots
+// in the bar's part our measures of its HD picture, in its IMGD's dots. Lexaeus's power counts (HB33_FM_LEX's counter
+// 0: Sora's face, part 1 over its shadow, part 2 -- black, half clear --, and "SORA" a part of its own, part 0): his
+// portrait over the face (the shadow taken out), the name part taken out and his name in its place, as wide in the
+// middle (no plain stretch: `plain` empty); where the name's capitals lie in that part, measured
 struct PlayerSide final {
     const char *mission;
     int kind, index;
-    std::size_t face_part, bar_part;
+    std::size_t face_part, bar_part, shadow_part;
     std::array<float, 4> name, plain; // left, top, right, bottom
 };
-constexpr PlayerSide kPlayerSides[] = {{"EH14_MS103", 6, 0, 0, 1, {80, 46, 131, 61}, {20, 46, 71, 61}}};
+constexpr std::size_t kNoPart = std::numeric_limits<std::size_t>::max();
+constexpr PlayerSide kPlayerSides[] = {
+    {"EH14_MS103", 6, 0, 0, 1, kNoPart, {80, 46, 131, 61}, {20, 46, 71, 61}},
+    {"HB33_FM_LEX", 5, 0, 1, 0, 2, {43, 35.25F, 128, 48.5F}, {}},
+};
 
 // Laid over a layer's quads once drawn (a player's half's portrait and name), KH2's dots: a picture (straight RGBA)
 // fitted in its box, its shape kept, at the box's bottom -- turned left for right when `mirror` -- or a text in KH2's
@@ -797,9 +804,15 @@ void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::Sequen
     static std::uint64_t face_key = 0;
     const bool has_face = khdays::ui::local_portrait(face, face_w, face_h, face_key);
     const std::u16string name = khdays::ui::kh2::sys_font().get() ? player_name() : std::u16string();
+    const bool plain = side.plain[2] > side.plain[0];
     for (std::size_t i = 0; i < quads.size(); ++i) {
         const Box b = box_of(quads[i]);
-        if (has_face && is_part(b, parts[side.face_part])) {
+        // the face's shadow (its part's own picture, black): taken out with the face
+        if (has_face && side.shadow_part < parts.size() && is_part(b, parts[side.shadow_part]) &&
+            (quads[i].vertices[0].color & 0xffffffu) == 0) {
+            quads.erase(quads.begin() + std::ptrdiff_t(i));
+            --i;
+        } else if (has_face && is_part(b, parts[side.face_part])) {
             Overlay o;
             o.x0 = b.x0, o.y0 = b.y0, o.x1 = b.x1, o.y1 = b.y1;
             o.texels = &face;
@@ -810,7 +823,26 @@ void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::Sequen
             out.push_back(o);
             quads.erase(quads.begin() + std::ptrdiff_t(i));
             --i;
-        } else if (!name.empty() && is_part(b, parts[side.bar_part]) && b.u1 > b.u0 && b.v1 > b.v0) {
+        } else if (!name.empty() && !plain && is_part(b, parts[side.bar_part]) && b.u1 > b.u0 && b.v1 > b.v0) {
+            // the name a part of its own: taken out, his name as tall as its capitals, in the middle of its stretch
+            const float ax = (b.x1 - b.x0) / (b.u1 - b.u0), ay = (b.y1 - b.y0) / (b.v1 - b.v0);
+            const auto x_at = [&](float u) { return b.x0 + (u - b.u0) * ax; };
+            const auto y_at = [&](float v) { return b.y0 + (v - b.v0) * ay; };
+            Overlay o;
+            o.y0 = y_at(side.name[1]), o.y1 = y_at(side.name[3]);
+            const float room = x_at(side.name[2]) - x_at(side.name[0]);
+            const float wide = khdays::ui::kh2::sys_font().width(name);
+            o.font = (o.y1 - o.y0) * 1.6F / float(khdays::ui::kh2::SysFont::kCellH);
+            if (wide > 0.0F && wide * o.font > room)
+                o.font = room / wide;
+            const float middle = (x_at(side.name[0]) + x_at(side.name[2])) / 2;
+            o.x0 = middle - wide * o.font / 2, o.x1 = middle + wide * o.font / 2;
+            o.text = name;
+            o.alpha = float(quads[i].vertices[0].color >> 24) / 128.0F;
+            out.push_back(o);
+            quads.erase(quads.begin() + std::ptrdiff_t(i));
+            --i;
+        } else if (!name.empty() && plain && is_part(b, parts[side.bar_part]) && b.u1 > b.u0 && b.v1 > b.v0) {
             const float ax = (b.x1 - b.x0) / (b.u1 - b.u0), ay = (b.y1 - b.y0) / (b.v1 - b.v0);
             const auto x_at = [&](float u) { return b.x0 + (u - b.u0) * ax; };
             const auto y_at = [&](float v) { return b.y0 + (v - b.v0) * ay; };
@@ -840,6 +872,20 @@ void player_side(const Piece &p, const PlayerSide &side, std::vector<seq::Sequen
             out.push_back(o);
         }
     }
+}
+
+// The top a piece's column puts it under (kColumnTops); one laid out by the middle of the screen as low as the lowest
+// of those so laid -- two pieces whose halves meet there (Lexaeus's power counts: Sora's "POW" ending at the middle in
+// the left column, Lexaeus's "ER" starting there in the right, "POWER" between them) kept in one row, as KH2's
+// columns start alike; until 2026-11-19 they stood 13 dots apart
+float column_top(const Piece &p)
+{
+    float top = kColumnTops[column_of(p.kh2)];
+    if (p.middle)
+        for (const Piece &o : pieces)
+            if (o.middle)
+                top = std::max(top, kColumnTops[column_of(o.kh2)]);
+    return top;
 }
 
 void emit(Piece &p)
@@ -883,7 +929,7 @@ void emit(Piece &p)
     std::vector<Overlay> overlays;
     if (const PlayerSide *side = player_side_of(p))
         player_side(p, *side, quads[0], overlays);
-    emit_layer(p, 0, quads[0], kColumnTops[column_of(p.kh2)] - p.top * kDot,
+    emit_layer(p, 0, quads[0], column_top(p) - p.top * kDot,
                kImage | (p.middle ? KES_UNDER_TOP : KES_BY_MIDDLE), overlays);
     emit_layer(p, 1, quads[1], 0.0F, kImage | KES_UNDER_TOP);
 }

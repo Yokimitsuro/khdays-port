@@ -1390,6 +1390,13 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   trigger 6 (KH2's damage, `YS::UNITSCRIPT::DamageCallback`): the player's by 100 x damage / 4000, Luxord's by 100 x
   damage / 3000, and his card games' results (his script's 4:9); his damage pattern 9 keeps him standing till his own
   runs out (RUNTIME_MAP.md section 37).
+  Lexaeus's power counts (`HB33_FM_LEX`, counters 0 and 1: "SORA POW" in the left column, "ER LEXAEUS" in the right,
+  "POWER" whole between them in the middle of the screen, each half its counter's part 37 or 36 placed at the middle)
+  are two pieces met by the middle: both laid out by it, in one row -- the lower of their columns' tops (the left's,
+  under Days's hearts and clock); until 2026-11-19 they stood 13 dots apart and "POWER" broke in two. The player's
+  half as Luxord's (2026-11-19, the maintainer's wish): his portrait over Sora's face (part 1; its shadow, part 2, the
+  same picture black and half clear, taken out) and his name in the middle of "SORA"'s place ("SORA" a part of its
+  own, part 0, taken out; its capitals at 60.75 to 109, rows 35.25 to 48.5 of its IMGD).
 - **The port's mission**: its script's main thread (trigger 3) runs at KH2's 60 ticks a second, its timer counts
   while its bar is up, its count as `MISSION_COUNT::set` keeps it; its bar is up from its start (as KH2's after its
   start camera; whether trigger 2 is its start or its end is not known: the port runs it as it ends), its cameras and
