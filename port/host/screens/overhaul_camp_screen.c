@@ -3,6 +3,7 @@
  * Panels, Files and save pages, the transitions between them without the game's black -- from the mod's layouts
  * (docs/MENU_OVERHAUL.md), as runtime/menus/camp.c reads the game's menu. */
 #include "camp_screen.h"
+#include "camp_look.h"
 #include "shop_screen.h"
 
 #include "../app/devices.h"
@@ -27,11 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NAMES 21 /* status_&.s: the characters' names, in the game's order */
 #define LABEL_HEARTS 11
-#define LABEL_TRIALS 13
-#define PROMPT 63  /* mlt_&.s: A's prompt, then B's (the menu page has no B: cut there) */
-#define INFO_DAY 0 /* UI/btl/&/info.s: "DAY %d" */
 #define SAV_YES 5  /* UI/cm/str/sav_&.s: "Yes", then "No" */
 #define SAV_NO 6
 #define SAV_LEVEL 9      /* "LV %d" */
@@ -43,8 +40,6 @@
 #define LRD_NO 8
 #define DIMMED 0.4f  /* the options while the question is open */
 #define CFG_HIDDEN 3 /* UI/cm/str/cfg_&.s: "?", a setting the game has off */
-#define GLYPH_A 0x3349
-#define GLYPH_B 0x3314
 #define VIEWER_GLYPH_X 0x3322 /* the DS's X, L, R, Y and directions in the game's strings (layout_screen.c's) */
 #define VIEWER_GLYPH_L 0x3318
 #define VIEWER_GLYPH_Y 0xE059
@@ -52,19 +47,11 @@
 #define VIEWER_GLYPH_RIGHT 0x333b
 #define VIEWER_GLYPH_UP 0x332b
 #define VIEWER_GLYPH_DOWN 0x334a
-#define LANGUAGES 6
-#define RING 3.0f /* the white ring around the place's circle */
 #define FACE_RING 4.0f
-#define PLATE_ALPHA 0.6f /* a member's plate (the character select's) */
-#define PLATE_EDGE 2.0f
-#define PLATE_READY 4.0f
-static const Uint8 BLACK[3] = {0, 0, 0}, EDGE_GREY[3] = {110, 110, 110};
-static const Uint8 WHITE[3] = {255, 255, 255};
 /* the level's four numbers (labels 0-3), then the rows' (labels, the fields that draw them) */
 static const int LEVEL_FIELDS[4] = {2, 3, 5, 6};
 static const int ROW_LABELS[9] = {4, 5, 6, 7, 8, 9, 10, 12, 14};
 static const int ROW_FIELDS[9] = {7, 9, 0xb, 0xc, 0xd, 0xe, 0xf, 0x11, 0x13};
-static const char *const CODES[LANGUAGES] = {"", "en", "fr", "de", "it", "es"};
 
 /* What the one-screen picture needs, read for a language without the renderer (it may ask before
  * the screen draws). */
@@ -83,65 +70,13 @@ typedef struct Plan {
 
 static Plan plans[LANGUAGES];
 
+static KhdaysCampLook s; /* what the Mission Mode camp keeps too (camp_look.h) */
 static struct {
-    int tried, ok;
-    KhdaysLayout layout;
-    KhdaysLayoutStrings status, root, mlt, info, sav, cfg, lrd;
-    SDL_Texture *backdrop;      /* the plan's, drawn around the model's window */
+    KhdaysLayoutStrings lrd;
     SDL_Texture *page_backdrop; /* the Preferences page's, drawn over the menu's while the two slide */
-    float window[4];
-    unsigned short *option[KHDAYS_CAMP_OPTIONS], *story_option[KHDAYS_CAMP_OPTIONS], *story_sub[4];
-    unsigned short *menu_place, *mode_label, *mission_mode, *difficulty[3];
-    float bars[5], panel[4], trials[4];
-    float description_pitch, overlap, member_pitch;
-    float page_tabs[5], page_rows[6], detail_pitch;
-    int page_top; /* the first of the section's settings shown */
-    Uint8 munny_colour[3], hearts_colour[3], day_colour[3];
-    SDL_Texture *hearts_word; /* hearts_label.png: the heart points' word as DDD's MUNNY is drawn */
+    SDL_Texture *hearts_word;   /* hearts_label.png: the heart points' word as DDD's MUNNY is drawn */
     int hearts_word_w, hearts_word_h;
-    KhdaysModFaces faces; /* the mods' characters' */
-} s;
-
-static int open_file(int language, char *path, int size, char *folder, int folder_size)
-{
-    char relative[96], *slash;
-    if (language < 1 || language >= LANGUAGES) {
-        return 0;
-    }
-    snprintf(relative, sizeof(relative), "layouts/camp/%s/camp.txt", CODES[language]);
-    if (!khdays_mods_find(relative, path, size)) {
-        return 0;
-    }
-    snprintf(folder, (size_t)folder_size, "%s", path);
-    slash = strrchr(folder, '/');
-    if (strrchr(folder, '\\') > slash) {
-        slash = strrchr(folder, '\\');
-    }
-    if (slash != NULL) {
-        slash[1] = '\0';
-    }
-    return 1;
-}
-
-/* Calls `line` with each of the file's lines (changed in place). */
-static int each_line(const char *path, void (*line)(char *text, const char *folder, void *ctx), const char *folder,
-                     void *ctx)
-{
-    size_t size = 0;
-    char *text = (char *)SDL_LoadFile(path, &size), *next;
-    if (text == NULL) {
-        return 0;
-    }
-    for (char *l = text; l != NULL && *l != '\0'; l = next) {
-        next = strchr(l, '\n');
-        if (next != NULL) {
-            *next++ = '\0';
-        }
-        line(l, folder, ctx);
-    }
-    SDL_free(text);
-    return 1;
-}
+} more;
 
 static void plan_line(char *line, const char *folder, void *ctx)
 {
@@ -189,8 +124,8 @@ static const Plan *plan(int language)
     p = &plans[language];
     if (!p->tried) {
         p->tried = 1;
-        if (open_file(language, path, (int)sizeof(path), folder, (int)sizeof(folder)) &&
-            each_line(path, plan_line, folder, p)) {
+        if (khdays_camp_open_file(language, path, (int)sizeof(path), folder, (int)sizeof(folder)) &&
+            khdays_camp_each_line(path, plan_line, folder, p)) {
             p->ok = p->backdrop != NULL && p->source[2] > 0 && p->source[3] > 0 && p->window[2] > 0 && p->window[3] > 0;
             if (p->view[2] <= 0 || p->view[3] <= 0) {
                 memcpy(p->view, p->source, sizeof(p->view));
@@ -375,11 +310,12 @@ static const StoryPlan *story_plan(void)
             if (slash != NULL) {
                 slash[1] = '\0';
             }
-            each_line(path, story_line, folder, NULL);
+            khdays_camp_each_line(path, story_line, folder, NULL);
             {
                 char table[1100];
                 snprintf(table, sizeof(table), "%spanels.txt", folder);
-                each_line(table, story_panel_line, folder, NULL); /* (none: the panels' plate stays empty) */
+                khdays_camp_each_line(table, story_panel_line, folder,
+                                      NULL); /* (none: the panels' plate stays empty) */
             }
             stp.ok = stp.atlas != NULL && stp.tile[0] > 0 && stp.tile[1] > 0 &&
                      stp.sheet[2] >= KHDAYS_LAYOUT_W + stp.tile[0] && stp.sheet[3] >= KHDAYS_LAYOUT_H + stp.tile[1] &&
@@ -474,14 +410,14 @@ static void forget(void)
         SDL_DestroyTexture(s.backdrop);
         s.backdrop = NULL;
     }
-    if (s.page_backdrop != NULL) {
-        SDL_DestroyTexture(s.page_backdrop);
-        s.page_backdrop = NULL;
+    if (more.page_backdrop != NULL) {
+        SDL_DestroyTexture(more.page_backdrop);
+        more.page_backdrop = NULL;
     }
     forget_group();
-    if (s.hearts_word != NULL) {
-        SDL_DestroyTexture(s.hearts_word);
-        s.hearts_word = NULL;
+    if (more.hearts_word != NULL) {
+        SDL_DestroyTexture(more.hearts_word);
+        more.hearts_word = NULL;
     }
     for (int i = 0; i < KHDAYS_CAMP_OPTIONS; ++i) {
         SDL_free(s.option[i]);
@@ -508,98 +444,8 @@ static void forget(void)
     khdays_layout_strings_free(&s.info);
     khdays_layout_strings_free(&s.sav);
     khdays_layout_strings_free(&s.cfg);
-    khdays_layout_strings_free(&s.lrd);
+    khdays_layout_strings_free(&more.lrd);
     memset(s.page_rows, 0, sizeof(s.page_rows));
-}
-
-static void colour(const char *line, const char *key, Uint8 out[3])
-{
-    char format[64];
-    int r, g, b;
-    snprintf(format, sizeof(format), "%s %%d %%d %%d", key);
-    if (SDL_sscanf(line, format, &r, &g, &b) == 3) {
-        out[0] = (Uint8)r, out[1] = (Uint8)g, out[2] = (Uint8)b;
-    }
-}
-
-/* A line's words (UTF-8) kept as UTF-16. */
-static void words(unsigned short **slot, const char *text)
-{
-    const size_t room = strlen(text) + 1;
-    SDL_free(*slot);
-    *slot = (unsigned short *)SDL_malloc(room * sizeof(unsigned short));
-    if (*slot != NULL) {
-        khdays_layout_utf8(text, *slot, (int)room);
-    }
-}
-
-static void screen_line(char *line, const char *folder, void *ctx)
-{
-    float a, b, c, d, e;
-    int n, at;
-    (void)ctx;
-    if (khdays_layout_line(&s.layout, line, folder)) {
-        return;
-    }
-    if (SDL_sscanf(line, "bars %f %f %f %f %f", &a, &b, &c, &d, &e) == 5) {
-        s.bars[0] = a, s.bars[1] = b, s.bars[2] = c, s.bars[3] = d, s.bars[4] = e;
-    } else if (SDL_sscanf(line, "panel %f %f %f %f", &a, &b, &c, &d) == 4) {
-        s.panel[0] = a, s.panel[1] = b, s.panel[2] = c, s.panel[3] = d;
-    } else if (SDL_sscanf(line, "trials %f %f %f %f", &a, &b, &c, &d) == 4) {
-        s.trials[0] = a, s.trials[1] = b, s.trials[2] = c, s.trials[3] = d;
-    } else if (strncmp(line, "menu_place ", 11) == 0) {
-        words(&s.menu_place, line + 11);
-    } else if (strncmp(line, "mode_label ", 11) == 0) {
-        words(&s.mode_label, line + 11);
-    } else if (strncmp(line, "mission_mode ", 13) == 0) {
-        words(&s.mission_mode, line + 13);
-    } else if (SDL_sscanf(line, "difficulty %d %n", &n, &at) == 1 && n >= 0 && n < 3) {
-        words(&s.difficulty[n], line + at);
-    } else if (SDL_sscanf(line, "description_pitch %f", &a) == 1) {
-        s.description_pitch = a;
-    } else if (SDL_sscanf(line, "detail_pitch %f", &a) == 1) {
-        s.detail_pitch = a;
-    } else if (SDL_sscanf(line, "page_tabs %f %f %f %f %f", &a, &b, &c, &d, &e) == 5) {
-        s.page_tabs[0] = a, s.page_tabs[1] = b, s.page_tabs[2] = c, s.page_tabs[3] = d, s.page_tabs[4] = e;
-    } else if (SDL_sscanf(line, "page_rows %f %f %f %f %f %d", &a, &b, &c, &d, &e, &n) == 6 && n > 0) {
-        s.page_rows[0] = a, s.page_rows[1] = b, s.page_rows[2] = c, s.page_rows[3] = d, s.page_rows[4] = e;
-        s.page_rows[5] = (float)n;
-    } else if (SDL_sscanf(line, "digit_overlap %f", &a) == 1) {
-        s.overlap = a;
-    } else if (SDL_sscanf(line, "members %f", &a) == 1) {
-        s.member_pitch = a;
-    } else if ((SDL_sscanf(line, "option %d %n", &n, &at) == 1 ||
-                SDL_sscanf(line, "story_option %d %n", &n, &at) == 1 ||
-                SDL_sscanf(line, "story_sub %d %n", &n, &at) == 1) &&
-               n >= 0 && n < (strncmp(line, "story_sub", 9) == 0 ? 4 : KHDAYS_CAMP_OPTIONS)) {
-        unsigned short **slot = strncmp(line, "story_sub", 9) == 0 ? &s.story_sub[n]
-                                : line[0] == 's'                   ? &s.story_option[n]
-                                                                   : &s.option[n];
-        const size_t room = strlen(line + at) + 1;
-        SDL_free(*slot);
-        *slot = (unsigned short *)SDL_malloc(room * sizeof(unsigned short));
-        if (*slot != NULL) {
-            khdays_layout_utf8(line + at, *slot, (int)room);
-        }
-    } else {
-        colour(line, "munny_colour", s.munny_colour);
-        colour(line, "hearts_colour", s.hearts_colour);
-        colour(line, "day_colour", s.day_colour);
-    }
-}
-
-/* The notice's style (Mission Mode's line over the menu): the file's, or for a file made before it
- * tools/hd/ddd_camp.py's -- the prompt's size, right-aligned in the top band before the settings
- * key. */
-static void notice_style(void)
-{
-    const KhdaysLayoutText *prompt = khdays_layout_text(&s.layout, "prompt");
-    char line[128];
-    if (khdays_layout_text(&s.layout, "notice") != NULL || prompt == NULL) {
-        return;
-    }
-    snprintf(line, sizeof(line), "text notice 1700 %.1f %.4f right 255", prompt->y - (1016.0f - 46.0f), prompt->size);
-    khdays_layout_line(&s.layout, line, "");
 }
 
 static int load(SDL_Renderer *renderer, int language)
@@ -611,23 +457,24 @@ static int load(SDL_Renderer *renderer, int language)
     forget();
     s.layout.who = "camp menu";
     s.layout.renderer = renderer;
-    if ((p = plan(language)) == NULL || !open_file(language, path, (int)sizeof(path), folder, (int)sizeof(folder))) {
+    if ((p = plan(language)) == NULL || !khdays_camp_open_file(language, path, (int)sizeof(path), folder,
+                                                               (int)sizeof(folder))) {
         return 0;
     }
     memcpy(s.window, p->window, sizeof(s.window));
     s.backdrop = khdays_layout_texture(&s.layout, p->backdrop_path, 0, &w, &h);
     if (p->page_backdrop != NULL) {
-        s.page_backdrop = khdays_layout_texture(&s.layout, p->page_backdrop_path, 0, &w, &h);
+        more.page_backdrop = khdays_layout_texture(&s.layout, p->page_backdrop_path, 0, &w, &h);
     }
     s.bars[3] = 0;
-    each_line(path, screen_line, folder, NULL);
-    notice_style();
+    khdays_camp_each_line(path, khdays_camp_screen_line, folder, &s);
+    khdays_camp_notice_style(&s);
     {
         /* the heart points' word as a picture, when the folder has one (else the game's words) */
         char word[1100];
         snprintf(word, sizeof(word), "%shearts_label.png", folder);
         if (SDL_GetPathInfo(word, NULL)) {
-            s.hearts_word = khdays_layout_texture(&s.layout, word, 0, &s.hearts_word_w, &s.hearts_word_h);
+            more.hearts_word = khdays_layout_texture(&s.layout, word, 0, &more.hearts_word_w, &more.hearts_word_h);
         }
     }
     if (!khdays_layout_ready(&s.layout) || s.backdrop == NULL || s.bars[3] <= 0 || s.panel[2] <= 0 ||
@@ -652,7 +499,7 @@ static int load(SDL_Renderer *renderer, int language)
     snprintf(table, sizeof(table), "UI/cm/str/cfg_%s.s.z", CODES[language]);
     khdays_layout_strings(reader, table, &s.cfg, s.layout.who);
     snprintf(table, sizeof(table), "UI/load/lrd_%s.s.z", CODES[language]);
-    khdays_layout_strings(reader, table, &s.lrd, s.layout.who);
+    khdays_layout_strings(reader, table, &more.lrd, s.layout.who);
     files_load(renderer);
     save_load(renderer);
     return 1;
@@ -783,32 +630,6 @@ int khdays_overhaul_camp_model(KhdaysCampModel *out)
 
 /* ---- Drawing --------------------------------------------------------------------------------- */
 
-static const float *place(const char *name)
-{
-    static const float none[4] = {0, 0, 0, 0};
-    const KhdaysLayoutPlace *p = khdays_layout_place(&s.layout, name);
-    return p != NULL ? &p->x : none;
-}
-
-static void text(const KhdaysLayoutFrame *fr, const char *style, const unsigned short *t, float dx, float dy)
-{
-    khdays_layout_draw_text(&s.layout, fr, style, t, dx, dy, 1.0f);
-}
-
-static void number(const KhdaysLayoutFrame *fr, const char *style, const char *digits, float dx, float dy)
-{
-    unsigned short wide[48];
-    khdays_layout_utf8(digits, wide, 48);
-    text(fr, style, wide, dx, dy);
-}
-
-/* A style's capitals' height. */
-static float capitals(const char *style)
-{
-    const KhdaysLayoutText *st = khdays_layout_text(&s.layout, style);
-    return st != NULL ? (s.layout.ink_bottom - s.layout.ink_top) * st->size : 0;
-}
-
 static int gummi_number(const KhdaysLayoutFrame *fr, uint32_t value, float right, float top, float h, int red);
 #define NUMBER_SCALE 0.8f /* the munny's and the heart points' digits: KHGummi's, this much of their place's height */
 
@@ -852,13 +673,13 @@ static void big_digits(const KhdaysLayoutFrame *fr, uint32_t value, const float 
 static void hearts_word(const KhdaysLayoutFrame *fr)
 {
     const KhdaysLayoutPlace *at = khdays_layout_place(&s.layout, "hearts_label");
-    if (s.hearts_word != NULL && at != NULL && at->h > 0 && s.hearts_word_h > 0) {
-        const float h = at->h * 1.6f, w = (float)s.hearts_word_w * h / (float)s.hearts_word_h;
+    if (more.hearts_word != NULL && at != NULL && at->h > 0 && more.hearts_word_h > 0) {
+        const float h = at->h * 1.6f, w = (float)more.hearts_word_w * h / (float)more.hearts_word_h;
         const SDL_FRect dst = khdays_layout_to_window(fr, at->x, at->y - at->h * 0.45f, w, h);
-        SDL_RenderTexture(s.layout.renderer, s.hearts_word, NULL, &dst);
+        SDL_RenderTexture(s.layout.renderer, more.hearts_word, NULL, &dst);
         return;
     }
-    text(fr, "hearts_label", khdays_layout_string(&s.status, LABEL_HEARTS), 0, 0);
+    khdays_camp_text(&s, fr, "hearts_label", khdays_layout_string(&s.status, LABEL_HEARTS), 0, 0);
 }
 
 /* The collection's pointing glove sways as KH2's, independent of refresh rate (layout_screen.h). */
@@ -871,7 +692,7 @@ static float glove_motion(void)
  * beside its own; one for the camp, flying from the options to the answers and back. */
 static void firefly(const KhdaysLayoutFrame *fr, float right, float middle, float alpha)
 {
-    const float *glove = place("glove");
+    const float *glove = khdays_camp_place(&s, "glove");
     const float unit = KHDAYS_FIREFLY_UNIT * (glove[3] > 0 ? glove[3] / 91.0f : 1.0f);
     khdays_layout_firefly(s.layout.renderer, fr, KHDAYS_FIREFLY_CAMP, right - 15.0f * unit, middle, unit, alpha);
 }
@@ -883,7 +704,8 @@ static void draw_menu_news(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
  * at the selected one; 1 the page's: the others dimmed, no hand; between while the two slide). */
 static void draw_options(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, float page)
 {
-    const float *lit = place("bar_selected"), *body = place("bar_body"), *glove = place("glove");
+    const float *lit = khdays_camp_place(&s, "bar_selected"), *body = khdays_camp_place(&s, "bar_body"),
+        *glove = khdays_camp_place(&s, "glove");
     const float bx = s.bars[0], by = s.bars[1], pitch = s.bars[3], bh = s.bars[4];
     /* the story's Holo-Missions and Files show their two options in the list's place, as the game's */
     unsigned short *const *names = v->sub != 0 ? s.story_sub + 2 * (v->sub - 1) : v->story ? s.story_option : s.option;
@@ -905,7 +727,8 @@ static void draw_options(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, f
          * dimmed, as the DS's */
         const float alpha = v->question || v->waiting || v->locked[i] ? DIMMED : i != v->selected ? others : 1.0f;
         khdays_layout_draw_text(&s.layout, fr, "option", names[i], bx,
-                                by + (float)i * pitch + body[1] + body[3] / 2 - capitals("option") / 2, alpha);
+                                by + (float)i * pitch + body[1] + body[3] / 2 - khdays_camp_capitals(&s, "option") / 2,
+                                    alpha);
     }
     draw_menu_news(fr, v, names, rows, others);
     /* the hand at the selected one, as the DS's (at the question's answer while it is open, at the
@@ -928,7 +751,8 @@ static void draw_answers_in(const KhdaysLayoutFrame *fr, int yes, const unsigned
 static void draw_answers_words(const KhdaysLayoutFrame *fr, int yes, const unsigned short *yes_word,
                                const unsigned short *no_word)
 {
-    draw_answers_in(fr, yes, yes_word, no_word, place("button_yes"), place("button_no"));
+    draw_answers_in(fr, yes, yes_word, no_word, khdays_camp_place(&s, "button_yes"), khdays_camp_place(&s,
+                                                                                                       "button_no"));
 }
 
 /* The same at the places given (the buttons' x, y, w, h). */
@@ -936,7 +760,7 @@ static void draw_answers_in(const KhdaysLayoutFrame *fr, int yes, const unsigned
                             const unsigned short *no_word, const float *yes_at, const float *no_at)
 {
     static const char *const names[2][2] = {{"button_yes", "button_selected_yes"}, {"button_no", "button_selected_no"}};
-    const float *glove = place("glove");
+    const float *glove = khdays_camp_place(&s, "glove");
     for (int b = 0; b < 2; ++b) {
         const int on = b == 0 ? yes : !yes;
         const float *at = b == 0 ? yes_at : no_at;
@@ -945,7 +769,7 @@ static void draw_answers_in(const KhdaysLayoutFrame *fr, int yes, const unsigned
         }
         khdays_layout_draw_piece(&s.layout, fr, names[b][on], at[0], at[1], at[2], at[3], 1.0f);
         /* a centred style's place is its words' middle */
-        text(fr, "button", b == 0 ? yes_word : no_word, at[0] + at[2] / 2, at[1] + at[3] / 2);
+        khdays_camp_text(&s, fr, "button", b == 0 ? yes_word : no_word, at[0] + at[2] / 2, at[1] + at[3] / 2);
         if (on) {
             khdays_layout_draw_piece(&s.layout, fr, "glove", at[0] + glove[0] + glove_motion(),
                                      at[1] + at[3] / 2 + glove[1], glove[2], glove[3], 1.0f);
@@ -977,7 +801,7 @@ static void draw_text_lines(const KhdaysLayoutFrame *fr, const unsigned short *t
             const int take = SDL_min(255, n - at);
             memcpy(line, t + at, (size_t)take * sizeof(unsigned short));
             line[take] = 0;
-            text(fr, style, line, 0, dy);
+            khdays_camp_text(&s, fr, style, line, 0, dy);
         }
         dy += pitch;
         t += n;
@@ -994,94 +818,6 @@ static void draw_lines(const KhdaysLayoutFrame *fr, const KhdaysLayoutStrings *t
     draw_text_lines(fr, khdays_layout_string(table, record), style, pitch);
 }
 
-/* A setting's words: its cfg_&.s record, or those of a value the port adds (camp.h KHDAYS_CAMP_WORD_*) in the
- * game's language, made in `own`. */
-static const unsigned short *setting_words(int record, int language, unsigned short *own, int room)
-{
-    const int id = record == KHDAYS_CAMP_WORD_FREE        ? TXT_CHASE_FREE
-                   : record == KHDAYS_CAMP_WORD_FREE_HELP ? TXT_CHASE_FREE_HELP
-                                                          : -1;
-    if (id >= 0) {
-        const char *t = khdays_text_in(id, language);
-        khdays_layout_utf8(t != NULL ? t : khdays_text(id), own, room);
-        return own;
-    }
-    return khdays_layout_string(&s.cfg, record);
-}
-
-/* The game's A prompt (mlt_&.s record 63: A's icon and its word, then B's): up to B's icon, the
- * spaces round it left out; with word_alone without A's icon (the word for accepting). */
-static void prompt_part(unsigned short *out, int room, int word_alone)
-{
-    const unsigned short *t = khdays_layout_string(&s.mlt, PROMPT);
-    int n = 0, at = 0;
-    out[0] = 0;
-    if (t == NULL) {
-        return;
-    }
-    if (word_alone) {
-        while (t[at] != 0 && (t[at] == GLYPH_A || t[at] == ' ')) {
-            ++at;
-        }
-    }
-    while (t[at] != 0 && t[at] != GLYPH_B && n < room - 1) {
-        out[n++] = t[at++];
-    }
-    while (n > 0 && out[n - 1] == ' ') {
-        --n;
-    }
-    out[n] = 0;
-}
-
-static void draw_members(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
-{
-    const float *plate = place("member"), *ring = place("member_circle"), *small = place("member_face");
-    for (int i = 0; i < KHDAYS_CAMP_PLACES; ++i) {
-        const KhdaysCampMember *m = &v->member[i];
-        const int ready = m->page == KHDAYS_CAMP_READY;
-        const Uint8 *own = KHDAYS_PLACE_COLOURS[i];
-        /* each place where the DS has it: its own (a place gone leaves its room) */
-        const float x = plate[0] + (float)i * s.member_pitch, y = plate[1];
-        char label[16];
-        unsigned short wide[64];
-        if (!m->present) {
-            continue;
-        }
-        khdays_layout_fill_rounded(s.layout.renderer, fr, x, y, plate[2], plate[3], plate[3] / 2, BLACK, PLATE_ALPHA);
-        khdays_layout_ring_rounded(s.layout.renderer, fr, x, y, plate[2], plate[3], plate[3] / 2,
-                                   ready ? PLATE_READY : PLATE_EDGE, ready ? own : EDGE_GREY, 1.0f);
-        khdays_layout_fill_oval(s.layout.renderer, fr, x + ring[0], y + ring[1], ring[2] + RING, ring[2] + RING, WHITE,
-                                1.0f);
-        khdays_layout_fill_oval(s.layout.renderer, fr, x + ring[0], y + ring[1], ring[2], ring[2], own, 1.0f);
-        snprintf(label, sizeof(label), khdays_text(TXT_ROOM_PLACE), i + 1);
-        khdays_layout_utf8(label, wide, 16);
-        text(fr, "member_tag", wide, x + ring[0], y + ring[1]);
-        if (m->character >= 0 && !khdays_mod_face_draw(&s.faces, &s.layout, fr, m->character, x + small[0],
-                                                       y + small[1], small[2], small[3], 255)) {
-            char name[16];
-            snprintf(name, sizeof(name), "face%d", m->character);
-            khdays_layout_draw_piece(&s.layout, fr, name, x + small[0], y + small[1], small[2], small[3], 1.0f);
-        }
-        {
-            unsigned short mod_name[64];
-            const unsigned short *named = khdays_mod_name(m->character, 0, v->language, mod_name, 64);
-            text(fr, "member_name",
-                 m->name[0] != 0 ? (const unsigned short *)m->name
-                 : named != NULL ? named
-                                 : khdays_layout_string(&s.status, NAMES + (m->character >= 0 ? m->character : 0)),
-                 x, y);
-        }
-        if (ready) {
-            prompt_part(wide, 64, 1);
-            text(fr, "member_ready", wide, x, y);
-        } else if (m->page >= 1 && m->page <= KHDAYS_CAMP_OPTIONS - 1) {
-            text(fr, "member_place", s.option[m->page - 1], x, y);
-        } else if (m->page == KHDAYS_CAMP_IN_MENU) {
-            text(fr, "member_place", s.menu_place, x, y);
-        }
-    }
-}
-
 static void draw_description(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 {
     if (v->question) {
@@ -1090,14 +826,13 @@ static void draw_description(const KhdaysLayoutFrame *fr, const KhdaysCampView *
         unsigned short line[128];
         if (words != NULL) {
             khdays_layout_utf8(words, line, 128);
-            text(fr, "description", line, 0, 0);
+            khdays_camp_text(&s, fr, "description", line, 0, 0);
             return;
         }
     }
     draw_lines(fr, &s.root, v->description, "description", s.description_pitch);
 }
 
-static float width_in(const char *style, const unsigned short *t);
 
 /* The Preferences page's: its sections' tabs, the section's settings, the hand, the scroll bar; the
  * firefly with `lit` (left with the options while the page slides in or out: it flies over after). */
@@ -1105,8 +840,9 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, int 
 {
     const KhdaysCampPage *pg = &v->page;
     const float *tabs = s.page_tabs, *rows = s.page_rows;
-    const float *l = place("page_l"), *r = place("page_r"), *glove = place("page_glove"), *arrow = place("page_arrow");
-    const float gap = place("page_value_gap")[0];
+    const float *l = khdays_camp_place(&s, "page_l"), *r = khdays_camp_place(&s, "page_r"),
+        *glove = khdays_camp_place(&s, "page_glove"), *arrow = khdays_camp_place(&s, "page_arrow");
+    const float gap = khdays_camp_place(&s, "page_value_gap")[0];
     const KhdaysLayoutPiece *left = khdays_layout_piece(&s.layout, "page_arrow_left");
     const KhdaysLayoutPiece *right = khdays_layout_piece(&s.layout, "page_arrow_right");
     const int section = pg->section, first = pg->first[section], count = pg->count[section];
@@ -1117,10 +853,11 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, int 
     for (int i = 0; i < pg->sections; ++i) {
         const int on = i == section;
         const float x = tabs[0] + (float)i * tabs[4], y = tabs[1];
-        const float *at = place(on ? "page_tab_selected" : "page_tab");
+        const float *at = khdays_camp_place(&s, on ? "page_tab_selected" : "page_tab");
         khdays_layout_draw_piece(&s.layout, fr, on ? "page_tab_selected" : "page_tab", x + at[0], y + at[1], at[2],
                                  at[3], 1.0f);
-        text(fr, on ? "page_tab_on" : "page_tab", khdays_layout_string(&s.cfg, pg->title[i]), x + tabs[2] / 2,
+        khdays_camp_text(&s, fr, on ? "page_tab_on" : "page_tab", khdays_layout_string(&s.cfg, pg->title[i]),
+                         x + tabs[2] / 2,
              y + tabs[3] / 2);
     }
     /* the section's settings, the chosen one in sight */
@@ -1141,30 +878,30 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, int 
         const int n = first + s.page_top + i, on = n == pg->chosen;
         const KhdaysCampSetting *st = &pg->setting[n];
         const float x = rows[0], y = rows[1] + (float)i * rows[4], mid = y + rows[3] / 2;
-        const float *at = place(on ? "page_row_selected" : "page_row");
+        const float *at = khdays_camp_place(&s, on ? "page_row_selected" : "page_row");
         const float fade = st->enabled ? 1.0f : DIMMED; /* its arrows: the game changes it not */
         const int value = st->value >= 0 && st->value < st->values ? st->value : 0;
         float vx = x + arrow[0];
         khdays_layout_draw_piece(&s.layout, fr, on ? "page_row_selected" : "page_row", x + at[0], y + at[1], at[2],
                                  at[3], 1.0f);
-        text(fr, "setting", khdays_layout_string(&s.cfg, st->enabled ? st->name : CFG_HIDDEN), x,
-             mid - capitals("setting") / 2);
+        khdays_camp_text(&s, fr, "setting", khdays_layout_string(&s.cfg, st->enabled ? st->name : CFG_HIDDEN), x,
+             mid - khdays_camp_capitals(&s, "setting") / 2);
         if (left != NULL && right != NULL) {
             const float aw = left->w * arrow[3] / left->h;
             unsigned short own[32];
             const unsigned short *found =
-                setting_words(st->enabled ? st->value_name[value] : CFG_HIDDEN, v->language, own, 32);
+                khdays_camp_setting_words(&s, st->enabled ? st->value_name[value] : CFG_HIDDEN, v->language, own, 32);
             static const unsigned short none[1] = {0};
             const unsigned short *words = found != NULL ? found : none;
             khdays_layout_draw_piece(&s.layout, fr, "page_arrow_left", vx, mid - arrow[3] / 2, aw, arrow[3], fade);
             vx += aw + gap;
-            text(fr, "setting_value", words, vx, mid - capitals("setting_value") / 2);
-            vx += width_in("setting_value", words) + gap;
+            khdays_camp_text(&s, fr, "setting_value", words, vx, mid - khdays_camp_capitals(&s, "setting_value") / 2);
+            vx += khdays_camp_width_in(&s, "setting_value", words) + gap;
             khdays_layout_draw_piece(&s.layout, fr, "page_arrow_right", vx, mid - arrow[3] / 2,
                                      right->w * arrow[3] / right->h, arrow[3], fade);
         }
         if (on) {
-            const float *row = place("page_row_selected");
+            const float *row = khdays_camp_place(&s, "page_row_selected");
             khdays_layout_draw_piece(&s.layout, fr, "glove", x + glove[0] + glove_motion(), mid + glove[1], glove[2],
                                      glove[3], 1.0f);
             if (lit) {
@@ -1175,7 +912,7 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, int 
     if (count > shown) {
         /* a scroll bar (DDD's save screen's): its track, its thumb between the room its arrows
          * take above and below, as far down as the rows are */
-        const float *track = place("page_track"), *thumb = place("page_thumb");
+        const float *track = khdays_camp_place(&s, "page_track"), *thumb = khdays_camp_place(&s, "page_thumb");
         const float travel = track[3] - 2 * thumb[1] - thumb[3];
         khdays_layout_draw_piece(&s.layout, fr, "page_track", track[0], track[1], track[2], track[3], 1.0f);
         khdays_layout_draw_piece(&s.layout, fr, "page_thumb", track[0] + thumb[0],
@@ -1201,16 +938,8 @@ static void draw_setting_help(const KhdaysLayoutFrame *fr, const KhdaysCampView 
     draw_lines(fr, &s.cfg, st->help, "description", s.description_pitch);
     if (st->value >= 0 && st->value < st->values) {
         unsigned short own[160];
-        draw_text_lines(fr, setting_words(st->value_help[st->value], v->language, own, 160), "detail", s.detail_pitch);
-    }
-}
-
-/* Mission Mode's line over the menu, where the DS has it (its top band's right): the host choosing a
- * mission, START to join it or to begin, ... (camp.h `notice`). */
-static void draw_notice(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
-{
-    if (v->notice >= 0) {
-        text(fr, "notice", khdays_layout_string(&s.root, v->notice), 0, 0);
+        draw_text_lines(fr, khdays_camp_setting_words(&s, st->value_help[st->value], v->language, own, 160), "detail",
+                        s.detail_pitch);
     }
 }
 
@@ -1266,7 +995,7 @@ static void draw_prompt(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
         }
         line[n] = 0;
     } else {
-        prompt_part(line, 128, 0);
+        khdays_camp_prompt_part(&s, line, 128, 0);
     }
     prompt_plate(fr, t);
 }
@@ -1279,33 +1008,18 @@ static void prompt_plate(const KhdaysLayoutFrame *fr, const unsigned short *t)
         return;
     }
     if (st != NULL) {
-        const float cap = capitals("prompt"), pad = cap * 1.1f, h = cap * 2.6f;
+        const float cap = khdays_camp_capitals(&s, "prompt"), pad = cap * 1.1f, h = cap * 2.6f;
         const float w = khdays_layout_line_width(&s.layout, t, st->size) + 2 * pad;
         const float right = st->align == 2 ? st->x : st->align == 1 ? st->x + w / 2 - pad : st->x + w - 2 * pad;
         const float x = right + pad - w, y = st->y + cap / 2 - h / 2;
         khdays_layout_fill_rounded(s.layout.renderer, fr, x, y, w, h, h / 2, BLACK, PLATE_ALPHA);
         khdays_layout_ring_rounded(s.layout.renderer, fr, x, y, w, h, h / 2, PLATE_EDGE, EDGE_GREY, 1.0f);
     }
-    text(fr, "prompt", t, 0, 0);
+    khdays_camp_text(&s, fr, "prompt", t, 0, 0);
 }
 
-static void value_text(const KhdaysCampView *v, int field, char *out, size_t size)
-{
-    const KhdaysCampField *f = &v->field[field];
-    out[0] = '\0';
-    if (!f->has) {
-        return;
-    }
-    if (field == 0xf && (int)f->value[0] < 0) {
-        snprintf(out, size, "--"); /* the game's for no next level (data_ov008_02090814) */
-    } else if (field == 0x11) {
-        snprintf(out, size, "%u/%u", f->value[0], f->value[1]);
-    } else {
-        snprintf(out, size, "%u", f->value[0]);
-    }
-}
-
-/* A number field in `style` at (dx, dy), as number(): with a panel held on the Panels page (the field's `delta`,
+/* A number field in `style` at (dx, dy),
+    as khdays_camp_number(&s): with a panel held on the Panels page (the field's `delta`,
  * the game's preview), as the DS shows it, the value as it is and the change on its right ("+2") in orange,
  * the two together where the value alone goes. The DS draws that preview only on its own upper screen. */
 static float camp_text(const KhdaysLayoutFrame *fr, const unsigned short *t, float x, float y, float cap,
@@ -1321,9 +1035,9 @@ static void field_value(const KhdaysLayoutFrame *fr, const char *style, const Kh
     const float ink = s.layout.ink_bottom - s.layout.ink_top;
     char value[32], change[16];
     unsigned short wide[32], wide_change[16];
-    value_text(v, field, value, sizeof(value));
+    khdays_camp_value_text(v, field, value, sizeof(value));
     if (!f->has || f->delta == 0 || st == NULL || ink <= 0 || field == 0xf || field == 0x11) {
-        number(fr, style, value, dx, dy);
+        khdays_camp_number(&s, fr, style, value, dx, dy);
         return;
     }
     {
@@ -1335,7 +1049,7 @@ static void field_value(const KhdaysLayoutFrame *fr, const char *style, const Kh
         wv = khdays_layout_line_width(&s.layout, wide, st->size);
         wd = khdays_layout_line_width(&s.layout, wide_change, st->size * PREVIEW_DELTA_SIZE);
         room = PREVIEW_DELTA_GAP + wd; /* the value moves over by so much to leave the change its place */
-        number(fr, style, value, dx - (st->align == 1 ? room / 2 : st->align == 2 ? room : 0), dy);
+        khdays_camp_number(&s, fr, style, value, dx - (st->align == 1 ? room / 2 : st->align == 2 ? room : 0), dy);
         x = dx + st->x + (st->align == 1 ? (wv + room) / 2 - wd : st->align == 2 ? -wd : wv + PREVIEW_DELTA_GAP);
         y = dy + st->y - (st->align == 1 ? cap / 2 : 0);
         camp_text(fr, wide_change, x, y + (cap - small), small, PREVIEW_ORANGE, 0);
@@ -1345,8 +1059,9 @@ static void field_value(const KhdaysLayoutFrame *fr, const char *style, const Kh
 /* The status panel's pieces with its top left at (px, py) (camp.txt's panel: the menu's place). */
 static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, float px, float py)
 {
-    const float *f = place("face"), *ring = place("face_ring"), *tag = place("tag");
-    const float *level = place("level"), *rows = place("stats");
+    const float *f = khdays_camp_place(&s, "face"), *ring = khdays_camp_place(&s, "face_ring"),
+        *tag = khdays_camp_place(&s, "tag");
+    const float *level = khdays_camp_place(&s, "level"), *rows = khdays_camp_place(&s, "stats");
     /* the place's colour (the story's, alone: the first place's, as Mission Mode's alone) */
     const Uint8 *own = KHDAYS_PLACE_COLOURS[v->story ? 0 : v->self & 3];
     if (v->character >= 0) {
@@ -1355,7 +1070,7 @@ static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
         if (named != NULL) {
             /* a mod's character: its own picture (none drawn without one) and name */
             khdays_mod_face_draw(&s.faces, &s.layout, fr, v->character, px + f[0], py + f[1], f[2], f[3], 255);
-            text(fr, "name", named, px, py);
+            khdays_camp_text(&s, fr, "name", named, px, py);
         } else {
             char name[16];
             /* the story's own picture of the character when the atlas has one (face<N>_story) */
@@ -1364,7 +1079,7 @@ static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
                 snprintf(name, sizeof(name), "face%d", v->character);
             }
             khdays_layout_draw_piece(&s.layout, fr, name, px + f[0], py + f[1], f[2], f[3], 1.0f);
-            text(fr, "name", khdays_layout_string(&s.status, NAMES + v->character), px, py);
+            khdays_camp_text(&s, fr, "name", khdays_layout_string(&s.status, NAMES + v->character), px, py);
         }
     }
     /* the face's frame: black in the story (the port's look), the place's colour in Mission Mode */
@@ -1378,19 +1093,20 @@ static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
         khdays_layout_fill_oval(s.layout.renderer, fr, cx, cy, r, r, own, 1.0f);
         snprintf(label, sizeof(label), khdays_text(TXT_ROOM_PLACE), v->self + 1);
         khdays_layout_utf8(label, wide, 16);
-        text(fr, "tag", wide, cx, cy);
+        khdays_camp_text(&s, fr, "tag", wide, cx, cy);
     }
     for (int i = 0; i < 4; ++i) {
         const float dx = px + level[0] + (float)(i % 2) * level[2], dy = py + level[1] + (float)(i / 2) * level[3];
-        text(fr, "level_label", khdays_layout_string(&s.status, i), dx, dy);
+        khdays_camp_text(&s, fr, "level_label", khdays_layout_string(&s.status, i), dx, dy);
         field_value(fr, "level_value", v, LEVEL_FIELDS[i], dx, dy);
     }
     for (int i = 0; i < 9; ++i) {
         const float dy = py + rows[1] + (float)i * rows[3];
-        text(fr, "stat_label", khdays_layout_string(&s.status, ROW_LABELS[i]), px, dy);
+        khdays_camp_text(&s, fr, "stat_label", khdays_layout_string(&s.status, ROW_LABELS[i]), px, dy);
         if (ROW_FIELDS[i] == 0x13) {
             if (v->field[0x13].has) {
-                text(fr, "stat_value", khdays_layout_string(&s.status, (int)v->field[0x13].value[0]), px, dy);
+                khdays_camp_text(&s, fr, "stat_value", khdays_layout_string(&s.status, (int)v->field[0x13].value[0]),
+                                 px, dy);
             }
         } else {
             field_value(fr, "stat_value", v, ROW_FIELDS[i], px, dy);
@@ -1399,8 +1115,8 @@ static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
     {
         /* the game mode, the last row: the story's difficulty, Mission Mode's own */
         const float dy = py + rows[1] + 9.0f * rows[3];
-        text(fr, "stat_label", s.mode_label, px, dy);
-        text(fr, "stat_value",
+        khdays_camp_text(&s, fr, "stat_label", s.mode_label, px, dy);
+        khdays_camp_text(&s, fr, "stat_value",
              v->story ? (v->difficulty >= 0 && v->difficulty < 3 ? s.difficulty[v->difficulty] : NULL) : s.mission_mode,
              px, dy);
     }
@@ -1428,88 +1144,11 @@ static void draw_status_plate(SDL_Renderer *renderer, const KhdaysLayoutFrame *f
     }
 }
 
-/* A line's width in a text style. */
-static float width_in(const char *style, const unsigned short *t)
-{
-    const KhdaysLayoutText *st = khdays_layout_text(&s.layout, style);
-    return st != NULL && t != NULL ? khdays_layout_line_width(&s.layout, t, st->size) : 0;
-}
-
-/* A line in a style with its left at x and its capitals' middle at y (the style's own place left
- * aside). */
-static void text_at(const KhdaysLayoutFrame *fr, const char *style, const unsigned short *t, float x, float y)
-{
-    const KhdaysLayoutText *st = khdays_layout_text(&s.layout, style);
-    if (st != NULL) {
-        text(fr, style, t, x - st->x, y - capitals(style) / 2 - st->y);
-    }
-}
-
-/* The trials' label, symbols and counts in one row, centred in the trials' bar both ways; the gaps the
- * layout's (place trial, trials_value). */
-static void draw_trials(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
-{
-    static const char *const symbols[2] = {"sigil", "crown"};
-    const float *sym = place("trial");
-    const KhdaysLayoutText *count_style = khdays_layout_text(&s.layout, "trials_value");
-    const unsigned short *label = khdays_layout_string(&s.status, LABEL_TRIALS);
-    const float h = sym[3], mid = s.trials[1] + s.trials[3] / 2, gap = count_style != NULL ? count_style->x : 0;
-    unsigned short counts[2][16];
-    float sym_w[2], total = width_in("trials_label", label), x;
-    for (int i = 0; i < 2; ++i) {
-        const KhdaysLayoutPiece *p = khdays_layout_piece(&s.layout, symbols[i]);
-        char value[16];
-        sym_w[i] = p != NULL ? p->w * h / p->h : 0;
-        snprintf(value, sizeof(value), "%u", v->field[0x12].has ? v->field[0x12].value[i] : 0u);
-        khdays_layout_utf8(v->field[0x12].has ? value : "", counts[i], 16);
-        total += sym[2] + sym_w[i] + gap + width_in("trials_value", counts[i]);
-    }
-    x = s.trials[0] + (s.trials[2] - total) / 2;
-    text_at(fr, "trials_label", label, x, mid);
-    x += width_in("trials_label", label);
-    for (int i = 0; i < 2; ++i) {
-        x += sym[2];
-        khdays_layout_draw_piece(&s.layout, fr, symbols[i], x, mid - h / 2, sym_w[i], h, 1.0f);
-        x += sym_w[i] + gap;
-        text_at(fr, "trials_value", counts[i], x, mid);
-        x += width_in("trials_value", counts[i]);
-    }
-}
-
-/* The story's day on its tag at the model's box's top right (the game's "DAY %d", its day). */
-static void draw_day(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
-{
-    const unsigned short *format = khdays_layout_string(&s.info, INFO_DAY);
-    const float *tag = place("day_tag");
-    unsigned short line[64];
-    char digits[16];
-    int n = 0;
-    float w;
-    if (format == NULL || tag[2] <= 0) {
-        return;
-    }
-    snprintf(digits, sizeof(digits), "%d", v->day);
-    for (int i = 0; format[i] != 0 && n < 62; ++i) {
-        if (format[i] == '%' && format[i + 1] == 'd') {
-            for (const char *d = digits; *d != 0 && n < 62; ++d) {
-                line[n++] = (unsigned short)*d;
-            }
-            ++i;
-        } else {
-            line[n++] = format[i];
-        }
-    }
-    line[n] = 0;
-    w = width_in("day", line) + 2 * tag[3];
-    khdays_layout_fill_rounded(s.layout.renderer, fr, tag[0] - w, tag[1], w, tag[2], tag[2] / 2, s.day_colour, 1.0f);
-    text(fr, "day", line, tag[0] - tag[3], tag[1] + tag[2] / 2 - capitals("day") / 2);
-}
-
 #define SETTINGS_GEAR 0.62f /* the gear's height: this much of the settings place's */
 #define SETTINGS_KEY 0.6f   /* the key's (the pad's button or Esc) */
 static void draw_settings_key(const KhdaysLayoutFrame *fr)
 {
-    const float *at = place("settings");
+    const float *at = khdays_camp_place(&s, "settings");
     const KhdaysLayoutPiece *esc = khdays_layout_piece(&s.layout, "settings_esc");
     const KhdaysLayoutPiece *gear = khdays_layout_piece(&s.layout, "settings_gear");
     /* the gear and the key a little smaller than the place (its middle theirs): the key as tall on the
@@ -1810,16 +1449,16 @@ static void draw_menu_group(const KhdaysLayoutFrame *fr, const KhdaysCampView *v
 {
     menu_sub_button(fr, v);
     draw_status(fr, v);
-    draw_trials(fr, v);
+    khdays_camp_draw_trials(&s, fr, v);
     draw_description(fr, v);
     if (v->question) {
         draw_answers(fr, v);
     }
     draw_prompt(fr, v);
     if (v->story) {
-        draw_day(fr, v);
+        khdays_camp_draw_day(&s, fr, v);
     } else {
-        draw_notice(fr, v);
+        khdays_camp_draw_notice(&s, fr, v);
     }
 }
 
@@ -1841,12 +1480,12 @@ static void draw_page_group(const KhdaysLayoutFrame *fr, const KhdaysCampView *v
 static void draw_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, float page)
 {
     draw_options(fr, v, page);
-    big_digits(fr, v->munny, place("munny"), s.munny_colour);
+    big_digits(fr, v->munny, khdays_camp_place(&s, "munny"), s.munny_colour);
     hearts_word(fr);
-    big_digits(fr, v->hearts, place("hearts"), s.hearts_colour);
+    big_digits(fr, v->hearts, khdays_camp_place(&s, "hearts"), s.hearts_colour);
     draw_settings_key(fr);
     if (!v->story) {
-        draw_members(fr, v);
+        khdays_camp_draw_members(&s, fr, v);
     }
 }
 
@@ -1898,14 +1537,14 @@ static void draw_grown(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, floa
     const float px = s.panel[0], py = s.panel[1], pw = s.panel[2], ph = s.panel[3], right = px + pw;
     const float page_x = s.trials[0], below = s.trials[1] + s.trials[3] + 4.0f;
     float tw = 0, th = 0, kx, ky;
-    SDL_GetTextureSize(s.page_backdrop, &tw, &th);
+    SDL_GetTextureSize(more.page_backdrop, &tw, &th);
     kx = tw / KHDAYS_LAYOUT_W;
     ky = th / KHDAYS_LAYOUT_H;
-    SDL_SetTextureAlphaModFloat(s.page_backdrop, 1.0f);
+    SDL_SetTextureAlphaModFloat(more.page_backdrop, 1.0f);
     if (below > py + ph && right > left) {
         const SDL_FRect src = {left * kx, (py + ph) * ky, (right - left) * kx, (below - py - ph) * ky};
         const SDL_FRect dst = khdays_layout_to_window(fr, left, py + ph, right - left, below - py - ph);
-        SDL_RenderTexture(renderer, s.page_backdrop, &src, &dst);
+        SDL_RenderTexture(renderer, more.page_backdrop, &src, &dst);
     }
     {
         const float middle_w = right - GROW_RIGHT - left - GROW_LEFT;
@@ -1917,12 +1556,12 @@ static void draw_grown(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, floa
                                   khdays_layout_to_window(fr, right - GROW_RIGHT, py, GROW_RIGHT, ph)};
         for (int i = 0; i < 3; ++i) {
             if (dst[i].w > 0) {
-                SDL_RenderTexture(renderer, s.page_backdrop, &src[i], &dst[i]);
+                SDL_RenderTexture(renderer, more.page_backdrop, &src[i], &dst[i]);
             }
         }
     }
     if (lines > 0.002f) {
-        const float *line = place("stat_line"), *rows = place("stats");
+        const float *line = khdays_camp_place(&s, "stat_line"), *rows = khdays_camp_place(&s, "stats");
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColorFloat(renderer, 1.0f, 1.0f, 1.0f, STAT_LINE_ALPHA * (lines < 1.0f ? lines : 1.0f));
         for (int i = 0; i < STAT_ROWS && line[2] > 0; ++i) {
@@ -1946,7 +1585,7 @@ static KhdaysSaveView save_list; /* the save list as it showed last (the save pa
 
 static int page_ready(void)
 {
-    return s.page_backdrop != NULL && s.page_rows[5] > 0 && s.page_tabs[2] > 0 &&
+    return more.page_backdrop != NULL && s.page_rows[5] > 0 && s.page_tabs[2] > 0 &&
            khdays_layout_piece(&s.layout, "page_row") != NULL;
 }
 
@@ -2109,7 +1748,7 @@ static void draw_page_switch(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, cons
     khdays_layout_begin_over(renderer, fr);
     if (v->config) {
         /* the page's backdrop whole, at the window's own resolution (see khdays_camp_screen_draw) */
-        draw_backdrop(renderer, fr, s.page_backdrop, 1.0f);
+        draw_backdrop(renderer, fr, more.page_backdrop, 1.0f);
     } else if (!applied) {
         /* the one-screen picture did not take the model's window this frame (the game's screen is the
          * page's, its view not read yet): the menu's backdrop whole under everything */
@@ -2252,7 +1891,7 @@ static void files_load(SDL_Renderer *renderer)
     if (slash != NULL) {
         slash[1] = '\0';
     }
-    each_line(path, files_line, folder, NULL);
+    khdays_camp_each_line(path, files_line, folder, NULL);
     fl.ok = khdays_layout_ready(&fl.layout) && fl.pattern != NULL && fl.rows[2] > 0 && fl.rows[5] >= 1 &&
             fl.digit_ink > 0 && khdays_layout_place(&fl.layout, "screen") != NULL;
     for (size_t i = 0; i < sizeof(needed) / sizeof(needed[0]); ++i) {
@@ -2538,13 +2177,13 @@ static void draw_menu_news(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
                            float others)
 {
     const KhdaysLayoutText *st = khdays_layout_text(&s.layout, "option");
-    const float *at = files_place("menu_new"), *body = place("bar_body");
+    const float *at = files_place("menu_new"), *body = khdays_camp_place(&s, "bar_body");
     float longest = 0;
     if (!fl.ok || !v->story || v->files_new == 0 || st == NULL || at[3] <= 0 || (v->sub != 0 && v->sub != 2)) {
         return;
     }
     for (int i = 0; i < rows; ++i) {
-        longest = SDL_max(longest, width_in("option", names[i]));
+        longest = SDL_max(longest, khdays_camp_width_in(&s, "option", names[i]));
     }
     for (int i = 0; i < rows; ++i) {
         const int on = v->sub == 0 ? i == STORY_FILES_ROW : ((v->files_new >> i) & 1) != 0;
@@ -2677,7 +2316,7 @@ static void files_group(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const Khd
     if (count > 0) {
         /* the glove at the chosen row (gliding to it), the firefly at its right end; both as far to the
          * right as the row */
-        const float *glove = place("glove"), gx = files_place("glove_at")[0];
+        const float *glove = khdays_camp_place(&s, "glove"), gx = files_place("glove_at")[0];
         const float shift = files_place("select_shift")[0];
         const float mid = rows[1] + (fl.glove - fl.top) * rows[4] + rows[3] / 2;
         const float lit = rows[1] + ((float)f->cursor - fl.top) * rows[4] + rows[3] / 2;
@@ -2712,9 +2351,9 @@ static void files_group(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const Khd
  * words: the menu's cursor is on the page's option), the settings key. */
 static void files_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 {
-    big_digits(fr, v->munny, place("munny"), s.munny_colour);
+    big_digits(fr, v->munny, khdays_camp_place(&s, "munny"), s.munny_colour);
     hearts_word(fr);
-    big_digits(fr, v->hearts, place("hearts"), s.hearts_colour);
+    big_digits(fr, v->hearts, khdays_camp_place(&s, "hearts"), s.hearts_colour);
     draw_description(fr, v);
     draw_settings_key(fr);
 }
@@ -2828,7 +2467,7 @@ static void save_load(SDL_Renderer *renderer)
     if (slash != NULL) {
         slash[1] = '\0';
     }
-    each_line(path, save_line, folder, NULL);
+    khdays_camp_each_line(path, save_line, folder, NULL);
     sp.ok = khdays_layout_ready(&sp.layout) && sp.rows[2] > 0 && sp.rows[5] >= 1;
     for (size_t i = 0; i < sizeof(needed) / sizeof(needed[0]); ++i) {
         sp.ok = sp.ok && khdays_layout_piece(&sp.layout, needed[i]) != NULL;
@@ -3099,7 +2738,7 @@ static void save_motion(const KhdaysSaveView *sl, double now)
 static void load_prompt(const KhdaysLayoutFrame *fr, const KhdaysSaveView *sl)
 {
     unsigned short keys[256];
-    const unsigned short *a = khdays_layout_string(&s.lrd, LRD_KEYS), *b = khdays_layout_string(&s.lrd, LRD_DELETE_KEY);
+    const unsigned short *a = khdays_layout_string(&more.lrd, LRD_KEYS), *b = khdays_layout_string(&more.lrd, LRD_DELETE_KEY);
     const int language = sl->language > 0 && sl->language < LANGUAGES ? sl->language : 1;
     int o = 0;
     if (!sl->help || sl->ask[0] >= 0 || a == NULL) {
@@ -3157,7 +2796,7 @@ static void tab_button(const KhdaysLayoutFrame *fr, const char *name, const unsi
         const float k = at[2] / bar->w, size = st->size * k;
         const float cap = (s.layout.ink_bottom - s.layout.ink_top) * size;
         const float middle = at[1] + at[3] * MENU_BAR_MIDDLE;
-        const float *glove = place("glove");
+        const float *glove = khdays_camp_place(&s, "glove");
         const float unit = KHDAYS_FIREFLY_UNIT * (glove[3] > 0 ? glove[3] / 91.0f : 1.0f) * 0.8f;
         khdays_layout_draw_piece(&sp.layout, fr, "menu_bar", at[0], at[1], at[2], at[3], alpha);
         khdays_layout_draw_line(&s.layout, fr, label, at[0] + MENU_BAR_TEXT_X * k, middle - cap / 2, size, 255.0f,
@@ -3223,7 +2862,7 @@ static void save_group(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, cons
     }
     if (!sl->buttons) {
         /* the glove at the chosen file (gliding to it), the firefly at its right end */
-        const float *glove = place("glove"), *at = save_place("glove_at");
+        const float *glove = khdays_camp_place(&s, "glove"), *at = save_place("glove_at");
         const float mid = rows[1] + (sp.glove - sp.top) * rows[4] + rows[3] / 2;
         const float lit = rows[1] + ((float)SDL_clamp(sl->cursor, 0, count - 1) - sp.top) * rows[4] + rows[3] / 2;
         if (mid > rows[1] - rows[3] && mid < rows[1] + rows[4] * (float)shown) {
@@ -3247,16 +2886,16 @@ static void save_group(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, cons
 static void save_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, const KhdaysSaveView *sl)
 {
     const int loading = sl != NULL && sl->screen == KHDAYS_SAVELIST_LOAD;
-    const KhdaysLayoutStrings *table = sl != NULL && sl->words == KHDAYS_WORDS_LOAD ? &s.lrd : &s.sav;
+    const KhdaysLayoutStrings *table = sl != NULL && sl->words == KHDAYS_WORDS_LOAD ? &more.lrd : &s.sav;
     if (loading) {
         /* the title's load list: the chosen file's munny (no game is on: no heart points) */
         if (sl->cursor >= 0 && sl->cursor < KHDAYS_SLOT_COUNT && sl->rows[sl->cursor].state == KHDAYS_SLOT_SAVED) {
-            big_digits(fr, sl->rows[sl->cursor].munny, place("munny"), s.munny_colour);
+            big_digits(fr, sl->rows[sl->cursor].munny, khdays_camp_place(&s, "munny"), s.munny_colour);
         }
     } else {
-        big_digits(fr, v->munny, place("munny"), s.munny_colour);
+        big_digits(fr, v->munny, khdays_camp_place(&s, "munny"), s.munny_colour);
         hearts_word(fr);
-        big_digits(fr, v->hearts, place("hearts"), s.hearts_colour);
+        big_digits(fr, v->hearts, khdays_camp_place(&s, "hearts"), s.hearts_colour);
     }
     draw_settings_key(fr);
     if (sl != NULL && (sl->screen == KHDAYS_SAVELIST_SAVE || loading) && sl->ask[0] >= 0) {
@@ -3276,7 +2915,7 @@ static void save_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, co
                 }
                 memcpy(one, t, (size_t)n * sizeof(one[0]));
                 one[n] = 0;
-                text(fr, "description", one, 0, dy);
+                khdays_camp_text(&s, fr, "description", one, 0, dy);
                 dy += s.description_pitch;
                 t += n;
                 if (*t == '\n') {
@@ -3286,14 +2925,14 @@ static void save_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, co
         }
         if (sl->buttons) {
             const int own = save_place("answer_yes")[2] > 0 && save_place("answer_no")[2] > 0;
-            draw_answers_in(fr, sl->yes, khdays_layout_string(table, table == &s.lrd ? LRD_YES : SAV_YES),
-                            khdays_layout_string(table, table == &s.lrd ? LRD_NO : SAV_NO),
-                            own ? save_place("answer_yes") : place("button_yes"),
-                            own ? save_place("answer_no") : place("button_no"));
+            draw_answers_in(fr, sl->yes, khdays_layout_string(table, table == &more.lrd ? LRD_YES : SAV_YES),
+                            khdays_layout_string(table, table == &more.lrd ? LRD_NO : SAV_NO),
+                            own ? save_place("answer_yes") : khdays_camp_place(&s, "button_yes"),
+                            own ? save_place("answer_no") : khdays_camp_place(&s, "button_no"));
         }
     } else if (loading) {
         if (sl->help) {
-            draw_lines(fr, &s.lrd, LRD_TITLE, "description", s.description_pitch); /* the list's help */
+            draw_lines(fr, &more.lrd, LRD_TITLE, "description", s.description_pitch); /* the list's help */
         }
     } else {
         draw_description(fr, v);
@@ -3492,7 +3131,7 @@ static void viewer_draw(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, co
     {
         const KhdaysProfile *profile = khdays_devices_profile();
         const int next = profile != NULL && profile->enh.separate_lock_on ? KHDAYS_ACT_LOCK_ON : KHDAYS_ACT_R;
-        const float cap = capitals("prompt"), pad = cap * 1.1f, h = cap * 2.6f;
+        const float cap = khdays_camp_capitals(&s, "prompt"), pad = cap * 1.1f, h = cap * 2.6f;
         unsigned short tail[96];
         float r_w, w, x, y, at;
         /* after R */
@@ -4068,7 +3707,7 @@ static void story_status(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
         }
         camp_text(fr, khdays_layout_string(&s.status, stp.stat_record[r]), at[0], at[1], at[4], stp.stat_colour[r], 0);
         if (field >= 0) {
-            value_text(v, field, value, sizeof(value));
+            khdays_camp_value_text(v, field, value, sizeof(value));
             khdays_layout_utf8(value, wide, 32);
             camp_text(fr, wide, at[2], at[3], at[4] * STORY_VALUE_SIZE, stp.stat_colour[r], 1);
         }
@@ -4123,17 +3762,17 @@ static void story_menu_group(const KhdaysLayoutFrame *fr, const KhdaysCampView *
     } else {
         /* Mission Mode's members (each player's place, character, name and where in the menu) in the top band, as
          * its own look has them: the menu's alone (the pages' option beside the MENU pill is where they are) */
-        draw_members(fr, v);
-        draw_notice(fr, v);
+        khdays_camp_draw_members(&s, fr, v);
+        khdays_camp_draw_notice(&s, fr, v);
     }
 }
 
 /* What it has with its pages: the numbers, the settings key. */
 static void story_numbers(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 {
-    big_digits(fr, v->munny, place("munny"), s.munny_colour);
+    big_digits(fr, v->munny, khdays_camp_place(&s, "munny"), s.munny_colour);
     hearts_word(fr);
-    big_digits(fr, v->hearts, place("hearts"), s.hearts_colour);
+    big_digits(fr, v->hearts, khdays_camp_place(&s, "hearts"), s.hearts_colour);
     draw_settings_key(fr);
 }
 
@@ -4725,7 +4364,7 @@ static void draw_story_page_switch(SDL_Renderer *renderer, KhdaysLayoutFrame *fr
     story_drawn(now);
     story_backdrop(renderer, fr, now, v->config ? 0.0f : 1.0f, 1.0f);
     files_bands(renderer, fr);
-    draw_backdrop(renderer, fr, s.page_backdrop, page);
+    draw_backdrop(renderer, fr, more.page_backdrop, page);
     story_list(fr, v, page, 1.0f, 1, now);
     story_numbers(fr, v);
     if (sw.phase == SW_OUT) {
@@ -4810,12 +4449,12 @@ static void draw_menu_own(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
     menu_sub_button(fr, v);
     draw_options(fr, v, 0.0f);
     draw_status(fr, v);
-    draw_trials(fr, v);
+    khdays_camp_draw_trials(&s, fr, v);
     if (v->question) {
         draw_answers(fr, v);
     }
     draw_prompt(fr, v);
-    draw_day(fr, v);
+    khdays_camp_draw_day(&s, fr, v);
 }
 
 static void draw_files_switch(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const KhdaysCampView *v, double now)
@@ -5150,7 +4789,7 @@ int khdays_overhaul_camp_draw(SDL_Renderer *renderer)
          * window. The one-screen picture under it is made at the DS's scale (192 dots high, the 3D's) and
          * stretched to the window: the backdrop alone there came out softer than the menu's, whose
          * backdrop the screen draws itself at the window's resolution (draw_strips) */
-        draw_backdrop(renderer, &fr, s.page_backdrop, 1.0f);
+        draw_backdrop(renderer, &fr, more.page_backdrop, 1.0f);
         if (story_on(&v)) {
             /* the story's: its KH2 buttons, the others dimmed (the page's own glove at its settings) */
             story_drawn(now);

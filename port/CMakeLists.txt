@@ -706,6 +706,7 @@ add_executable(khdays-native
     host/screens/ds_select_pages.c         # ... the game's own, on the mods' characters' pages
     host/screens/camp_screen.c             # Mission Mode's camp menu on one screen
     host/screens/overhaul_camp_screen.c    # ... and the story's, with its pages, in the Menu Overhaul's look
+    host/screens/camp_look.c               # what the two camp screens read and draw alike
     host/screens/mod_faces.c               # ... and the mods' characters' faces and names on both
     host/screens/movie_pause.cpp           # the DS's scene pause over an HD movie
     host/screens/shop_screen.c             # the Moogle Shop on one screen
