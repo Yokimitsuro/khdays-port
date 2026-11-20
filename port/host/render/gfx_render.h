@@ -63,6 +63,21 @@ typedef struct KhdaysOneScreenDraw {
 int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int scale3d, int raster,
                                const KhdaysOneScreenDraw *one);
 
+/* 1 (as it starts): from 3x up, a screen that reads no 3D and the one-screen picture's sources are composed
+ * once a DS dot, and at each output pixel only where its place can matter (compose2d.hlsl PASS_DOTS); 0
+ * composes every output pixel. The same pixels either way. */
+void khdays_gfx_render_set_once(int on);
+
+/* 1 (as it starts): for the one-screen picture only the parts of each screen it reads are composed
+ * (gfx_render.c one_reads), and the rest of a screen's texture holds nothing; 0 composes them whole. */
+void khdays_gfx_render_set_parts(int on);
+
+/* 1 (as it starts): a screen that reads no 3D is not composed again while nothing it is made of changes
+ * (gfx_render.c kept_screen); 0 composes every screen every time. */
+void khdays_gfx_render_set_keep(int on);
+/* How many times `engine`'s screen has been kept so far. */
+unsigned khdays_gfx_render_kept(int engine);
+
 /* Where the 2D is drawn finer than the 3D: 1 reads the 3D between its texels (smooth scaling), 0 the
  * nearest (sharp). */
 void khdays_gfx_render_set_smooth_3d(int on);

@@ -327,6 +327,11 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
     window = w;
     notice = tell;
     profile = SDL_getenv("KHDAYS_PROFILE") != NULL;
+    khdays_gfx_render_set_keep(SDL_getenv("KHDAYS_KEEP_2D") == NULL || SDL_atoi(SDL_getenv("KHDAYS_KEEP_2D")) != 0);
+    khdays_gfx_render_set_once(SDL_getenv("KHDAYS_2D_ONCE") == NULL || SDL_atoi(SDL_getenv("KHDAYS_2D_ONCE")) != 0);
+    /* the screens whole on one screen too: asked for, or read back whole by the check (port2d_compare) */
+    khdays_gfx_render_set_parts(port2d_wanted() != 2 && (SDL_getenv("KHDAYS_PARTS_2D") == NULL ||
+                                                         SDL_atoi(SDL_getenv("KHDAYS_PARTS_2D")) != 0));
     shot_dir = SDL_getenv("KHDAYS_SHOTS_HD");
     shots_between = SDL_getenv("KHDAYS_SHOTS_BETWEEN") != NULL;
     SDL_free(shots);
@@ -652,6 +657,15 @@ static void count_frame(const KhdaysFramePackage *p, double hd_ms)
                 "prepared in %.2f ms on average, %.2f at most\n",
                 stats.not_drawn, stats.hd_frames, scale_now(), stats.hd_frames ? stats.hd_ms / stats.hd_frames : 0.0,
                 stats.hd_max_ms);
+        {
+            /* the screens kept from the picture before (gfx_render.c kept_screen), of the pictures drawn meanwhile */
+            static unsigned kept_before[2];
+            const unsigned kept_a = khdays_gfx_render_kept(0), kept_b = khdays_gfx_render_kept(1);
+            fprintf(stderr, "host: meanwhile engine A's screen was kept %u times and engine B's %u\n",
+                    kept_a - kept_before[0], kept_b - kept_before[1]);
+            kept_before[0] = kept_a;
+            kept_before[1] = kept_b;
+        }
         SDL_zero(stats);
     }
 }

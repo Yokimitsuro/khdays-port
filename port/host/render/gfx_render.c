@@ -25,8 +25,9 @@ typedef struct Compose2dParams {
     uint32_t fog_color, fog_offset, fine, offset3d;
     uint32_t edge_colors[4];
     uint32_t fog_table[8];
-    uint32_t scale3d, width3d, height3d, smooth3d;  /* the 3D's own scale (the 2D finer than it) */
-    uint32_t hud3d, hud_width, hud_height, unused5; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
+    uint32_t scale3d, width3d, height3d, smooth3d; /* the 3D's own scale (the 2D finer than it) */
+    uint32_t hud3d, hud_width, hud_height;         /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
+    uint32_t part; /* the DS dot a dispatch starts at, in eighths (x, y << 12), and the pass << 24 (PASS_*) */
 } Compose2dParams;
 
 /* onescreen.hlsl's constant buffer, register for register. */
@@ -79,6 +80,13 @@ static Uint32 area_bytes(int a)
 }
 static SDL_GPUTexture *dummy3d[2];   /* bound in place of the 3D targets at 1x */
 static SDL_GPUTexture *dummy_hud[2]; /* and of the HUD's apart when there is none */
+/* compose2d.hlsl's passes (`part`) and the verdicts its pass at the DS's size leaves the next: two texels a
+ * DS dot. docs/RENDERING.md, "The 2D once a DS dot". */
+enum { PASS_EACH, PASS_DOTS, PASS_READ };
+#define ONCE_SCALE_LEAST 3 /* below it the pass at the DS's size is too large a share of the work */
+static SDL_GPUTexture *pre2d[2];
+static int once_on = 1; /* khdays_gfx_render_set_once */
+static int pre_shared;  /* the card reads and writes pre2d through one binding: else every pixel is composed */
 static SDL_GPUTexture *screen[2];
 static int screen_scale, screen_columns[2]; /* their scale, and each one's width in DS columns */
 static SDL_Texture *wrapped[2];
@@ -221,7 +229,7 @@ static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsig
 static SDL_GPUComputePipeline *make_pipeline(void)
 {
     return make_pipeline_of(compose2d_cs_dxil, compose2d_cs_dxil_size, compose2d_cs_spirv, compose2d_cs_spirv_size,
-                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 5);
+                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 6);
 }
 
 static void drop_shrunk(Shrunk *s)
@@ -514,13 +522,22 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         memory[a] = make_buffer(area_bytes(a));
         ok = ok && memory[a] != NULL;
     }
+    /* the verdicts are written by one pass and read by the next, through a read-write binding */
+    SDL_GPUTextureUsageFlags pre_usage =
+        SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ;
+    if (SDL_GPUTextureSupportsFormat(d, SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTURETYPE_2D,
+                                     SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE)) {
+        pre_usage |= SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE;
+    }
+    pre_shared = (pre_usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE) != 0;
     for (int e = 0; e < 2; ++e) {
         desc[e] = make_buffer(DESC_BYTES);
         desc_bytes[e] = DESC_BYTES;
+        pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * KHDAYS_FRAME_W, KHDAYS_FRAME_H);
 
         dummy3d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL;
+        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && pre2d[e] != NULL;
     }
     layer3d = make_buffer(KHDAYS_FRAME_PIXELS * 4);
     ok = ok && layer3d != NULL && khdays_gpu_hd_open(d);
@@ -536,8 +553,12 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     return 1;
 }
 
+static void forget_kept(void); /* (kept_screen, below) */
+static void free_kept(void);
+
 static void drop_screens(void)
 {
+    forget_kept(); /* the screens kept were these textures' */
     for (int e = 0; e < 2; ++e) {
         if (wrapped[e] != NULL) {
             SDL_DestroyTexture(wrapped[e]);
@@ -593,6 +614,7 @@ void khdays_gfx_render_close(void)
         return;
     }
     drop_screens();
+    free_kept();
     drop_shop();
     drop_shrunk(&shrunk_screen[0]);
     drop_shrunk(&shrunk_screen[1]);
@@ -659,9 +681,12 @@ void khdays_gfx_render_close(void)
             SDL_ReleaseGPUTexture(device, dummy3d[e]);
         if (dummy_hud[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy_hud[e]);
+        if (pre2d[e] != NULL)
+            SDL_ReleaseGPUTexture(device, pre2d[e]);
         desc[e] = NULL;
         dummy3d[e] = NULL;
         dummy_hud[e] = NULL;
+        pre2d[e] = NULL;
     }
     if (layer3d != NULL)
         SDL_ReleaseGPUBuffer(device, layer3d);
@@ -992,6 +1017,245 @@ static int submit_timed(SDL_GPUCommandBuffer *cmd, int scale, int one_screen)
     return 1;
 }
 
+/* The parts of each engine's screen the one-screen picture reads, DS dots: x0, y0, x1, y1 (x1, y1 past the
+ * last). Each shape that takes from a screen marks the 8 x 8 tiles its source can fall on (onescreen.h
+ * ko_pixel); a row's runs of marked tiles, joined to the part above of the same columns, are the parts: whole
+ * dispatch groups that never overlap. docs/RENDERING.md, "One screen: the parts read". */
+#define ONE_TILE 8
+#define ONE_TILES_X (KHDAYS_FRAME_W / ONE_TILE)
+#define ONE_TILES_Y (KHDAYS_FRAME_H / ONE_TILE)
+#define ONE_READS 64
+#define ONE_DOTS_MOST 4096.0f       /* a shape's places and lengths beyond it: the whole screen */
+#define ONE_SCALE_LEAST (1.0f / 64) /* and one shrunk more than this, or with a shorter destination */
+typedef struct OneReads {
+    int count[2]; /* -1: the screen composed whole (a shape's numbers not usable, or too many parts) */
+    int rect[2][ONE_READS][4];
+} OneReads;
+static int parts_on = 1; /* khdays_gfx_render_set_parts */
+
+static int usable_dots(float v)
+{
+    return SDL_isinff(v) == 0 && SDL_isnanf(v) == 0;
+}
+
+/* v within 0..hi, as a float: before it becomes an integer */
+static float clamp_dots(float v, float hi)
+{
+    return v < 0.0f ? 0.0f : v > hi ? hi : v;
+}
+
+/* Marks the tiles of engine e's screen shape `w` can read; 0 when its numbers do not say (the whole screen). */
+static int mark_shape(const uint32_t *w, unsigned char marked[ONE_TILES_Y][ONE_TILES_X])
+{
+    float sx, sy, sw, sh, x1, y1, x2, y2, gx, gy;
+    memcpy(&sx, &w[KO_SRC_X], 4);
+    memcpy(&sy, &w[KO_SRC_Y], 4);
+    memcpy(&sw, &w[KO_SRC_W], 4);
+    memcpy(&sh, &w[KO_SRC_H], 4);
+    memcpy(&x1, &w[KO_DST_X1], 4);
+    memcpy(&y1, &w[KO_DST_Y1], 4);
+    memcpy(&x2, &w[KO_DST_X2], 4);
+    memcpy(&y2, &w[KO_DST_Y2], 4);
+    memcpy(&gx, &w[KO_SCALE_X], 4);
+    memcpy(&gy, &w[KO_SCALE_Y], 4);
+    /* numbers ko_pixel's reads can be bounded for: a source and a destination on or near the screen, the
+     * destination with a length (a repeated shape wraps by it), a scale that neither turns the source over nor
+     * shrinks or stretches it past telling */
+    if (!usable_dots(sx) || !usable_dots(sy) || !usable_dots(sw) || !usable_dots(sh) || !usable_dots(x2 - x1) ||
+        !usable_dots(y2 - y1) || !usable_dots(gx) || !usable_dots(gy) || sw < 0.0f || sh < 0.0f ||
+        SDL_fabsf(sx) > ONE_DOTS_MOST || SDL_fabsf(sy) > ONE_DOTS_MOST || sw > ONE_DOTS_MOST || sh > ONE_DOTS_MOST ||
+        SDL_fabsf(x1) > ONE_DOTS_MOST || SDL_fabsf(y1) > ONE_DOTS_MOST || SDL_fabsf(x2) > ONE_DOTS_MOST ||
+        SDL_fabsf(y2) > ONE_DOTS_MOST || x2 - x1 < ONE_SCALE_LEAST || y2 - y1 < ONE_SCALE_LEAST ||
+        gx < ONE_SCALE_LEAST || gy < ONE_SCALE_LEAST || gx > ONE_DOTS_MOST || gy > ONE_DOTS_MOST) {
+        return 0;
+    }
+    /* the destination's length in source dots may pass the rectangle (a repeated shape wraps there); turned
+     * over (mirror), what passes it lies before its start: both sides taken */
+    if ((x2 - x1) / gx > sw) {
+        const float more = (x2 - x1) / gx - sw;
+        sx -= more;
+        sw += 2.0f * more;
+    }
+    if ((y2 - y1) / gy > sh) {
+        const float more = (y2 - y1) / gy - sh;
+        sy -= more;
+        sh += 2.0f * more;
+    }
+    if (!usable_dots(sx) || !usable_dots(sy) || !usable_dots(sx + sw) || !usable_dots(sy + sh)) {
+        return 0;
+    }
+    {
+        /* a dot more each side for the sampling's rounding; onescreen.hlsl source_at reads the screen's edge
+         * for a place past it */
+        const float wide = (float)KHDAYS_FRAME_W - 1.0f, high = (float)KHDAYS_FRAME_H - 1.0f;
+        const int c0 = (int)clamp_dots(SDL_floorf(sx) - 1.0f, wide) / ONE_TILE;
+        const int r0 = (int)clamp_dots(SDL_floorf(sy) - 1.0f, high) / ONE_TILE;
+        const int c1 = (int)clamp_dots(SDL_ceilf(sx + sw) + 1.0f, wide) / ONE_TILE;
+        const int r1 = (int)clamp_dots(SDL_ceilf(sy + sh) + 1.0f, high) / ONE_TILE;
+        for (int ty = r0; ty <= r1; ++ty) {
+            for (int tx = c0; tx <= c1; ++tx) {
+                marked[ty][tx] = 1;
+            }
+        }
+    }
+    return 1;
+}
+
+static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int columns[2], OneReads *out)
+{
+    unsigned char marked[2][ONE_TILES_Y][ONE_TILES_X];
+    SDL_zerop(out);
+    SDL_zeroa(marked);
+    for (int e = 0; e < 2; ++e) {
+        if (columns[e] != KHDAYS_FRAME_W) {
+            out->count[e] = -1; /* (the picture's sources are the DS's 256 columns) */
+        }
+    }
+    for (int i = 0; i < one->shape_count; ++i) {
+        const uint32_t *w = one->shapes + (size_t)i * KO_WORDS;
+        const int e = (w[KO_FLAGS] & KOF_LOWER) != 0u ? !upper : upper;
+        if ((w[KO_FLAGS] & (KOF_3D | KOF_IMAGE)) != 0u) {
+            continue; /* the 3D, or an image of its own: no screen read */
+        }
+        if (!mark_shape(w, marked[e])) {
+            out->count[e] = -1;
+        }
+    }
+    for (int e = 0; e < 2; ++e) {
+        for (int ty = 0; ty < ONE_TILES_Y && out->count[e] >= 0; ++ty) {
+            int tx = 0;
+            while (tx < ONE_TILES_X && out->count[e] >= 0) {
+                int end = tx, joined = 0;
+                if (!marked[e][ty][tx]) {
+                    ++tx;
+                    continue;
+                }
+                while (end < ONE_TILES_X && marked[e][ty][end]) {
+                    ++end;
+                }
+                for (int k = 0; k < out->count[e] && !joined; ++k) {
+                    int *r = out->rect[e][k];
+                    if (r[3] == ty * ONE_TILE && r[0] == tx * ONE_TILE && r[2] == end * ONE_TILE) {
+                        r[3] += ONE_TILE; /* the part above, as wide, ends where this run starts: grown down */
+                        joined = 1;
+                    }
+                }
+                if (!joined && out->count[e] == ONE_READS) {
+                    out->count[e] = -1; /* too many: the whole screen */
+                } else if (!joined) {
+                    int *r = out->rect[e][out->count[e]++];
+                    r[0] = tx * ONE_TILE;
+                    r[1] = ty * ONE_TILE;
+                    r[2] = end * ONE_TILE;
+                    r[3] = (ty + 1) * ONE_TILE;
+                }
+                tx = end;
+            }
+        }
+    }
+}
+
+/* A screen kept from the picture before: an engine that reads no 3D composes the same screen when all it
+ * reads is the same -- what the card is sent for it (`sent`), its memory (`stale`: a page of it changed
+ * since), the replacements' buffer, its parameters and the parts composed. Its pass is then left out.
+ * Compared whole, not by a hash: a screen wrongly kept would stay wrong. docs/RENDERING.md, "A screen kept". */
+typedef struct KeptHow {
+    Compose2dParams cp;
+    int parts[ONE_READS][4], part_count;
+    uint32_t hd_generation, sequence_draws;
+    SDL_GPUBuffer *hd;
+    SDL_GPUTexture *texture;
+} KeptHow;
+
+static struct {
+    int ok, stale;
+    uint8_t *sent, *staged; /* what the card was sent last, and this picture's being written */
+    uint32_t sent_bytes, room;
+    unsigned times;
+    KeptHow how;
+} kept[2];
+static int keep = 1; /* khdays_gfx_render_set_keep */
+
+static void forget_kept(void)
+{
+    kept[0].ok = kept[1].ok = 0;
+}
+
+/* Room for what the card is sent for engine e this picture, in ordinary memory; NULL when there is none or no
+ * screen is kept. */
+static uint8_t *kept_stage(int e, uint32_t bytes)
+{
+    if (!keep) {
+        return NULL;
+    }
+    if (bytes > kept[e].room) {
+        uint8_t *sent = (uint8_t *)SDL_realloc(kept[e].sent, bytes);
+        uint8_t *staged = (uint8_t *)SDL_realloc(kept[e].staged, bytes);
+        kept[e].sent = sent != NULL ? sent : kept[e].sent;
+        kept[e].staged = staged != NULL ? staged : kept[e].staged;
+        if (sent == NULL || staged == NULL) {
+            kept[e].sent_bytes = 0;
+            return NULL;
+        }
+        kept[e].room = bytes;
+    }
+    return kept[e].staged;
+}
+
+/* The n bytes staged are what the card is sent for engine e (0: not staged): its screen is stale when they are
+ * not what it was sent last. */
+static void kept_sent(int e, uint32_t n)
+{
+    uint8_t *was = kept[e].sent;
+    if (n != 0 && kept[e].sent_bytes == n && memcmp(was, kept[e].staged, n) == 0) {
+        return;
+    }
+    kept[e].stale = 1;
+    kept[e].sent_bytes = n;
+    if (n != 0) {
+        kept[e].sent = kept[e].staged; /* (the two change places: nothing copied) */
+        kept[e].staged = was;
+    }
+}
+
+static void free_kept(void)
+{
+    for (int e = 0; e < 2; ++e) {
+        SDL_free(kept[e].sent);
+        SDL_free(kept[e].staged);
+        kept[e].sent = kept[e].staged = NULL;
+        kept[e].sent_bytes = kept[e].room = 0;
+        kept[e].ok = 0;
+    }
+}
+
+/* 1 when engine e's screen is what composing its `parts` with `cp` now would make, so its pass can be left
+ * out. */
+static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int part_count)
+{
+    KeptHow now;
+    if (!keep || cp->source3d != 0u || kept[e].sent_bytes == 0) {
+        kept[e].ok = 0;
+        return 0;
+    }
+    SDL_zero(now); /* (its padding too: compared by its bytes) */
+    now.cp = *cp;
+    memcpy(now.parts, parts, sizeof(parts[0]) * (size_t)part_count);
+    now.part_count = part_count;
+    now.hd_generation = khdays_gpu_hd_generation();
+    now.sequence_draws = khdays_sequence_gpu_draws();
+    now.hd = khdays_gpu_hd_buffer();
+    now.texture = screen[e];
+    if (kept[e].ok && !kept[e].stale && memcmp(&kept[e].how, &now, sizeof(now)) == 0) {
+        ++kept[e].times;
+        return 1;
+    }
+    kept[e].ok = 1;
+    kept[e].stale = 0;
+    kept[e].how = now;
+    return 0;
+}
+
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
 static int smooth3d;
 
@@ -1128,6 +1392,16 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             hd2d_version[n] = p->hd2d_version[n];
         }
     }
+    for (int k = 0; k < nchanged + nhd; ++k) {
+        /* whose memory changed since its screen was composed (kept_screen): an engine's own areas, anything
+         * else (the bank a VRAM display shows) both's */
+        uint32_t offset;
+        const int a = area_of(k < nchanged ? changed[k] : hd_changed[k - nchanged], &offset);
+        const int of_a = a == ABG || a == AOBJ || a == ABGEXT || a == AOBJEXT;
+        const int of_b = a == BBG || a == BOBJ || a == BBGEXT || a == BOBJEXT;
+        kept[0].stale |= !of_b;
+        kept[1].stale |= !of_a;
+    }
     valid = 1;
     size = fixed + shop_bytes + (uint32_t)nchanged * PAGE + (uint32_t)nhd * HD2D_PAGE;
     if (size > upload_size) {
@@ -1152,42 +1426,52 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     }
     at = 0;
     for (int e = 0; e < 2; ++e) {
+        /* written in ordinary memory where it can be (kept_stage), to be compared there: not read back from
+         * the upload's */
+        uint8_t *const staged = kept_stage(e, DESC_BYTES + element_bytes(p, e));
+        uint8_t *const out = staged != NULL ? staged : mapped + at;
+        uint32_t n = 0;
         engine_at[e] = at;
-        memcpy(mapped + at, p->desc2d[e], KHDAYS_DESC_WORDS * 4);
+        memcpy(out, p->desc2d[e], KHDAYS_DESC_WORDS * 4);
         if (e == 0) {
-            ((uint32_t *)(mapped + at))[KD_WIDE] = wide; /* 0: no wider 3D this frame, the DS's columns */
+            ((uint32_t *)out)[KD_WIDE] = wide; /* 0: no wider 3D this frame, the DS's columns */
         }
         if (e == 0 && layers) {
-            uint32_t *flags = &((uint32_t *)(mapped + at))[KD_FLAGS];
+            uint32_t *flags = &((uint32_t *)out)[KD_FLAGS];
             *flags = (*flags & ~KDF_DISPLAY_MASK) | 1u;
         }
         if ((khdays_raster3d_fine() || (p->wants & KHDAYS_WANT_MOVIE)) &&
-            (e == 1 || raster || !(((const uint32_t *)(mapped + at))[KD_FLAGS] & KDF_BG0_IS_3D))) {
+            (e == 1 || raster || !(((const uint32_t *)out)[KD_FLAGS] & KDF_BG0_IS_3D))) {
             /* compose in 8 bits per channel (HD graphics, a movie's picture): for engine
              * A only when its 3D is drawn in 8 bits too, or it has no 3D */
-            ((uint32_t *)(mapped + at))[KD_FLAGS] |= KDF_FINE;
+            ((uint32_t *)out)[KD_FLAGS] |= KDF_FINE;
         }
         if (one != NULL && e == 0 && whole_a) {
             /* engine A whole, its 3D in it (whole_a), without the master brightness: the port's screen draws the
              * game's fade itself */
-            ((uint32_t *)(mapped + at))[KD_MASTER] = 0;
+            ((uint32_t *)out)[KD_MASTER] = 0;
         } else if (one != NULL) {
             /* the one-screen picture's sources: the 2D apart from the 3D, in 8 bits, no master brightness */
-            ((uint32_t *)(mapped + at))[KD_FLAGS] |= KDF_SPLIT | KDF_FINE;
+            ((uint32_t *)out)[KD_FLAGS] |= KDF_SPLIT | KDF_FINE;
         }
-        at += KHDAYS_DESC_WORDS * 4;
-        memcpy(mapped + at, p->palette2d + 0x400 * e, 0x400);
-        at += 0x400;
+        n += KHDAYS_DESC_WORDS * 4;
+        memcpy(out + n, p->palette2d + 0x400 * e, 0x400);
+        n += 0x400;
         if (p->elements[e].count != 0) {
-            memcpy(mapped + at, p->elements[e].records, p->elements[e].count * KE_WORDS * 4u);
-            at += p->elements[e].count * KE_WORDS * 4u;
+            memcpy(out + n, p->elements[e].records, p->elements[e].count * KE_WORDS * 4u);
+            n += p->elements[e].count * KE_WORDS * 4u;
         }
         if (p->desc2d[e][KD_LEFT_OUT] != 0) {
-            memcpy(mapped + at, p->left_out_cells[e], KE_LEFT_CELL_WORDS * 4u);
-            at += KE_LEFT_CELL_WORDS * 4u;
-            memcpy(mapped + at, p->left_out_obj[e], KE_LEFT_OBJ_WORDS * 4u);
-            at += KE_LEFT_OBJ_WORDS * 4u;
+            memcpy(out + n, p->left_out_cells[e], KE_LEFT_CELL_WORDS * 4u);
+            n += KE_LEFT_CELL_WORDS * 4u;
+            memcpy(out + n, p->left_out_obj[e], KE_LEFT_OBJ_WORDS * 4u);
+            n += KE_LEFT_OBJ_WORDS * 4u;
         }
+        if (staged != NULL) {
+            memcpy(mapped + at, staged, n);
+        }
+        kept_sent(e, staged != NULL ? n : 0u);
+        at += n;
     }
     if (has3d) {
         memcpy(mapped + at, p->layer3d, KHDAYS_FRAME_PIXELS * 4);
@@ -1423,12 +1707,31 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         }
         SDL_EndGPUCopyPass(copy);
     }
+    /* the one-screen picture reads the screens only through its shapes: the parts they read (one_reads) */
+    OneReads reads;
+    if (one != NULL) {
+        one_reads(one, p->upper, screen_columns, &reads);
+    }
     for (int e = 0; e < 2; ++e) {
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[5];
+        SDL_GPUStorageTextureReadWriteBinding io[6];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         const int b = e == 1;
+        /* the parts composed: the whole screen, or on one screen what the picture reads of it. Engine A
+         * whole when it is shown whole (whole_a) or kept as the capture (hold_capture) */
+        int whole[1][4] = {{0, 0, screen_columns[e], KHDAYS_FRAME_H}};
+        int(*parts)[4] = whole;
+        int part_count = 1;
+        if (one != NULL && parts_on && !(e == 0 && (whole_a || p->capture))) {
+            if (reads.count[e] == 0) {
+                continue; /* nothing of this screen shown */
+            }
+            if (reads.count[e] > 0) {
+                parts = reads.rect[e];
+                part_count = reads.count[e];
+            }
+        }
         SDL_zero(cp);
         cp.scale = (uint32_t)scale;
         cp.width = (uint32_t)(screen_columns[e] * scale);
@@ -1461,6 +1764,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
                 cp.fog_table[i] = io32(io3d, 0x60 + 4u * (unsigned)i);
             }
         }
+        if (kept_screen(e, &cp, parts, part_count)) {
+            continue; /* the screen as it was composed: nothing it is made of changed */
+        }
         in[0] = desc[e];
         in[1] = memory[b ? BBG : ABG];
         in[2] = memory[b ? BOBJ : AOBJ];
@@ -1476,12 +1782,41 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[2].cycle = true;
         io[3].texture = e == 0 && hud ? hud_color : dummy_hud[0]; /* read only */
         io[4].texture = e == 0 && hud ? hud_attr : dummy_hud[1];
-        pass = SDL_BeginGPUComputePass(cmd, io, 5, NULL, 0);
+        io[5].texture = pre2d[e];
+        /* Each DS dot composed once, then its output pixels only where their place can matter (PASS_DOTS,
+         * PASS_READ): for a screen whose dots mostly are the same all over -- one that reads no 3D, or the
+         * one-screen picture's source, which leaves the 3D's places out. Not below 3x, nor wider than the DS. */
+        const int split = one != NULL && !(e == 0 && whole_a);
+        const int once = once_on && pre_shared && scale >= ONCE_SCALE_LEAST && screen_columns[e] == KHDAYS_FRAME_W &&
+                         (cp.source3d == 0u || split);
+        if (once) {
+            io[2].cycle = false; /* (not written by this pass: made anew by the next) */
+            io[5].cycle = true;
+            pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
+            SDL_BindGPUComputePipeline(pass, compose);
+            SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
+            for (int k = 0; k < part_count; ++k) {
+                cp.part = (uint32_t)(parts[k][0] / ONE_TILE) | (uint32_t)(parts[k][1] / ONE_TILE) << 12 |
+                          (uint32_t)PASS_DOTS << 24;
+                SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+                SDL_DispatchGPUCompute(pass, (uint32_t)(parts[k][2] - parts[k][0] + 7) / 8,
+                                       (uint32_t)(parts[k][3] - parts[k][1] + 7) / 8, 1);
+            }
+            SDL_EndGPUComputePass(pass);
+            io[2].cycle = true;
+            io[5].cycle = false; /* read as the pass above left it */
+        }
+        pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-        SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
-        SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
-                               1); /* the shader skips pixels past the edge */
+        for (int k = 0; k < part_count; ++k) {
+            /* each part in the one pass (the screen made anew once); the shader skips pixels past the edge */
+            cp.part = (uint32_t)(parts[k][0] / ONE_TILE) | (uint32_t)(parts[k][1] / ONE_TILE) << 12 |
+                      (uint32_t)(once ? PASS_READ : PASS_EACH) << 24;
+            SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+            SDL_DispatchGPUCompute(pass, ((uint32_t)(parts[k][2] - parts[k][0]) * cp.scale + 7) / 8,
+                                   ((uint32_t)(parts[k][3] - parts[k][1]) * cp.scale + 7) / 8, 1);
+        }
         SDL_EndGPUComputePass(pass);
     }
     if (shop_count != 0) {
@@ -1495,7 +1830,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < shop_count; ++i) {
         const int s = shop_s[i], v = shop_v[i], b = engine_on(p, s) == 1;
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[5];
+        SDL_GPUStorageTextureReadWriteBinding io[6];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         SDL_zero(cp);
@@ -1522,7 +1857,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[2].cycle = true;
         io[3].texture = dummy_hud[0];
         io[4].texture = dummy_hud[1];
-        pass = SDL_BeginGPUComputePass(cmd, io, 5, NULL, 0);
+        io[5].texture = pre2d[b]; /* (bound for the pipeline; not read: PASS_EACH) */
+        pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1621,6 +1957,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             take_capture(cmd, p, &plan, picture, picture_w, picture_h);
         } else {
             take_capture(cmd, p, &plan, screen[0], screen_columns[0] * scale, KHDAYS_FRAME_H * scale);
+            kept[0].ok = 0; /* a bank's copy may lie over what was composed */
         }
     }
     /* what is shown, shrunk to the size shown (the picture on one screen, else the screens) */
@@ -1638,6 +1975,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     }
     if (!(profile_gpu ? submit_timed(cmd, scale, one != NULL) : SDL_SubmitGPUCommandBuffer(cmd))) {
         khdays_sequence_gpu_forget();
+        forget_kept(); /* what was composed never reached the card */
         valid = 0;
         return 0;
     }
@@ -1653,6 +1991,28 @@ int khdays_gfx_render_draw_one(const KhdaysFramePackage *p, int scale, int scale
                                const KhdaysOneScreenDraw *one)
 {
     return draw(p, scale, scale3d, raster, one);
+}
+
+void khdays_gfx_render_set_once(int on)
+{
+    once_on = on != 0;
+    forget_kept();
+}
+
+void khdays_gfx_render_set_parts(int on)
+{
+    parts_on = on != 0;
+}
+
+void khdays_gfx_render_set_keep(int on)
+{
+    keep = on != 0;
+    forget_kept();
+}
+
+unsigned khdays_gfx_render_kept(int engine)
+{
+    return kept[engine == 1].times;
 }
 
 void khdays_gfx_render_set_smooth_3d(int on)
