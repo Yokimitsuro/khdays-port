@@ -1,4 +1,5 @@
 #include "khdays/assets/animation.h"
+#include "khdays/assets/file_bytes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,21 +36,7 @@ std::uint32_t read_u32(const ByteVector& d, const std::size_t o) {
 }
 
 ByteVector read_file(const std::filesystem::path& path) {
-    std::ifstream stream{path, std::ios::binary};
-    if (!stream) {
-        throw std::runtime_error("cannot open animation file: " + path.string());
-    }
-    stream.seekg(0, std::ios::end);
-    const auto end = stream.tellg();
-    if (end < 0) {
-        throw std::runtime_error("cannot size animation file: " + path.string());
-    }
-    ByteVector data(static_cast<std::size_t>(end));
-    stream.seekg(0, std::ios::beg);
-    if (!data.empty()) {
-        stream.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-    }
-    return data;
+    return khdays::assets::read_file_bytes(path, "animation");
 }
 
 bool has_magic(const ByteVector& d, const std::size_t o, const std::string_view m) {
