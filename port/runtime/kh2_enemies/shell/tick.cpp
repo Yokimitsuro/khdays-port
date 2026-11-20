@@ -464,18 +464,32 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     Vec3 place = to_kh2(s.place);
     // another script put it elsewhere since the last frame (1:148 on its handle: the cubes put the Sorcerer they
     // made where they are): that place, not Days's
+    bool moved = false;
     if (e->placed) {
         const Vec3 now = e->actor->place();
-        if (std::fabs(now[0] - e->given[0]) + std::fabs(now[1] - e->given[1]) + std::fabs(now[2] - e->given[2]) > 0.01F)
+        if (std::fabs(now[0] - e->given[0]) + std::fabs(now[1] - e->given[1]) + std::fabs(now[2] - e->given[2]) >
+            0.01F) {
             place = now;
+            moved = true;
+        }
     }
-    // KH2 carries it up and down itself (its jumps, falls, motions in the air): Days lowers a stand-in in the air
-    // between two steps (by 0.148 a frame, its own fall) and that is not KH2's -- the height it was given is kept then.
-    // Days lifting it (out of the ground) is kept; its ground's distance (`above`) is from the place it was given
-    if (e->placed && s.place[1] < e->place[1])
-        place[1] = to_kh2(e->place)[1];
-    if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it)
-        e->floor = place[1] + s.above * kKh2PerDays;
+    // KH2 carries it up and down itself (its jumps, falls, motions in the air); the height Days gives it is not KH2's:
+    // between two steps Days lowers a stand-in in the air (by 0.148 a frame, its own fall), and Roxas's blows throw it
+    // up. The height it was given is kept, but for Days lifting it out of the ground: up to the ground under the place
+    // it was given, no higher (`above` is measured from there, below 0 sunk into it). Before, a KH2 enemy flying (class
+    // 5, no fall of its own) stayed where the blows had thrown it: Vexen 4 m up against the coliseum's wall
+    if (e->placed && !moved) {
+        float height = e->place[1];
+        if (s.place[1] > height && s.above < 0.0F && s.above != -1.0F)
+            height = std::min(s.place[1], e->place[1] - s.above);
+        if (trace_level() >= 2 && std::fabs(s.place[1] - height) > 0.05F)
+            khdays_log("kh2 enemies: %08x kept at the height %.2f, Days's %.2f (%.2f above its ground)", days,
+                       double(height), double(s.place[1]), double(s.above));
+        const float kept[3] = {s.place[0], height, s.place[2]};
+        place[1] = to_kh2(kept)[1];
+    }
+    if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it) -- from the place it was given
+        e->floor = (e->placed ? to_kh2(e->place)[1] : place[1]) + s.above * kKh2PerDays;
         e->floor_known = true;
     }
     // set going by a wave: on its floor, as KH2's area spawns put their objects on their points on the floor --

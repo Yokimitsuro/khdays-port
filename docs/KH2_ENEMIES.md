@@ -2171,8 +2171,22 @@ shell's life:
 - **Its height is KH2's**: between two steps Days lowers a stand-in that is off the ground by 0.148 units a frame
   (seen: the place read back that much under the place given, the ground's distance + 0x13c measured from the place
   given; not Days's pull, `Ov107_AiState_IntegrateVelocity`, whose + 0x60 0x40 made no difference). KH2 carries it up
-  and down itself, so the height given is kept when Days lowers it; Days lifting it (out of the ground) is kept. Before,
-  the Neoshadow's leap (203: up 1.8 m by its motion alone) came down by frame 33, before its dive's attack (frame 40).
+  and down itself, so the height given is kept when Days lowers it. Before, the Neoshadow's leap (203: up 1.8 m by its
+  motion alone) came down by frame 33, before its dive's attack (frame 40). Days lifting it is kept only out of the
+  ground: up to the ground under the place given (+ 0x13c below 0: sunk), no higher. Roxas's blows throw a Days enemy
+  up, and a KH2 enemy flying (class 5, 1:58: no fall of its own) stayed where they had thrown it -- Vexen hung 4 m up
+  against the coliseum's wall (its ring's edge, 8.8 m out) until his script changed class.
+- **A KH2 room's floors and walls** (its `ID_` COCT, what the studio's KH2 rooms are made from): each face's
+  attribute word (`dk::Attr`, the PS3 build's `dk::ATTR_BIT`, its fields from the top bit down) holds its kind in
+  bits 0-3 (1 a floor, 2 a wall, whatever its plane; 4 and 5 rarer, mostly facing up), whom it stops in bits 4-8
+  (0x10 the player, 0x20 enemies, 0x40 flying enemies, 0x80 attacks, 0x100 `hit_safety`), then `ik` 0x200,
+  `dangle` 0x400, `barrier` 0x800, `msg_wall` 0x1000, `callback` 0x2000, `carib_disp` 0xc000, `belt` 0x10000,
+  `polygon_se` 0x60000, `hit_rtn` 0x80000, `nohit_floor` 0x100000. Over the 278 maps of the six packages: 127,357
+  walls that stop everyone (a sixth of them facing up more than 0.6) and 82,932 walls that stop none of the three
+  (`OctCollFile::setSelectMask` picks the faces a test reads). The coliseum he00: the stands' steps (0x284) stop only
+  attacks and feet (`ik`), the corner columns' pyramid tops (0x1f2, facing up 0.78) are walls. The studio's import
+  (`kh2_room`'s `collision_scene`) keeps none of it: every face kept, as a ground, wall or ceiling by its plane, both
+  sides (the columns' capitals' backs, facing up 0.23, are grounds in Days's lists). Not changed yet.
 - **Motions in the air**: KH2's air classes add no pull while + 0x18c has 0x1000020 or bit 6 (`FUN_1403cb100`,
   `FUN_1403cb500`): ranges 3, 24 and 30 (`FUN_14040d810`: 30 sets bit 24, which `1:60` counts as off the ground).
   The port's pull leaves those motions alone; its jumps (1:55, 1:156) still follow their own arc in them.
