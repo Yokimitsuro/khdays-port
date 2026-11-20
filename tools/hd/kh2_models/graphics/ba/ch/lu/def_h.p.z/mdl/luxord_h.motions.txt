@@ -1,0 +1,96 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Luxord (B_EX150) as Days' luxord_h and luxord, playing KH2's own motions for him (`own`: on his own
+# bones). His mset's slots are N_CM000_BTL's (Marluxia's): 0 idle (00A), 1 and 2 the walk (01A both: no run of its
+# own), 3 the jump (03A), 4 the fall (04A), 5 the landing (05A), 10-15 damage (20A-25A), 16-19 the aerial damage
+# (30A-33A; his 31A and 33A are not landings: 80 ticks, no loop).
+mset B_EX150.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# His card: the game draws it as an object of its own (ba/ch/lu/w_.p2, the `a` models: lu_w00a under lu_w_R; at rest
+# on Bip01_R_Hand's own axes, 8.2 cm out along the fingers; its face along the hand's z). In the game's own animations
+# it is carried by his right hand (204) as the game's hand carries it (Days' attack B000 keeps it 10-13 cm from the
+# hand); sent 0.6 forearms or more off (a throw), only moved by how far the KH2 hand stands from the game's. In KH2
+# motions it stays on the hand at its own grip, so it does not take the game's turns between its idle and run (it
+# spun in his idle-walk blends), the mix of the two by KH2's share: KH2's hand has y and z the other way from Days',
+# and Days' grip laid on it faced the card into his palm. The card's face is its -z (its back +z: the user, in game).
+# The least turn from Days' grip pointing its face at his eyes in the idle (`rotate`, about the hand's own axes): 1
+# degree off there, 15-17 in the walk; `offset`, cm in the card's axes: its grip 8.2 cm along the hand. The `b` models
+# (a fan of five, lu_w00b00-04) are the game's.
+weapon_model ba/ch/lu/w_ lu_w00a 204 hand 204 rotate -41 -33 13 offset 6.7 1.5 -4.5
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 135-156 206-227
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_lu_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_lu_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_lu_A004
+# The run stays the game's; the port's walk (the stick pushed short of running) plays KH2's 01A at its own pace
+walk b_lu_A001 1 blend 8
+# The jump, as marluxia_h's: the take-off and the rise one KH2 jump (03A), the fall (04A) from the game's 12th frame
+# in the air, then the landing (05A), played out into the idle
+b_lu_A002 3 blend 8
+b_lu_A003 3 blend 8
+b_lu_A003@12 4 blend 8
+b_lu_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_lu_A005 10 finish blend 8
+b_lu_A006 11 finish blend 8
+b_lu_A007 13 finish blend 8
+b_lu_A008 12 finish blend 8
+# The aerial damage (30A front, 32A back), landing on his own landing (05A, slot 5)
+air b_lu_A005 16 land 5 finish blend 8
+air b_lu_A006 16 land 5 finish blend 8
+air b_lu_A007 18 land 5 finish blend 8
+air b_lu_A008 18 land 5 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# ledge (A009-A011), A012 and A013, the attacks (B000-B011, ba/ch/lu/am.p2), the guard and the other actions
+# (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L003)
+b_lu_A001 blend 8
+b_lu_A009 blend 8
+b_lu_A010 blend 8
+b_lu_A011 blend 8
+b_lu_A012 blend 8
+b_lu_A013 blend 8
+b_lu_B000 blend 8
+b_lu_B001 blend 8
+b_lu_B002 blend 8
+b_lu_B003 blend 8
+b_lu_B004 blend 8
+b_lu_B005 blend 8
+b_lu_B006 blend 8
+b_lu_B007 blend 8
+b_lu_B008 blend 8
+b_lu_B009 blend 8
+b_lu_B010 blend 8
+b_lu_B011 blend 8
+b_lu_Ca000 blend 8
+b_lu_Ca001 blend 8
+# b_lu_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_lu_Ca003 blend 8
+b_lu_Ca004 blend 8
+b_lu_Ca005 blend 8
+b_lu_Ca006 blend 8
+b_lu_Ca007 blend 8
+b_lu_Ca008 blend 8
+b_lu_D000 blend 8
+b_lu_D001 blend 8
+b_lu_D002 blend 8
+b_lu_D003 blend 8
+b_lu_L000 blend 8
+b_lu_L001 blend 8
+b_lu_L002 blend 8
+b_lu_L003 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (run +25, glide
+# hover +25, forward glide +27 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -24 2 for b_lu_A001
+ds_pose rotate 0 0 -22 2 for b_lu_Ca000
+ds_pose rotate 0 0 -25 2 for b_lu_Ca001

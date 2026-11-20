@@ -570,6 +570,47 @@ void free_chain_upside_down()
     CHECK(worst_step < 2.0F);
 }
 
+// `rest` lines: the group's reference shape is the skeleton with those turns, as written (not hung at load, though
+// `settle on`), its degrees read back as the same turn; a bone of another group is an error
+void rest_lines()
+{
+    for (const Vec3 d : {Vec3{10, -20, 30}, Vec3{0, 91.71F, 0}, Vec3{-170, 45, 120}, Vec3{0, 90, 15}}) {
+        const Quat q = rest_turn(d);
+        CHECK(angle_between(q, rest_turn(rest_degrees(q))) / kDegrees < 0.01F);
+    }
+    Skirt s = make_skirt(6, 3);
+    const int c0 = static_cast<int>(s.sk.names.size());
+    s.sk.names.insert(s.sk.names.end(), {"c0", "c1", "c2"});
+    s.sk.parent.insert(s.sk.parent.end(), {1, c0, c0 + 1});
+    for (int k = 0; k < 3; ++k)
+        s.sk.rest.push_back(down_frame({0.0F, 1.0F - 0.1F * static_cast<float>(k), 0.3F}, 0.0F));
+    const std::string chain = "group string chain\n  attach hips\n  chain c0 c1 c2\n  offset c2 0.1 0 0\n"
+                              "  follow_frequency 0\n  collide\n  settle on steps 120\n";
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "") + chain + "  rest c0 0 0 30\n  rest c1 0 0 0\n  rest c2 0 0 0\nend\n", s.sk,
+                      s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    std::vector<Frame> pose(s.sk.rest.size());
+    for (std::size_t b = 0; b < pose.size(); ++b)
+        pose[b] = frame_of(s.sk.rest[b]);
+    const std::vector<Frame> shape = rest_shape(*rig, pose);
+    float off = 0.0F;
+    for (const Particle &p : rig->particles)
+        if (p.dynamic && rig->groups[static_cast<std::size_t>(p.group)].name == "string")
+            off = maxf(off,
+                       length(apply(pose[1], p.reference) - apply(shape[static_cast<std::size_t>(p.bone)], p.offset)));
+    CHECK(off < 1e-5F); // as written, gravity left out
+    CHECK(angle_between(shape[static_cast<std::size_t>(c0)].q, rest_turn({0, 0, 30})) < 1e-4F); // the hips at rest
+    for (const SimBone &sb : rig->bones_out)
+        if (sb.bone == c0 + 2)
+            CHECK(angle_between(compose(pose[1], sb.reference).q, shape[static_cast<std::size_t>(c0 + 2)].q) < 1e-4F);
+    Diagnostics bad;
+    CHECK(cooked(skirt_config(s, "") + chain + "  rest s0_0 0 0 0\nend\n", s.sk, s.mesh, bad) == nullptr);
+    CHECK(has_text(bad, "not one of group string"));
+}
+
 // `slot` with several slots and ranges: the control holds while any of them plays, not another slot or the game's
 void control_slots()
 {
@@ -659,6 +700,96 @@ void authored_and_release()
     }
     // the release continues from where the authored motion left it: no step bigger than the motion's own
     CHECK(jump < 0.08F);
+}
+
+// A control's time window: one starting later than its animation eases in over its blend; one starting with it is
+// not eased again each time a looping animation starts over (the coat fell back to the plain cloth every loop)
+void control_window()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    const std::string text = skirt_config(s, "") +
+                             "control late\n  animation *\n  time 0.5 end\n  blend 0.25 0\n  groups skirt\n"
+                             "  mode guided\nend\n"
+                             "control whole\n  animation *\n  time 0 end\n  loop on\n  blend 0.25 0\n  groups skirt\n"
+                             "  mode guided\nend\n";
+    auto rig = cooked(text, s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 5);
+    std::vector<Frame> pose = pose_of(s.sk, {});
+    ActorInput in;
+    in.pose = &pose;
+    float before = -1.0F, ramp = -1.0F, after = -1.0F, looped = 2.0F;
+    for (int f = 0; f <= 120; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        in.seconds = t;
+        // `late` on a 2 s animation; `whole` on one looping every 0.5 s
+        in.animations = {{"long", -1, -1.0F, t, 2.0F, 1.0F}, {"short", -1, -1.0F, std::fmod(t, 0.5F), 0.5F, 0.0F}};
+        a.update(in);
+        CHECK(a.control_weights().size() == 2);
+        if (a.control_weights().size() != 2)
+            return;
+        before = f == 27 ? a.control_weights()[0] : before;
+        ramp = f == 36 ? a.control_weights()[0] : ramp;
+        after = f == 60 ? a.control_weights()[0] : after;
+    }
+    CHECK(before == 0.0F);             // 0.45 s: before its window
+    CHECK(ramp > 0.2F && ramp < 0.6F); // 0.6 s: easing in (0.4)
+    CHECK(after > 0.99F);              // 1 s: whole
+    Actor b(rig, 5);
+    for (int f = 0; f <= 120; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        in.seconds = t;
+        in.animations = {{"short", -1, -1.0F, std::fmod(t, 0.5F), 0.5F, 1.0F}};
+        b.update(in);
+        if (f >= 20)
+            looped = std::fmin(looped, b.control_weights()[1]);
+    }
+    CHECK(looped > 0.99F); // its easing once, not at each of the loop's starts (0.5, 1, 1.5 s)
+}
+
+// A collider on a bone the simulation moves (rig.cpp: Collider::sim) follows that bone as simulated, not as animated:
+// as the last draw rebuilt it on its group's reference bone, carried by that bone as posed now (Simulation::shapes)
+void collider_on_simulated_bone()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "collider tip capsule s0_2 length 0.2 radius 0.02 tags tip\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    CHECK(rig->colliders.size() == 1 && rig->colliders[0].sim >= 0 &&
+          rig->colliders[0].end_sim == rig->colliders[0].sim); // `length`: its end on the same bone
+    Actor a(rig, 3);
+    std::vector<Frame> pose, out;
+    std::vector<std::uint8_t> written;
+    ActorInput in;
+    in.pose = &pose;
+    const auto tip = static_cast<std::size_t>(s.bone(0, 2));
+    float off_simulated = 0.0F, off_animated = 0.0F;
+    Frame on_hips; // the tip as the last draw rebuilt it, on the hips
+    for (int f = 0; f < 90; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        pose = pose_of(s.sk, {std::sin(t * 3.0F) * 0.4F, 0.0F, 0.0F}); // swung sideways: the strips lag
+        in.seconds = t;
+        a.update(in);
+        out = pose;
+        written.assign(pose.size(), 0);
+        a.output(pose, out, written);
+        if (f >= 30) {
+            const Vec3 at = a.simulation().colliders()[0].a;
+            off_simulated = maxf(off_simulated, length(at - apply(compose(pose[1], on_hips), {})));
+            off_animated = maxf(off_animated, length(at - apply(pose[tip], {})));
+        }
+        on_hips = relative(pose[1], out[tip]);
+    }
+    if (off_simulated >= 0.001F || off_animated <= 0.05F)
+        std::fprintf(stderr, "collider on a simulated bone: %.1f cm from it as simulated, %.1f as animated\n",
+                     static_cast<double>(off_simulated * 100.0F), static_cast<double>(off_animated * 100.0F));
+    CHECK(off_simulated < 0.001F); // the drawn bone's
+    CHECK(off_animated > 0.05F);   // not where the animation puts it
 }
 
 // A guided coat whose animation stretches its bones (KH2's battle coats scale theirs several times
@@ -1765,7 +1896,10 @@ int main()
     free_chain_upside_down();
     floor_over_body();
     control_slots();
+    control_window();
+    collider_on_simulated_bone();
     authored_and_release();
+    rest_lines();
     guided_stretch();
     cutscene_sim_shell();
     shell_push_shin();

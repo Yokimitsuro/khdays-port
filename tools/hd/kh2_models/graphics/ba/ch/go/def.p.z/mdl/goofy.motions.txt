@@ -1,0 +1,89 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is KH2's Goofy (P_EX030), playing his own mset on his own bones; its slots are numbered as P_EX110's
+# and P_EH000's, so the lines are riku_h's (and donald's).
+mset P_EX030.mset
+# off: the game places Goofy and KH2's root motion is taken out of the bones (as KH2 does)
+root_motion off
+# The game's weapon (go_h_R, hanging from the game's root) on KH2's right hand's end (101, the fingers' parent), where
+# KH2 holds his shield, turned from 101's axes into the frame the game's weapon is made in (go_h_R's rest frame on
+# the game's model). `thrown`: where the game sends it off his grip it goes there, moved by how far the KH2 hand
+# stands from the game's, as roxas_bf_h's `place ... ride` keyblades (P_EX030 has no weapon bone of its own to place;
+# 101 carries the fingers). The game keeps it within 16 cm of its grip in every animation but b_go_B007 (the throw,
+# out to 1.7 m) and b_go_D003 (53 cm); it starts to leave at 14 cm (0.6 of KH2's forearm), all of it at 35.
+weapon go_h_R 101 rotate 180 0 0 thrown
+# What he holds plays W_EX030.mset's slots as he plays P_EX030's (on W_EX030's bones; bone 3 the shield). The
+# replaced weapons (`held`) are posed by it.
+weapon_motions W_EX030.mset W_EX030.mdlx 3
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the calm idle) turns
+# them at its first frame
+ds_pose 2 28-43 102-117
+
+b_go_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_go_A000
+# The game's landing animation (`air` lines' `land`)
+landing b_go_A004
+b_go_A001 8 blend 8
+b_go_A002 14 blend 8
+b_go_A003 14 blend 8
+b_go_A003@12 18 blend 8
+b_go_A004 22 finish 24 blend 8
+# Ledge: KH2's grab (30) holds its loop from tick 88, so the game's hang plays on there; the hand on the ledge
+# moved onto the game's (KH2 cm, the model's axes: x left, y up, z forward). Both hang by the left hand: the game's
+# at (-5.2, 151.2, 34.3) in the root node's frame, KH2's (slot 30's loop, root motion out) at (0.0, 114.0, 87.8), so
+# KH2 hangs 53.5 cm too far forward, into the wall, and 37.2 cm too low (the game's Goofy is a fifth taller). The
+# climb (34, 44 ticks against the game's 15 frames: `follow` ends it with the game's) glides from there to where the
+# game's climb ends against its idle: there the game's hips are 38.1 cm over its idle's (A000), 5.8 to his right and
+# 0.5 further back, KH2's 12.8 over its idle's (slot 0), 6.6 to his left and 0.8 further back.
+b_go_A009 30 blend 8 offset -5.3 37.2 -53.5
+b_go_A010 30 start_loop blend 8 offset -5.3 37.2 -53.5
+b_go_A011 34 follow blend 8 offset -5.3 37.2 -53.5 to -12.4 25.3 0.3
+# Damage, as riku_h's: KH2 returns to its calm idle after these, then readies (slot 24, A010) back into the battle
+# stance when the game goes back to its idle
+b_go_A008 50 finish 24 blend 8
+b_go_A005 42 finish 24 blend 8
+b_go_A007 54 finish 24 blend 8
+b_go_A006 46 finish 24 blend 8
+# Damage in the air: KH2's aerial damage loops (66 front, 74 back); landing straight out of it plays KH2's landing
+# (70, 78), then readies (24)
+air b_go_A005 66 land 70 finish 24 blend 8
+air b_go_A006 66 land 70 finish 24 blend 8
+air b_go_A007 74 land 78 finish 24 blend 8
+air b_go_A008 74 land 78 finish 24 blend 8
+
+# Every line above fades over 8 frames. The game's own animations (no KH2 motion for them: his attacks, guard,
+# magic and limit) fade into the idle over 8 frames when the game goes back to it
+b_go_A012 blend 8
+b_go_A013 blend 8
+b_go_B000 blend 8
+b_go_B001 blend 8
+b_go_B002 blend 8
+b_go_B003 blend 8
+b_go_B004 blend 8
+b_go_B005 blend 8
+b_go_B006 blend 8
+b_go_B007 blend 8
+b_go_Ca000 blend 8
+b_go_Ca001 blend 8
+# b_go_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
+b_go_Ca003 blend 8
+b_go_Ca004 blend 8
+b_go_Ca005 blend 8
+b_go_Ca006 blend 8
+b_go_Ca007 blend 8
+b_go_Ca008 blend 8
+b_go_D000 blend 8
+b_go_D001 blend 8
+b_go_D002 blend 8
+b_go_D003 blend 8
+b_go_L000 blend 8
+b_go_L001 blend 8
+b_go_L002 blend 8
+b_go_L003 blend 8
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk at its own
+# pace, crossing from and to the run over 6 frames
+walk b_go_A001 4 blend 6

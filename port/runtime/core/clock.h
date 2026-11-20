@@ -35,6 +35,10 @@ double khdays_clock_rate(void);
 void khdays_clock_lock_screen(int on);
 void khdays_clock_vblank(u64 vblank);
 
+/* While the screen's lock holds, the screen's refreshes a VBlank (1 at 60 Hz, 2 at 120); 0 while it does
+ * not (the screen at another rate, the lock off, the time held). Safe from any thread. */
+int khdays_clock_screen_refreshes(void);
+
 /* The game is held by stopping its time: nothing comes due, and let go, time goes on from the same
  * cycle with nothing to catch up. The time stands still while any reason holds it (the settings
  * screen, the game waiting at a movie's end for its HD video). Safe from any thread. */

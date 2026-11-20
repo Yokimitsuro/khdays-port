@@ -100,7 +100,7 @@ void vif(Writer& w, unsigned cmd, unsigned num, unsigned imm) {
 
 constexpr float kHalfTurn = 1.5707963F;
 
-// Bone 0 at the origin; bone 1 under it, 100 up and turned a quarter about z.
+// Bone 0 at the origin; bone 1 under it, 100 up and turned a quarter about z, a helper 50 long.
 // The packet's positions: 0-1 on bone 0, 2-3 on bone 1 (x y z pre-weighted,
 // the weight in w). Weight group 0 (one bone): positions 0 and 2; group 1
 // (two bones): 1 (0.25) with 3 (0.75). The strip: blended vertices 0 1 2.
@@ -120,9 +120,10 @@ Bytes model(bool weighted) {
     for (int i = 0; i < 2; ++i) {
         w.u32(static_cast<std::uint32_t>(i));
         w.u32(i == 0 ? 0xFFFFFFFFU : 0U);
-        w.zeros(8);
-        const float turn = i == 1 ? kHalfTurn : 0.0F, up = i == 1 ? 100.0F : 0.0F;
-        for (const float f : {1.0F, 1.0F, 1.0F, 0.0F, 0.0F, 0.0F, turn, 0.0F, 0.0F, up, 0.0F, 1.0F}) {
+        w.u32(0);
+        w.u32(i == 1 ? 1U : 0U);  // +0xC bit 0: bone 1 a helper (no envelope)
+        const float turn = i == 1 ? kHalfTurn : 0.0F, up = i == 1 ? 100.0F : 0.0F, length = i == 1 ? 50.0F : 0.0F;
+        for (const float f : {1.0F, 1.0F, 1.0F, length, 0.0F, 0.0F, turn, 0.0F, 0.0F, up, 0.0F, 1.0F}) {
             w.f32(f);
         }
     }
@@ -426,6 +427,8 @@ void test_model() {
                m.joints[1].parent == 0,
            "the bones are the joints");
     expect(near(m.joints[1].world[13], 1.0F) && near(m.joints[1].world[1], 1.0F), "bone 1 at rest, in metres");
+    expect(!m.joints[0].no_envelope && m.joints[1].no_envelope, "bone 1 a helper: +0xC bit 0");
+    expect(m.joints[0].length == 0.0F && near(m.joints[1].length, 0.5F), "bone 1's length (+0x1C), in metres");
     expect(m.model.palette.size() == 3, "an identity, then a palette entry per joint");
     expect(m.model.meshes.size() == 1 && m.model.meshes[0].vertices.size() == 3, "one triangle");
     const auto& mesh = m.model.meshes[0];

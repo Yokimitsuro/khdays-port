@@ -494,6 +494,13 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             }
             g.hang = normalized(d);
             g.hang_given = true;
+        } else if (w == "rest") {
+            Vec3 d;
+            if (l.words.size() != 5 || !vec3(l, 2, d)) {
+                error(l.number, "write `rest <bone> <x> <y> <z>` (its turn on its parent, degrees)");
+                continue;
+            }
+            g.rest.push_back({{l.words[1], l.number}, d});
         } else if (w == "twist") {
             if (l.words.size() == 2 && (l.words[1] == "neighbours" || l.words[1] == "reference"))
                 g.twist_from_neighbours = l.words[1] == "neighbours";

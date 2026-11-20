@@ -1,0 +1,200 @@
+# Secondary motion of KH2's Lexaeus (N_CM020_BTL) drawn as Days' lexaeus_h and lexaeus: marluxia_h's coat, drawstrings
+# and hood on his bones (the same numbers). No hair to simulate. Bones are KH2 bone numbers (kh2_<n>).
+# docs/SECONDARY_MOTION.md explains every line. His cuffs are fitted in bones.txt (`cuff`), not simulated.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. The fixed sizes are axel_h's,
+# scaled by his parts' vertices against Axel's: pelvis 1.25 as long, chest bone 1.37, thighs 1.24, feet 1.03; his hands
+# and thumbs are Axel's own size. ---
+collider pelvis   capsule 2 length 33.5 fit 0.85 tags body
+collider spine    capsule 94 96 fit 0.85 tags torso
+collider chest    capsule 96 length 30.5 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 19.4 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 12.1 radius 3.5 2.7 tags legs
+collider thigh_r  capsule 14 15 offset 19.4 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 12.1 radius 3.5 2.7 tags legs
+collider heel_l   capsule 9 length 11.1 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider heel_r   capsule 18 length 11.1 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider arm_l    capsule 109 110 fit 0.85 side motion tags arms
+collider forearm_l capsule 110 111 fit 0.85 side motion tags arms
+collider hand_l   sphere 131 offset 8.2 0 0 radius 4.8 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 137 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 180 181 fit 0.85 side motion tags arms
+collider forearm_r capsule 181 182 fit 0.85 side motion tags arms
+collider hand_r   sphere 202 offset 8.2 0 0 radius 4.8 side rest tags hands right_hand
+collider thumb_r  capsule 208 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
+# the head's vertices stand 210-247 cm high, 18 behind to 16 in front of the head bone (216.94, z -1.0)
+collider head     sphere 167 offset 11.6 -0.5 0 radius 13 tags head
+# the drawstrings' alone: over his broad chest's front (z 19; the axis about -4 where they hang), 0.5 clear of it
+collider chest_strings capsule 96 97 radius 22 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface ---
+# Each strip runs from just under the belt to the hem. 83 is shared: the front
+# forks under it into two panels (86-88 and 90-92) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 83 86 87 88
+  strip 83 90 91 92
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 34 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  # radius 42: his coat hangs 1.24 times as wide as marluxia_h's (34); at 34 his legs came 25 cm out in KH2's run
+  follow_bone 5 radius 42 weight 0.9 always 0.7
+  follow_bone 14 radius 42 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 86 90        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  # in the game's own animations a leg could throw the front fork (83) across the slit, up to 90 cm a frame
+  # (replay --days run): it rides its target, and contact moves no control faster than 5 m/s past its target
+  max_speed 5
+  bone 83 no_sim 1
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 0.00 -1.57 0.13
+  rest 34 0.23 -5.24 -4.95
+  rest 42 -0.12 8.05 -1.76
+  rest 50 -0.02 -1.98 1.10
+  rest 58 -0.21 -4.81 4.93
+  rest 66 0.14 7.64 2.08
+  rest 74 0.01 -1.56 -0.86
+  rest 82 -0.01 -2.85 0.22
+  rest 83 0.00 -2.43 -0.73
+  rest 29 0.00 0.55 0.12
+  rest 37 0.16 3.92 4.62
+  rest 45 0.05 -13.47 -0.44
+  rest 53 -0.20 5.60 -4.11
+  rest 61 -0.12 3.16 -4.25
+  rest 69 -0.02 -12.82 0.19
+  rest 77 0.17 5.22 3.78
+  rest 30 -0.02 4.27 -0.43
+  rest 38 -0.10 4.77 0.73
+  rest 46 0.28 6.07 3.09
+  rest 54 -0.20 -3.76 3.33
+  rest 62 -0.18 4.87 -1.06
+  rest 70 -0.06 6.53 -3.10
+  rest 78 0.19 -4.26 -3.30
+  rest 86 0.08 5.69 1.58
+  rest 90 0.03 5.82 0.61
+  rest 31 0.00 -1.97 -0.02
+  rest 39 0.04 -2.42 -0.86
+  rest 47 -0.16 -0.37 -0.93
+  rest 55 0.20 -0.05 -0.46
+  rest 63 -0.06 -2.71 0.42
+  rest 71 -0.07 -1.48 0.66
+  rest 79 0.02 0.73 0.44
+  rest 87 -0.26 8.22 -3.56
+  rest 91 0.13 8.08 1.77
+  rest 32 0.00 -1.05 0.10
+  rest 40 0.22 0.09 -0.21
+  rest 48 0.11 -0.05 -0.02
+  rest 56 -0.01 0.33 -0.15
+  rest 64 -0.07 0.51 0.55
+  rest 72 -0.09 0.36 0.26
+  rest 80 -0.02 0.18 0.17
+  rest 88 0.43 -6.02 0.96
+  rest 92 -0.65 -10.35 -1.91
+end
+
+# --- Drawstrings: chains from the collar (97), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  # the arms too, and damped: the tips no longer whip when the hands cross the chest
+  collide torso body strings arms
+  attach 97
+  chain 101 102 103 104
+  hang 0 -1 0.35
+  settle on steps 360
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 -11.40 -29.96 44.59
+  rest 102 2.99 3.39 27.36
+  rest 103 0.61 -0.74 8.85
+  rest 104 0.41 6.43 7.98
+end
+group string_r chain preset kh2_string
+  collide torso body strings arms
+  attach 97
+  chain 172 173 174 175
+  hang 0 -1 0.35
+  settle on steps 360
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 172 11.41 30.01 44.56
+  rest 173 -3.06 -3.36 27.36
+  rest 174 -0.61 0.74 8.85
+  rest 175 -0.41 -6.43 7.98
+end
+
+# --- Hood: one bone (99) hanging behind the neck; it swings and lies on the back as one piece ---
+group hood chain preset kh2_hood
+  attach 97
+  chain 99
+  settle on steps 240
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 99 -11.19 87.44 -11.71
+end
+
+# --- Animation controls ---
+# N_CM020_BTL's own motions carry its coat and drawstrings as KH2 animated them: there they guide the cloth, and the
+# thighs carry none of it. The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# The game's own animations: his thigh comes up past the hip (B002, B006, the roll) and the swing cone (55 deg) turned
+# the panel it pushed out back into it: no cone; the waist rows stretch over the thigh (0.04 -> 0.3), inertia 0.6 (as
+# saix_h). Replay --days idle-move-idle, 10 runs each (30/60 Hz, 0.4-0.8 s lead-in), B000-B011, run, guard, roll, combo:
+# legs out of the coat 157 -> 49 cm (each one's worst, summed), frames over 0.5 cm 416 -> 72, jitter p99 summed
+# 1304 -> 915 cm; the cone alone 157 -> 68 cm
+control days_moves
+  animation b_le_A001 b_le_A002 b_le_A009 b_le_A010 b_le_A011 b_le_A012 b_le_A013 b_le_B000 b_le_B001 b_le_B002 b_le_B003 b_le_B004 b_le_B005 b_le_B006 b_le_B007 b_le_B008 b_le_B009 b_le_B010 b_le_B011 b_le_Ca000 b_le_Ca001 b_le_Ca002 b_le_Ca003 b_le_Ca004 b_le_Ca005 b_le_Ca006 b_le_Ca007 b_le_Ca008 b_le_D000 b_le_D001 b_le_D002 b_le_D003 b_le_L000 b_le_L001 b_le_L002 b_le_L003
+  groups coat
+  swing_limit 180
+  row_max_strain 0.3 hem 4
+  inertia 0.6
+  blend 0.15 0.15
+end

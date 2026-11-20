@@ -176,7 +176,8 @@ private:
     // poses: the needed bones at the substep's start and end
     std::vector<Frame> sub0_, sub1_;
     std::vector<Shape> shape0_, shape1_;
-    Aabb bounds_; // the dynamic particles' this substep, grown by their reach
+    Aabb bounds_;                // the dynamic particles' this substep, grown by their reach
+    float max_thickness_ = 0.0F; // the thickest particle's: how far past a core any contact reaches
     std::vector<Triangle> env_;
     std::vector<Aabb> env_boxes_;
     std::vector<float> room_push_; // per env_ triangle: the most it pushed one point this tick
@@ -204,16 +205,25 @@ private:
     std::vector<Aabb> face_box_;
     // bone rebuilding
     std::vector<Frame> bone_out_;
+    // each rebuilt bone as the last reconstruct left it, on its group's reference bone, for the colliders on
+    // simulated bones (Collider::sim); false until a tick has rebuilt them (and after a reset)
+    std::vector<Frame> sim_relative_;
+    bool sim_relative_valid_ = false;
     std::vector<std::uint8_t> bone_done_;
     // a freely swinging bone (no swing limit): its last turn, and whether it has one since a start
     std::vector<Quat> swung_;
     std::vector<std::uint8_t> swung_valid_;
 };
 
-// The reference shapes made ready, once a model: every group's rest shape pushed out of the colliders
-// it collides with (its links kept); the groups that ask (`settle on`) then hung under gravity at the
-// rest pose against them, their follow off, until they stand. Controls still inside a collider after
-// that are left out of it, each named in `out`.
-void prepare_references(Rig &rig, Diagnostics *out = nullptr);
+// The reference shapes made ready, once a model: a group with `rest` lines takes its shape from them
+// (rest_shape); every other group's rest shape is pushed out of the colliders it collides with (its links
+// kept), and those that ask (`settle on`) hung under gravity at the rest pose against them, their follow
+// off, until still (`until_still`, else every step asked). Controls still inside a collider after that are
+// left out of it, each named in `out`.
+void prepare_references(Rig &rig, Diagnostics *out = nullptr, bool until_still = true);
+
+// The skeleton at rest (`pose`, the rest frames) with the groups' `rest` turns in place of their bones' own,
+// the bones below carried along
+std::vector<Frame> rest_shape(const Rig &rig, const std::vector<Frame> &pose);
 
 } // namespace khdays::secondary

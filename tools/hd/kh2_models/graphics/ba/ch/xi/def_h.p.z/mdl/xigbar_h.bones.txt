@@ -1,0 +1,81 @@
+# KH2 bones (kh2_<index>) to Days' Xigbar nodes, one pair a line: <joint> <node>.
+# This model is Xigbar (B_EX140), drawn as Days' xigbar_h and xigbar. His skeleton is B_EX120_HB's (Demyx) to the
+# collar, his body mesh the same vertex for vertex: bones 0-94 (the legs and the coat's strips) numbered as B_EX110's,
+# spine 96-98, collar 99, hood 101, drawstrings 103-106/176-179; clavicle 107 (108 its vertices), upper arm 111, forearm
+# 112, wrist 113, hand 118, fingers 120-141 (Demyx's -15), cuff pieces 142-149 under 116; neck 159, head 162, ponytail
+# 165-171 under 164; the right arm +73 from the left. His two arrowguns are 231-235 and 236-240, from the root.
+# Unpaired KH2 bones follow their parents. No `scale`: his legs are 4% shorter than the game's, his arms as long, and
+# his torso (hips to neck) 14 cm longer.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, xigbar_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips, spine, neck and head (kh2_98 carries the chest), as demyx_h's
+kh2_2 Bip01_Pelvis
+kh2_97 Bip01_Spine
+kh2_98 Bip01_Spine1
+kh2_159 Bip01_Neck
+kh2_162 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_107 Bip01_L_Clavicle
+kh2_111 Bip01_L_UpperArm
+kh2_112 Bip01_L_Forearm
+kh2_118 Bip01_L_Hand
+
+# Right arm
+kh2_180 Bip01_R_Clavicle
+kh2_184 Bip01_R_UpperArm
+kh2_185 Bip01_R_Forearm
+kh2_191 Bip01_R_Hand
+
+# Two-bone limbs, knees and elbows bending the way Days' do. `exact` (the legs): the feet go where the game's are. The
+# offset keeps KH2's sole on the game's: his ankle stands 14.8 over its sole, the game's 10.2 (the 1.6 is roxas_bf_h's).
+ik kh2_5 kh2_6 kh2_9 exact 0 4.6 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 4.6 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (his left knee 165 degrees in the game's Ca005 (the game's 149))
+lower_hips 1
+ik kh2_111 kh2_112 kh2_118
+ik kh2_184 kh2_185 kh2_191
+
+# The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
+# roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+# The thighs' vertices 10% thinner front to back too (their y points backward), as riku_h's, so they stay under
+# the coat; the thigh colliders (secondary.txt) are sized on them.
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+
+# The pelvis under the coat not drawn, as riku_h's: what kh2_2 carries from below where the coat itself is skinned to
+# it (B_EX140's coat on kh2_2 from 118 cm up) down to the hip joints (108), faded back in over 4 cm
+hide kh2_2 from 116 to 108 fade 4
+
+# `align`: the hands and feet turned onto the game's at rest by their shape.
+align kh2_9 foot
+align kh2_18 foot
+align kh2_118 hand
+align kh2_191 hand
+
+# His arrowguns: meshes 9-16 (on 232 and 235) and 17-24 (237, 240), texture 5. Not drawn: the game draws its own as
+# objects it attaches to xig_h_L and xig_h_R, carried by his KH2 hands (the `weapon` lines in motions.txt).
+hide_mesh 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
+
+# His cuffs (the pieces 142-149 under the wrist) are left as they hang: no `twist`, `cuff` or `swing`.

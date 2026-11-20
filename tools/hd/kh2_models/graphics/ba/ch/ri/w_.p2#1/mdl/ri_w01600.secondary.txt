@@ -1,0 +1,26 @@
+# Secondary motion of KH2's Way to the Dawn (W_EH000) drawn as Days' ri_w01600, and of W_EX010_20 as ri_w14600: the
+# keychain, as ro_w00600's (W_EX010's: the same bones). docs/SECONDARY_MOTION.md explains every line.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0
+environment off             # the room's collision: none for the keychain
+# The keychain: a ring at the handle's end (kh2_3), links kh2_4 to kh2_10 and the token (kh2_11), hung from the
+# blade (kh2_2), swinging freely (preset kh2_keychain)
+group keychain chain preset kh2_keychain
+  attach kh2_2
+  chain kh2_3 kh2_4 kh2_5 kh2_6 kh2_7 kh2_8 kh2_9 kh2_10 kh2_11
+  settle on steps 360
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 3 0.00 -89.98 0.00
+  rest 4 0.00 0.00 0.00
+  rest 5 0.00 0.00 0.00
+  rest 6 0.00 0.00 0.00
+  rest 7 0.00 0.00 0.00
+  rest 8 0.00 0.01 0.00
+  rest 9 0.00 -0.01 0.00
+  rest 10 0.00 -0.01 0.00
+  rest 11 0.00 0.01 0.00
+end

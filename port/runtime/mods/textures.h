@@ -46,6 +46,9 @@ typedef struct KhdaysTextureReplacement {
  * polygons, so the graphics card holds it while the polygons drawn use it and may let it go past the most
  * its memory holds (host/render/gpu_hd.c). Every other picture stays on the card once there. */
 #define KHDAYS_REPLACEMENT_ON_DEMAND 0x20u
+/* A still picture whose texels are followed by their smaller copies (gfx/mips.h), made as it was read: the
+ * renderer copies them instead of making them as it uploads it. */
+#define KHDAYS_REPLACEMENT_SMALLER 0x40u
 
 /* A texture from a file's data, as the port draws it, into `rgba` (width x
  * height x 4 bytes, the sizes of `param`): `param` its TEXIMAGE_PARAM (the

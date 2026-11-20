@@ -1,0 +1,357 @@
+# Secondary motion of KH2's Xaldin (B_EX130) drawn as Days' xaldin_h and xaldin: axel_h's coat on the same bones, his
+# drawstrings, hood and braids. Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every line. His
+# cuffs are fitted in bones.txt (`cuff`), not simulated.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. The fixed sizes are axel_h's,
+# scaled by his parts' vertices against Axel's: pelvis 1.19 as long, thighs 1.10, feet 1.15 as long and 1.27 as wide,
+# hands 1.07 as long and 1.2 as wide, thumbs 1.12. ---
+collider pelvis   capsule 2 length 31.9 fit 0.85 tags body
+collider spine    capsule 96 98 fit 0.85 tags torso
+# 22 of the 31.2 from 98 to the collar (99): at its full length the hood (101, at its end, 18.4 behind its axis) lay
+# inside its end in every frame of the replay's idle (3.1 cm); at 22 in 18 frames, 1.4 cm at most
+collider chest    capsule 98 length 22 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 17.3 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 13.5 radius 4.4 3.4 tags feet
+collider thigh_r  capsule 14 15 offset 17.3 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 13.5 radius 4.4 3.4 tags feet
+collider heel_l   capsule 9 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags feet
+collider heel_r   capsule 18 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags feet
+collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
+collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
+collider hand_l   sphere 133 offset 8.8 0 0 radius 5.6 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 139 length 7.8 offset 1.6 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 252 253 fit 0.85 side motion tags arms
+collider forearm_r capsule 253 254 fit 0.85 side motion tags arms
+collider hand_r   sphere 274 offset 8.8 0 0 radius 5.6 side rest tags hands right_hand
+collider thumb_r  capsule 280 length 7.8 offset 1.6 0 0 fit 0.95 side rest tags hands right_hand
+# the head's vertices stand 197-231 cm high, 14 behind to 16 in front of the head bone; the sphere on their middle
+collider head     sphere 169 offset 7.9 1.2 0 radius 14 tags head
+# the braids' alone: inside every root (the nearest, 194 and 221 over the ears, 10.8 cm from its centre), so none is
+# pushed off its place at rest
+collider scalp    sphere 169 offset 7.9 1.2 0 radius 10 tags scalp
+# the hair's, alone: his back and chest as the game's idle (b_xa_A000) poses them, measured on its drawn model in
+# khdays-secondary-replay --days (models.cpp's own pose): capsules across them every 6 cm up 98 (x up, y forward, z his
+# left), each 0.5 cm outside the drawn surface at its height (the back, 6-18 cm up, is the hood hanging down it; there
+# 24 cm wide each way, its width), so the braids lie on him. The torso's capsules do not serve: the chest's end and the
+# pelvis's (bone 2 stands 28 cm over his hips) reach up round his neck and his braids' ends. `side motion`: a braid is
+# kept on the side it came from; at rest (`side rest`) KH2's rest hangs them through him, and touching one pushed it
+# through to that side, a 50 cm snap. hair_back_5 6 cm round, its back where an 8's was: at 8 six braids started in it
+collider hair_back_0 capsule 98 98 offset -12 0.9 14 end_offset -12 0.9 -14 radius 8 side motion tags hair_torso
+collider hair_back_1 capsule 98 98 offset -6 -18.0 14 end_offset -6 -18.0 -14 radius 8 side motion tags hair_torso
+collider hair_back_2 capsule 98 98 offset 0 -17.7 14 end_offset 0 -17.7 -14 radius 8 side motion tags hair_torso
+collider hair_back_3 capsule 98 98 offset 6 -20.7 24 end_offset 6 -20.7 -24 radius 8 side motion tags hair_torso
+collider hair_back_4 capsule 98 98 offset 12 -13.0 24 end_offset 12 -13.0 -24 radius 8 side motion tags hair_torso
+collider hair_back_5 capsule 98 98 offset 18 -19.3 24 end_offset 18 -19.3 -24 radius 6 side motion tags hair_torso
+collider hair_back_6 capsule 98 98 offset 24 -3.5 14 end_offset 24 -3.5 -14 radius 8 side motion tags hair_torso
+collider hair_front_0 capsule 98 98 offset -12 10.9 18 end_offset -12 10.9 -18 radius 8 side motion tags hair_torso
+collider hair_front_1 capsule 98 98 offset -6 13.5 18 end_offset -6 13.5 -18 radius 8 side motion tags hair_torso
+collider hair_front_2 capsule 98 98 offset 0 13.0 18 end_offset 0 13.0 -18 radius 8 side motion tags hair_torso
+collider hair_front_3 capsule 98 98 offset 6 11.6 18 end_offset 6 11.6 -18 radius 8 side motion tags hair_torso
+collider hair_front_4 capsule 98 98 offset 12 10.8 18 end_offset 12 10.8 -18 radius 8 side motion tags hair_torso
+collider hair_front_5 capsule 98 98 offset 18 5.6 18 end_offset 18 5.6 -18 radius 8 side motion tags hair_torso
+# the hair's, alone: his neck from the collar (8 cm down 166) to the head (its vertices 8.6 cm from 166's axis, p90), so
+# the braids by it hang behind it rather than into it
+collider neck     capsule 166 167 offset -8 0 0 radius 8.6 side motion tags hair_neck
+# the hair's, alone: his shoulders from beside the neck out (each clavicle, 108-109 and 249-250): their drawn top stands
+# 11-15 cm over the clavicles in the game's idle (p50-p90); the braids' roots above. 18 took the back braids off the
+# shoulder pads (304-305) but pushed them into the hood
+collider shoulder_l capsule 108 109 radius 15 side motion tags hair_torso
+collider shoulder_r capsule 249 250 radius 15 side motion tags hair_torso
+# the hair's, alone: his hood itself, on its own bone (101: x back from the collar, y across, z up), which the cloth
+# moves: a collider on a simulated bone follows it as simulated. The flap is 1.4-31.4 cm back, 39.6 across, 10 thick;
+# two capsules across it. Tagged apart, so the hood does not collide with them. The braids no longer go through it as
+# it swings out in his run (crossings at most 150 to 92 a frame in the replay; idle-run-idle 296 to 200)
+collider hood_cloth capsule 101 101 offset 7 17 2.6 end_offset 7 -17 2.6 radius 5.5 side motion tags hair_hood
+collider hood_cloth_back capsule 101 101 offset 24 17 2.6 end_offset 24 -17 2.6 radius 5.5 side motion tags hair_hood
+# the drawstrings' alone: their roots stand 20.1 from the chest's axis, its front beside them 21.3; 1.2 clear of it
+collider chest_strings capsule 98 99 radius 22.5 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface (axel_h's, the same bones) ---
+# Each strip runs from just under the belt to the hem. 85 is shared: the front
+# forks under it into two panels (88-90 and 92-94) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 85 88 89 90
+  strip 85 92 93 94
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 38 cm away: axel_h's 34, his coat as much wider), so a wide stance spreads
+  # the coat in its target and contact only catches what is left; a thigh coming up into it (a crouch, a high step)
+  # carries the panels near it up to 90%. Not the shins: below the knee the coat falls straight down off it
+  follow_bone 5 radius 38 weight 0.9 always 0.7
+  follow_bone 14 radius 38 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 88 92        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 0.00 -1.63 0.18
+  rest 34 0.21 -5.47 -4.47
+  rest 42 -0.05 2.91 -1.86
+  rest 50 -0.02 -2.92 0.89
+  rest 58 -0.18 -5.03 4.12
+  rest 66 0.05 2.78 1.93
+  rest 74 0.02 -2.67 -0.84
+  rest 82 0.00 -0.80 -0.20
+  rest 29 0.00 -0.36 -0.02
+  rest 37 0.23 5.45 4.74
+  rest 45 -0.07 -5.23 1.49
+  rest 53 -0.16 6.28 -3.00
+  rest 61 -0.16 4.65 -3.92
+  rest 69 0.07 -5.09 -1.53
+  rest 77 0.16 6.35 2.96
+  rest 85 0.01 -6.81 -0.22
+  rest 30 -0.02 5.66 -0.40
+  rest 38 -0.10 1.03 0.09
+  rest 46 0.08 3.81 0.05
+  rest 54 -0.02 -3.58 2.42
+  rest 62 -0.01 1.36 -0.68
+  rest 70 0.02 3.82 -0.08
+  rest 78 0.18 -4.19 -2.45
+  rest 31 0.00 -2.41 0.10
+  rest 39 0.11 0.96 -0.82
+  rest 47 0.03 -1.44 0.17
+  rest 55 -0.07 0.29 -0.40
+  rest 63 0.01 0.90 0.86
+  rest 71 -0.02 -1.42 -0.20
+  rest 79 -0.13 0.59 0.38
+  rest 32 0.00 -1.25 0.18
+  rest 40 -0.01 -0.92 -0.08
+  rest 48 -0.16 0.12 -0.02
+  rest 56 0.13 0.13 -0.15
+  rest 64 -0.13 -1.06 0.11
+  rest 72 0.02 0.07 0.06
+  rest 80 0.06 0.17 0.16
+  rest 88 0.17 9.17 2.06
+  rest 92 0.00 9.26 -0.04
+  rest 89 -0.10 3.11 -3.82
+  rest 93 0.08 3.42 2.62
+  rest 90 0.57 -5.01 1.24
+  rest 94 -0.64 -5.67 -1.38
+end
+
+# --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  collide torso body arms strings
+  attach 99
+  chain 103 104 105 106
+  hang 0 -1 0.35
+  settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 103 -9.86 -26.68 41.47
+  rest 104 2.48 6.14 25.31
+  rest 105 0.26 2.51 6.43
+  rest 106 0.25 1.64 12.24
+end
+group string_r chain preset kh2_string
+  collide torso body arms strings
+  attach 99
+  chain 244 245 246 247
+  hang 0 -1 0.35
+  settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 244 9.91 26.88 41.36
+  rest 245 -2.76 -6.01 25.34
+  rest 246 -0.26 -2.51 6.43
+  rest 247 -0.25 -1.63 12.29
+end
+
+# --- Hood: one bone (101) hanging behind the neck; it swings and lies on the back as one piece. Against the capsules
+# on his back, not the torso's: the chest's capsule, fitted to his 54 cm wide chest, reaches back past the hood's root
+# (z -25), so the hood started inside it and was pushed out every tick (it jittered) ---
+group hood chain preset kh2_hood
+  collide hair_torso head
+  attach 99
+  chain 101
+  settle on steps 240
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 0.00 73.67 0.01
+end
+
+# --- The back hair piece (171-177) is not simulated: it stays on his head as the animation (or its rest) holds it, so
+# its three braids hang from where it is. Simulated with the braids, it swung and pulled them into his head. The braids
+# (178-179, 181-182, 184-185) are drawstrings (kh2_string), from their `ds_pose` turn (motions.txt), against his head,
+# back (the hood lying on it), shoulders, neck and the hood itself ---
+group back_braids chain preset kh2_string
+  collide head hair_torso hair_neck hair_hood
+  thickness 1.5
+  # a third of the drawstrings' inertia and more damping: his hovering idle bobs the head, and at the drawstrings' own
+  # values that threw the braids into his back every few frames (23 cm p99 jitter in the replay's idle; now 6)
+  inertia 0.3
+  damping 4
+  # no swing limit: the drawstrings' 75 degrees from the pose's way, in his forward-leaning run (b_xa_A001), threw a
+  # back braid to the cone's far side once a stride (115 cm twitch in the replay; now 4)
+  swing_limit 180
+  attach 176
+  chain 178 179
+  chain 181 182
+  chain 184 185
+  settle on steps 360
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 178 -0.02 -13.52 2.32
+  rest 181 -0.01 -18.61 2.32
+  rest 184 0.00 15.57 2.32
+  rest 179 -0.77 2.41 15.75
+  rest 182 -0.34 1.22 23.28
+  rest 185 0.05 0.16 26.47
+end
+
+# --- The braids from the head's end (170): drawstrings (kh2_string), each a chain from its root by the head, simulated
+# from their `ds_pose` turn against the scalp (not the head: their roots stand inside it), his back, chest (where his
+# lowered head hangs the right ones), shoulders, neck and hood; the left 187-212, the right 214-239 ---
+group braids chain preset kh2_string
+  collide scalp hair_torso hair_neck hair_hood
+  thickness 1.5
+  # as the back piece's braids (above)
+  inertia 0.3
+  damping 4
+  swing_limit 180
+  attach 170
+  chain 187 188
+  chain 190 191 192
+  chain 194 195 196 197
+  chain 199 200 201 202
+  chain 204 205 206 207
+  chain 209 210 211 212
+  chain 214 215
+  chain 217 218 219
+  chain 221 222 223 224
+  chain 226 227 228 229
+  chain 231 232 233 234
+  chain 236 237 238 239
+  settle on steps 360
+  mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 187 0.00 0.00 0.00
+  rest 190 -19.74 35.13 -53.62
+  rest 194 -1.24 -0.08 35.87
+  rest 199 -0.01 -0.03 34.36
+  rest 204 -0.21 -1.99 23.04
+  rest 209 -0.40 -2.25 19.29
+  rest 214 0.00 0.00 0.00
+  rest 217 7.97 -6.26 -45.36
+  rest 221 1.39 3.32 39.49
+  rest 226 0.16 0.14 32.02
+  rest 231 0.27 1.42 25.11
+  rest 236 0.00 -0.01 13.59
+  rest 188 0.05 1.66 -3.88
+  rest 191 -24.36 -34.69 68.33
+  rest 195 -1.11 3.30 -13.23
+  rest 200 -0.14 0.79 -20.49
+  rest 205 -0.23 1.43 -9.03
+  rest 210 -0.03 0.15 -7.85
+  rest 215 0.37 -2.45 -3.43
+  rest 218 15.53 8.83 65.44
+  rest 222 1.15 -5.38 -16.96
+  rest 227 0.39 -3.03 -17.58
+  rest 232 0.25 -1.42 -12.04
+  rest 237 0.04 0.00 6.37
+  rest 192 -2.27 -16.82 19.87
+  rest 196 -0.99 4.95 -32.51
+  rest 201 -0.01 0.95 -33.60
+  rest 206 -0.97 3.14 -30.00
+  rest 211 -0.50 2.47 -20.51
+  rest 219 -1.02 8.38 10.41
+  rest 223 1.05 -7.30 -31.93
+  rest 228 1.16 -3.78 -33.38
+  rest 233 0.40 -2.68 -29.43
+  rest 238 0.00 0.00 6.72
+  rest 197 -1.18 9.39 -35.51
+  rest 202 -0.10 1.63 -34.25
+  rest 207 -1.82 7.82 -41.22
+  rest 212 -2.70 6.47 -51.03
+  rest 224 1.45 -9.41 -38.22
+  rest 229 0.71 -5.29 -31.56
+  rest 234 1.42 -5.08 -42.14
+  rest 239 0.00 0.02 -11.41
+end
+
+# --- Animation controls ---
+# B_EX130's own motion carries its coat and drawstrings as KH2 animated them: there they guide the cloth, and the thighs
+# carry none of it. The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# His KH2 motion (slot 0, the hover he flies in) keys his braids blowing in the wind: there they follow it, as hair does
+# (kh2_hair's pull), rather than hanging under gravity. The game's own animations leave them simulated.
+control own_hair
+  animation *
+  slot 0-255
+  groups back_braids braids
+  mode guided
+  follow_frequency 6
+  follow_damping 0.7
+  blend 0.15 0.15
+end
+
+# The game's own animations guide the coat to the flare his KH2 hover gives it (motions.txt's `ds_pose 0 25-94`), not
+# to KH2's narrow rest, which his wide stance pushed out of shape (the replay, the game's idle A000: hem 1.61 -> 1.80x
+# its rest radius, his KH2 idle's 1.78; 20 -> 5 cm off its targets; legs out of it in A004 25 -> 0 cm; the coat
+# bones' jitter over 28 game animations 2192 -> 1204 degrees p99). Not B000 (motions.txt)
+control days_shape
+  animation b_xa_A000 b_xa_A001 b_xa_A002 b_xa_A003 b_xa_A004 b_xa_A005 b_xa_A006 b_xa_A007 b_xa_A008 b_xa_A009 b_xa_A010 b_xa_A011 b_xa_A012 b_xa_A013 b_xa_B001 b_xa_B002 b_xa_B003 b_xa_B004 b_xa_B005 b_xa_B006 b_xa_B007 b_xa_B008 b_xa_B009 b_xa_B010 b_xa_B011 b_xa_Ca001 b_xa_Ca002 b_xa_Ca003 b_xa_Ca004 b_xa_Ca005 b_xa_Ca006 b_xa_Ca007 b_xa_Ca008 b_xa_D000 b_xa_D001 b_xa_D002 b_xa_D003 b_xa_L000 b_xa_L001 b_xa_L002 b_xa_L003 b_xa_L004
+  groups coat
+  mode guided
+  blend 0.15 0.15
+end
+
+# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
+# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# B002, hem bones swept 25 cm a frame by the calves in the run). Not his run (A001): there it turned his front
+# panels up to 137 degrees a frame, without it 76
+control days_moves
+  animation b_xa_A009 b_xa_A010 b_xa_A011 b_xa_A012 b_xa_A013 b_xa_B000 b_xa_B001 b_xa_B002 b_xa_B003 b_xa_B004 b_xa_B005 b_xa_B006 b_xa_B007 b_xa_Ca001 b_xa_Ca002 b_xa_Ca003 b_xa_Ca004 b_xa_Ca005 b_xa_Ca006 b_xa_Ca007 b_xa_Ca008 b_xa_D000 b_xa_D001 b_xa_D002 b_xa_D003 b_xa_L000 b_xa_L001 b_xa_L002 b_xa_L003
+  groups coat
+  inertia 0.6
+  follow_frequency 8 hem 3
+  blend 0.15 0.15
+end

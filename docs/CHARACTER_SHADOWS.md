@@ -31,7 +31,22 @@ authoritative: an actor with no visible native shadow does not acquire one
 through this enhancement.
 
 For these flat shadows, the receiver height band surrounds the original plane,
-with a margin derived from its width. The silhouette uses the original
+with a margin derived from its width. A flat shadow with no receiver in its band
+is moved down to the highest receiver under the caster's footprint within 4
+units (`floor_below`): ov107 puts its `kage` at the actor's own height, not the
+floor's, when `Ov107_AiState_ResolveContacts`' floor ray misses or hits a surface
+with a type byte, so an airborne enemy (the boss Saix's leaps and dives) kept the
+circle where the floor lay further below (inferred from the code, not traced in
+the game). Each caster's outcome in the last list that made one is kept
+(`khdays_shadow_outcome`: replaced, or why the circle stayed: none of its own
+polygons, no flat shadow captured, no band, nothing received it, no room; the
+band, its own polygons' heights and the polygons under it by why they did not
+receive); the boss Saix's (`upright`) goes to the session log when it changes.
+That log found the boss Saix's fallback: `Gfx_ApplyBaseTransform` (0x0201574c, Obj_RenderModel's draws) sends
+NNS_G3dGlb's projection and camera without a flush, so after any other camera's flush in a frame the captures were
+rebuilt in that camera's space (his polygons at y 80-160, the floor under him "steep"); `prepare.py` hooks it into
+`khdays_g3d_frame_camera` as the flushes are.
+The silhouette uses the original
 material's central texture color and alpha, including texture replacements.
 The original flat geometry is suppressed only after a replacement receiver
 and mask have been generated successfully. When a model mod replaces the NPC,

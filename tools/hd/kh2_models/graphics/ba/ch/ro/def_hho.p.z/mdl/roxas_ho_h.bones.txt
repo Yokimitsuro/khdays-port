@@ -51,9 +51,17 @@ ik kh2_14 kh2_15 kh2_18 exact 0 5.0 1.6
 ik kh2_126 kh2_127 kh2_148
 ik kh2_199 kh2_200 kh2_221
 
-# The pelvis's vertices 5% thinner front to back (its local y points backward), so the
-# butt stays under the coat; the bone itself, the legs and the cloth's colliders are unchanged.
+# The pelvis's vertices 10% thinner front to back (its local y points backward), and the thighs' 10% (their y
+# backward too, as riku_h's), so the hips and thighs stay under the coat; the bones, the legs and the cloth's
+# colliders are unchanged.
 mesh_scale kh2_2 1 0.9 1
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+
+# The pelvis under the coat not drawn, so it never comes through it (as riku_h's): what kh2_2 carries from below
+# the coat's waist ring (its vertices at 100-104 cm, the coat's own) down to the hip joints (88), faded back in over
+# 4 cm (the model's own cm at rest)
+hide kh2_2 from 98 to 88 fade 4
 
 # `exact` (the legs): the feet go where the game's are (on the floor), the leg bending to reach, not the
 # game's leg scaled onto KH2's (knees about 11 degrees straighter, feet planted). Not the arms: from KH2's

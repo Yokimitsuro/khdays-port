@@ -1,0 +1,76 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is the coat Riku (N_EX950) as the boss Riku's body (Ms/54.p's B13_01body; Mission Mode's A_B13_01body
+# takes these settings), on riku_h's bones (his skeleton is the player's node for node). His animations are
+# B13_01body_001-030: ov260 plays pose p as clip p + 2 (Ov260_SetPose), B13_01body_<p + 1>. Only KH2's idle, run and
+# damage carry over from the playable Riku's mset (P_EH000); everything else is the game's own.
+mset P_EH000.mset
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does)
+root_motion off
+# The KH2 keyblade (W_EX010_20, drawn by the game's sword object B13_02w, `held kh2_2 body`) on KH2's bone past the right
+# hand (262), as riku_h's. The game never reads sa_h_R (Ov260_Construct looks up Bip01 and Bip01_L_Hand only): it draws
+# the sword object at his base, its own animation keeping its grip (wA) 7-11 cm from his right hand, turned at most 6
+# degrees off one grip in all 30 animations, so the KH2 hand holds it throughout
+weapon sa_h_R 262 rotate 0 -90 90
+# What he holds plays W_EH000.mset's slots as his own play P_EH000's (on W_EH000's bones; bone 2 the blade)
+weapon_motions W_EH000.mset W_EH000.mdlx 2
+# His energy sword once he powers up (B13E011, Ms/54.p#55: Ov260_Construct's +0x38c part, shown in his stance), drawn
+# at his base like the sword object, its node EF_B13E01 0.4-1.5 cm and under 2 degrees off the sword's grip (wA) in
+# all 30 animations, its blade along +z (wA's tip tag00 at z 0.87): put on the KH2 keyblade's grip bone (W_EH000's
+# bone 2 as drawn), its blade along that bone's -x (the keychain, bones 3-11, hangs along +x): x to y, y to -z, z to -x
+weapon_model Ms/54.p EF_B13E01 weapon rotate -90 0 90
+
+# The game's own animations have no fingers: these turn as slot 2 (the calm idle) turns them at its first frame;
+# the back hair turned out of the hood, as riku_h's
+ds_pose 2 135-156 263-284
+ds_pose rotate 0 0 30 172
+
+# ov260 cuts from one animation into the next (Ov260_BindClip drops the clip and binds the new one at frame 0), so
+# every change is faded here from the pose last shown over 8 of the game's frames. Only what is drawn changes: the
+# game's animations, frames and timing are its own
+cut_blend 8
+# but into his damage (user): cut into it, into its aerial damage and into its landing; faded out of all of them
+cut_blend_except B13_01body_005 B13_01body_006
+
+# His idle (001, pose 0): KH2's battle idle
+B13_01body_001 0 start_loop blend 8
+idle B13_01body_001
+# His run (003, pose 2) and the 6-frame clips into it and out of it (002 from AiEnterTakeOff, 004 from WalkTick):
+# the run start plays KH2's run, the stop KH2's idle, each carried on by the animation after it (`start_loop`)
+B13_01body_002 8 blend 8
+B13_01body_003 8 start_loop blend 8
+B13_01body_004 0 blend 8
+
+# Damage (Ov260_SwipeEntry: pose 4 hit from the front, 005; pose 5 from behind, 006), KH2's front and back. As the
+# player's `finish 24`, KH2's readying (24) and battle idle (0) follow while the game still plays it (`after`), cut in
+# as KH2's damage ends on its calm idle; his AI moving on cuts it off, faded (`cut_blend`)
+B13_01body_005 42 after 24 0
+B13_01body_006 50 after 24 0
+# Damage in the air, by the game's floor contact (`air_floor`: the boss runs none of the player's actor states):
+# KH2's aerial damage loops (66 front, 74 back) while he is off the floor; touching down while the game still plays
+# the damage, KH2's landing (70, 78) plays, then readies and idles as on the ground, until the game moves on
+air_floor on
+air B13_01body_005 66 land 70 after 24 0
+air B13_01body_006 74 land 78 after 24 0
+
+# The mset plays on P_EH000's bones, then each line gives one of this model's bones (or a range) the turn of one of
+# P_EH000's, as riku_h's
+skeleton P_EH000.mdlx
+bone 0-2 0-2
+bone 4-12 8-16
+bone 13-21 19-27
+bone 95 30
+bone 96 31
+bone 97 34
+bone 98 35
+bone 99 36
+bone 107-113 41-47
+bone 129-156 48-75
+bone 157-158 76-77
+bone 235-241 151-157
+bone 257-284 158-185
+bone 285-286 186-187
+bone 165-187 94-116
+bone 190-208 117-135
+bone 214-226 136-148
