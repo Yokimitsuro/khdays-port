@@ -241,6 +241,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     appeared.clear();
     forget_teamwork();
     held.clear();
+    player_jumps.clear();
     for (auto &[object, hidden] : hidden_players) // (shown again as the next area holds them)
         hidden = false;
     // what the area's enemies offered or played for its players: the next area's objects may stand at the same
@@ -514,8 +515,9 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                 hold_tick(*e, object, h);
         for (auto h = held.begin(); h != held.end();) {
             const auto next = std::next(h);
-            if (h->second.enemy == days && h->second.idle)
-                let_go(h->first, "its motion back to its own idle (range 2)");
+            if (h->second.enemy == days && (h->second.idle || h->second.landed))
+                let_go(h->first, h->second.landed ? "his jump's landing (KH2's class 1 lands in a motion of his own)"
+                                                  : "its motion back to its own idle (range 2)");
             h = next;
         }
         // a carry with its flag bit 0 ends as KH2's actor's update ends it (FUN_1403b4a12): its carrier gone or no

@@ -140,6 +140,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
     a.world = &the_field();
     a.motions = e->motions.get();
     a.set_u32(field::kEntry, entry_record(k.name));
+    a.set_u32(field::kTeam, std::uint32_t(entry_team(k.name)));
     a.set_place(to_kh2(s.place));
     e->on_floor_first = !made; // (set going by a wave: on its floor at its first tick)
     e->made = made;
@@ -276,6 +277,7 @@ Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, b
     a.world = &the_field();
     a.motions = e->motions.get();
     a.set_u32(field::kEntry, entry_record(k.name));
+    a.set_u32(field::kTeam, std::uint32_t(entry_team(k.name)));
     a.set_place(place);
     a.set_yaw(yaw);
     to_days(place, e->place);

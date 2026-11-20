@@ -78,13 +78,14 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
         if (!attack_range_on(range, a.motion.time))
             continue;
         const int group = std::int16_t(range.params[1]);
-        // an attack of the player's team (its atkp's team 1: YS::ATTACK's constructor makes the player its owner, and
-        // it strikes every team but his): the enemies it reaches, as his blow -- Demyx's water clone swung in Wild
-        // Dance (atkp 1326 to 1328)
-        if (const int atkp = std::int16_t(range.params[0]); attack_team(atkp) == 1) {
-            strike_enemies(e, s, r, group, atkp);
+        // its team (YS::ATTACK's constructor: its atkp's, else this enemy's own) and the KH2 enemies of the teams it
+        // strikes that it reaches, as the player's blow: one of the player's team (its atkp's team 1, the player made
+        // its owner -- Demyx's water clone swung in Wild Dance, atkp 1326 to 1328 --, or its enemy's team made his:
+        // the Experiment's head and arms while its body catches them, 1:38) strikes the enemies and not him
+        const int atkp = std::int16_t(range.params[0]), team = made_team(atkp, &a);
+        strike_enemies(e, s, r, group, atkp, team);
+        if (!strikes_team(team, 1))
             continue;
-        }
         float nearest = -1.0F, reach = 0.0F, centre[3] = {}, toward = 0.0F;
         int spheres = 0;
         for (const Shape &sh : e.kind->shapes) {
@@ -195,12 +196,20 @@ void blow_reaction(Enemy &t, int atkp)
     t.blow_karma += attack_param(atkp).revenge;
 }
 
-// A motion's attack of the player's team (attack, above): each of its group's spheres strikes the other KH2 enemies
-// it reaches, each once a range -- a body as a player's (its Days sphere's radius round, from its feet to KH2's player's
-// height) -- a blow of the player's on each: Days's damage, its last Days hit's (else any KH2 enemy's, else 1) times
-// the attack's power over 100, as his weapon's (held_tick)
-void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp)
+// A motion's attack of `team` (attack, above; the player's 1 when a member or a form of his swings it): each of its
+// group's spheres strikes the other KH2 enemies of the teams it strikes (YS::ATTACK::is_strike: none of its own team, none
+// of 0, none its script keeps from hits -- YS::OBJ::is_hit_attack) it reaches, each once a range -- a body as a player's
+// (its Days sphere's radius round, from its feet to KH2's player's height) -- a blow of the player's on each: Days's
+// damage, its last Days hit's (else any KH2 enemy's, else 1) times the attack's power over 100, as his weapon's
+// (held_tick)
+void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp, int team)
 {
+    const auto struck = [&](const Enemy &t) {
+        return &t != &e && !t.released && !t.dying && t.started && strikes_team(team, object_team(*t.actor)) &&
+               (t.actor->u32(field::kFlags) & bit::kNoHitAttack) == 0;
+    };
+    if (std::none_of(enemies.begin(), enemies.end(), [&](const auto &x) { return struck(*x.second); }))
+        return; // (an enemy's attack among enemies of its own team: the most of them)
     const int power = attack_power(atkp);
     for (const Shape &sh : e.kind->shapes) {
         if (sh.group != group || (sh.kind & 0xff) != 6)
@@ -210,7 +219,7 @@ void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group,
         const float radius = sh.radius / kKh2PerDays;
         for (auto &[days, other] : enemies) {
             Enemy &t = *other;
-            if (&t == &e || t.released || t.dying || !t.started || e.struck[r].count(days) != 0)
+            if (!struck(t) || e.struck[r].count(days) != 0)
                 continue;
             KhdaysKh2Shell ts;
             if (!khdays_kh2_shell_read(days, &ts) || !ts.standing)
@@ -225,9 +234,8 @@ void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group,
             t.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
             blow_reaction(t, atkp);
             if (tracing())
-                khdays_log("kh2 enemies: %08x's motion %d at %.1f (atkp %d, the player's team, power %d) strikes %08x: "
-                           "%d damage",
-                           e.days, e.actor->motion.id, double(e.actor->motion.time), atkp, power, days, t.blow);
+                khdays_log("kh2 enemies: %08x's motion %d at %.1f (atkp %d, team %d, power %d) strikes %08x: %d damage",
+                           e.days, e.actor->motion.id, double(e.actor->motion.time), atkp, team, power, days, t.blow);
         }
     }
 }
@@ -268,8 +276,9 @@ void hitback_push(int atkp, float dx, float dz, float push[3])
     push[2] = dz / flat * half;
 }
 
-// A hit made with an attack on an object at once (2:17): a Days player its enemy's hit (KH2's own attack landing on
-// him: trigger 15 too), a KH2 enemy KH2's player's blow when he owns it (the Neoshadow's strike: Days's damage the
+// A hit made with an attack on an object at once (2:17, and its sweep below), as its team strikes (YS::ATTACK::is_strike):
+// a Days player its enemy's hit (KH2's own attack landing on him: trigger 15 too), a KH2 enemy the player's blow (the
+// Neoshadow's strike, KH2's player owning it; an enemy's attack of the player's team or of all teams: Days's damage the
 // player's last hit times the attack's power)
 void strike(AttackObject &o, Object &target)
 {
@@ -278,7 +287,7 @@ void strike(AttackObject &o, Object &target)
         return;
     Enemy &e = *owner->second;
     if (const unsigned player = days_object(target); player != 0) {
-        if (o.players || !o.struck.insert(player).second)
+        if (!strikes_team(o.team, 1) || !o.struck.insert(player).second)
             return;
         float push[3], at[3], to[3]; // from the enemy to him: its attack of its own's way
         to_days(e.actor->place(), at);
@@ -296,7 +305,7 @@ void strike(AttackObject &o, Object &target)
     }
     Actor *x = target.actor();
     const auto it = x != nullptr ? by_actor.find(x) : by_actor.end();
-    if (!o.players || it == by_actor.end())
+    if (it == by_actor.end() || !strikes_team(o.team, object_team(*x)) || (x->u32(field::kFlags) & bit::kNoHitAttack))
         return;
     Enemy &hit = *it->second;
     o.landed = true;
@@ -307,8 +316,8 @@ void strike(AttackObject &o, Object &target)
     hit.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
     blow_reaction(hit, o.atkp);
     if (tracing())
-        khdays_log("kh2 enemies: KH2's player's attack (atkp %d, power %d) struck on %08x: %d damage", o.atkp, power,
-                   hit.days, hit.blow);
+        khdays_log("kh2 enemies: %s attack (atkp %d, team %d, power %d) struck on %08x: %d damage",
+                   o.players ? "KH2's player's" : "an enemy's", o.atkp, o.team, power, hit.days, hit.blow);
 }
 namespace {
 
@@ -647,7 +656,19 @@ void attack_objects(Enemy &e)
         }
         // (a height of 0 a sphere: 2:11 sizes Demyx's notes 150 by 0)
         const float step = height > 0.0F ? std::min(radius, height) : radius;
-        if (o.placed && step > 0.0F && !o.players) {
+        // what it strikes as its team does (YS::ATTACK::is_strike): the players (and their party) or not, and the KH2
+        // enemies of other teams -- an enemy's attack made the player's (2:37: the Silver Rock's, Dark Thorn's), or one
+        // of every team (an atkp of team 3 or 4). KH2's player's own (the Neoshadow's strike) hits by its script alone
+        const auto struck_enemy = [&](unsigned days, const Enemy &t) {
+            return &t != &e && t.actor->address() != o.owner && o.struck.count(days) == 0 && !t.released && !t.dying &&
+                   t.started && strikes_team(o.team, object_team(*t.actor)) &&
+                   (t.actor->u32(field::kFlags) & bit::kNoHitAttack) == 0;
+        };
+        const bool on_players = !o.players && strikes_team(o.team, 1);
+        const bool on_enemies = !o.players && std::any_of(enemies.begin(), enemies.end(), [&](const auto &x) {
+                                    return struck_enemy(x.first, *x.second);
+                                });
+        if (o.placed && step > 0.0F && (on_players || on_enemies)) {
             if (list.empty()) {
                 list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
                 list.resize(
@@ -660,19 +681,30 @@ void attack_objects(Enemy &e)
                 const float f = float(k) / float(steps);
                 float c[3];
                 to_days({o.before[0] + way[0] * f, o.before[1] + way[1] * f, o.before[2] + way[2] * f}, c);
-                for (const KhdaysKh2Player &p : list) {
-                    if (o.struck.count(p.object) != 0)
-                        continue;
-                    const float r = radius / kKh2PerDays, up = (radius == height ? 0.0F : height / kKh2PerDays);
-                    // his body's middle line (feet a radius up to his top a radius down) against the sphere's centre or
-                    // the cylinder's axis
-                    const float low = p.place[1] + p.radius,
-                                high = std::max(low, p.place[1] + kPlayerHeight - p.radius);
+                const float r = radius / kKh2PerDays, up = (radius == height ? 0.0F : height / kKh2PerDays);
+                // a body (from its feet, a radius up, to KH2's player's height, a radius down) reached by the sphere's
+                // centre or the cylinder's axis
+                const auto reached = [&](const float place[3], float body) {
+                    const float low = place[1] + body, high = std::max(low, place[1] + kPlayerHeight - body);
                     const float y = std::clamp(c[1] + up * 0.5F, low, high);
                     const float dy =
                         up > 0.0F ? std::max(0.0F, std::fabs(y - (c[1] + up * 0.5F)) - up * 0.5F) : y - c[1];
-                    const float dx = p.place[0] - c[0], dz = p.place[2] - c[2];
-                    if (std::sqrt(dx * dx + dz * dz + dy * dy) >= r + p.radius)
+                    const float dx = place[0] - c[0], dz = place[2] - c[2];
+                    return std::sqrt(dx * dx + dz * dz + dy * dy) < r + body;
+                };
+                for (auto &[days, other] : enemies) {
+                    if (!on_enemies || !struck_enemy(days, *other))
+                        continue;
+                    KhdaysKh2Shell ts;
+                    if (!khdays_kh2_shell_read(days, &ts) || !ts.standing || !reached(ts.place, ts.radius))
+                        continue;
+                    o.struck.insert(days);
+                    strike(o, *other->actor);
+                }
+                for (const KhdaysKh2Player &p : list) {
+                    if (!on_players || o.struck.count(p.object) != 0)
+                        continue;
+                    if (!reached(p.place, p.radius))
                         continue;
                     Object *who = nullptr;
                     if (const auto pl = players.find(p.object); pl != players.end())
@@ -697,7 +729,7 @@ void attack_objects(Enemy &e)
                 // the party members (their bodies against its sphere, or its cylinder from its place up)
                 const Vec3 centre = to_kh2(c);
                 each_member([&](Enemy &m, Friend &f) {
-                    if (o.struck.count(m.days) != 0 ||
+                    if (!on_players || o.struck.count(m.days) != 0 ||
                         !member_reached(m, centre, radius, radius == height ? 0.0F : height, kTypeHit))
                         return;
                     o.struck.insert(m.days);

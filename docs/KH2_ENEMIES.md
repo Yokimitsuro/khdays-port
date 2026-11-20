@@ -376,8 +376,33 @@ in steps of its radius -- a sphere when its height is its radius, else a cylinde
 their address in the scripts' memory, its enemy's (the shell): an enemy's hits Days's players, each once (its `atkp`
 entry's hit, trigger 15 too); one KH2's player owns (the Neoshadow's strike: `2:10` for the player, `2:17` on itself)
 hits KH2 enemies as his blow (Days's damage his last hit's times the entry's power). An attack ends with `2:13`, its
-growth, its effect, or its enemy's defeat, and its memory is let go. Its team (`2:37`) is kept; whose effects its hits
-show (`2:22`) is Days's.
+growth, its effect, or its enemy's defeat, and its memory is let go. Its team (`2:37`) decides what it strikes (below,
+"Teams"); whose effects its hits show (`2:22`) is Days's.
+
+## Teams (2026-11-20)
+
+Every KH2 object has a team (YS::OBJ's, the PS3 build's + 0x3b0, the PC's + 0x4dc), and every attack strikes by it
+(the PS3 build's `YS::ATTACK::is_strike`, read for the Experiment, whose head and arms take the player's team in its
+reaction command):
+
+- **An object's**: its class's constructor gives it -- an enemy's 2 (`YS::ENEMYBASE`: entries of kind 3, 4 and 0xc; not
+  Mushroom XIII's, `is_kinoko`, entries 0x417 to 0x423, whose scripts set their own), the player's and his party's 1
+  (`YS::PARTY`, `YS::BTLNPC`: kind 9), a gimmick's 3 (`YS::GIMMICKOBJ`: 0x17), any other's 0 (`YS::OBJ`). `1:38`
+  (`trap_obj_set_team`, `FUN_14042bd30`) sets it. The port gives the same to its enemies and allies as it makes them,
+  the player's to Days's players and to a form he is turned into (`entry_team`, `field::kTeam`).
+- **An attack's** (`YS::ATTACK`'s constructor, its + 0x2c): its `atkp` entry's team (+ 8); its owner's when that is 0
+  (a motion's attack: the enemy playing it; `2:10`'s: the object it was given), the player's 1 when it is 1 (the player
+  made its owner); 3 made 4. `2:37` sets it (3 made 4: `YS::ATTACK::set_team`). Of 00battle.bin's 2,713 `atkp`
+  entries 2,498 are of team 0, 150 of 1, 27 of 2, 7 of 3 and 31 of 4 (`made_team`).
+- **What it strikes**: every team but its own and 0 (+ 0x2d, a byte: `~(1 << team)` with bit 0 cleared), never its
+  owner, nor an object whose script keeps hits off it (`YS::OBJ::is_hit_attack`: `FLAG_NOHIT_ATTACK`, no health left);
+  a cure (types 5, 6) strikes all (`strikes_team`). So an enemy's attack (2) strikes the player and his party; one of
+  the player's team (1) the enemies; one of 3 or 4 everyone -- the Experiment's head's traps (1488, 4) and its arms' blows
+  (1486, 4) strike its own body.
+- **In the port**: a motion's attack and one a script made strike Days's players and their party when their team
+  strikes 1, and KH2's enemies of the teams they strike (as the player's blow: Days's damage, the last Days hit's,
+  times the attack's power over 100); a player's own attack objects (the Neoshadow's strike) still hit only where their
+  script says (2:17). Days's hits (the player's team) pass a KH2 enemy of team 1 or 0 (`khdays_kh2_enemies_untouched`).
 
 ## Attacks reflected (2026-11-19)
 
@@ -1115,6 +1140,34 @@ Data Final Xemnas (`B_EX170_LAST_LV99`, his mission `EH20_MS113_RE`) and his bat
   the same at any level); his event cameras
   ("50", "60", "61") are placed for KH2's arena and look elsewhere in Days's rooms.
 
+### The Experiment (2026-11-20)
+
+Christmas Town's Experiment (`B_NM110`, a large boss, kind 3; nm07's battle `b_60`, mission `NM07_MS204`) and its head
+and arms (`B_NM110_HEAD`, `B_NM110_L_ARM`, `B_NM110_R_ARM`, entries 1808 to 1810), which its body makes (1:0) as it
+falls apart; journal names from KH2's own journal. It is bound to no room; the test mission puts it in a room made from
+nm07 where nm07's spawn puts it and the player (KH2's (-810.4, 4.7, 894.4) and (239.6, -1.0, 894.4)).
+
+- **Its script** (43 states): combos (`atk_combo_a` to `c`), a blow, lasers (`atk_laser_linear`, `_homing`), its
+  presents (`atk_trap_party`, `_fast`, `_end`: its parts thrown about the room as traps), the reaction command's three
+  (`rc_flick_shot_wait`, `_catch`, `_shoot`), its parts' (`trap_damage`, `split_damage`, `barabara_normal` -- falling
+  apart --, `barabara_reverse`), modes by its health (`btl_normal`, `btl_hard`, `btl_super_hard`, `btl_weak`). Its
+  least health starts at 70% (1:231, 7/10 of the most); trigger 6 sends it to `barabara_normal` on a finishing hit
+  (2:92) when its health is that 70% exactly, to `barabara_reverse` at 10%.
+- **Its parts** make their team the player's (1:38, 1) while the body's flag in the memory they share (2:21, 35: its
+  + 8) is set -- from `rc_flick_shot_catch`'s start while it carries the player -- and 2 after ("Teams" above).
+- **Its reaction command** 603 ("Tiro muelle" in Spanish; its zone on the body): trigger 11 gives the player a jump
+  at it (1:55 on him, above: "His jump"), plays its 252 on him (AP50) and starts a thread of its script on him
+  (1:112, code word 408): his touch of its bone 2 is its catch -- 253 on him (AP51), `rc_flick_shot_catch`, the player
+  put on its bone 0x4002 (1:18) till 253 reaches its loop -- then `rc_flick_shot_shoot`: 254 (AP52) on him, which
+  throws him at one of its parts (`rc_flick_shot_trap`), and his own control back as 254 blends to his idle.
+- **What it needed**: 1:38 and the teams; Days's finishing hits as KH2's (without them it stood at 70% for good,
+  every hit after taking nothing); 1:55, 1:63 and 1:161 on a held player.
+- **Played** (2026-11-20, window runs, level 50, the installed HD PACK, a test mod made by the tool with `--only`
+  and a room made from nm07; `chase_ax.input`): it falls apart at 70% (160 s), its parts thrown about, its head's
+  traps (1488) and its arms' blows (1486) striking its body (128, 96), four or five flick shots taken -- the jump,
+  the catch (1.0 s), the throw, the player given back --, defeated at 193 s and 252 s, the mission cleared and its
+  results shown. Not exercised: a Days blow on a part while it is of the player's team (he is carried then).
+
 ### The scope, the pictures and the screen's shake
 
 Xigbar's sniping, read in his script and the PS3 build (2026-11-15):
@@ -1304,7 +1357,19 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   begins too, Scar's). A carry with its flag bit 0 ends by itself, as KH2's actor's update ends it (`FUN_1403b4a12`):
   its carrier gone or its + 0x18c bit 15 clear -- the carrier's motion's range 13 -- so Scar comes off the player he
   pins as he throws him (his 254), and his catch, waiting on `1:161`, goes on; `1:74` nothing (its class is Days's);
-  `1:213` 1.
+  `1:213` 1. Carried, his + 0x6a0 names what carries him (YS::OBJ's Attach), which `1:161` reads: the Experiment's
+  catch (`rc_flick_shot_catch`) holds him while it does. `1:63` on him asks whether the motion an enemy plays on him
+  has reached its loop, its blend run out (one that does not loop: its end) -- before, it read the running enemy's
+  own motion and the Experiment's catch ended in the tick it began.
+- **His jump** (2026-11-20, the Experiment's reaction command 603, its trigger 11): `1:55` / `1:168` on him give him
+  class 1's jump (`World::player_jump`, the same arc an enemy's gets: `jump_of` in calls.cpp), and the shell moves
+  him along it while an enemy's motion holds him (`player_jumps`, `hold_tick`): its height by its time, its way
+  along kept 0.9 a tick and the rest the steering's (`1:111`), 0.95 kept unsteered, `1:57` and `1:60` saying he is
+  in the air. Past its top, he lands on the ground under him and is let go -- KH2's class 1 lands in a motion of his
+  own (+ 0x11c). Carried meanwhile (`1:18`), his jump is over. The Experiment throws him about 3 m up at itself so (a
+  thread of its script, code word 408, runs on him: its catch is his keyblade's tip, bone 0x4001 -- the port's his
+  middle, `World::aim_point` -- up to 1.5 m above and 2.3 m along from its bone 2); he lands 1.4 s later when he
+  misses.
 - **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and KH2's mark on
   the player in the enemy's hands (below, "The reaction command's mark"); the pad's top button (KH2's triangle, the DS
   X) takes it: the command's argument sent to the enemy as a message (trigger 11).
@@ -2063,7 +2128,16 @@ quarter of a blow, to the first swing of Wild Dance). Its reaction is its attack
 REACTION_*, the strongest of the blow's; 255, ignored, as none): the hit the scripts read carries it (+ 0x26: 2:7,
 2:8), and with none the enemy makes no reaction motion and enters no "revenge" -- it goes on as it was, trigger 6
 told (Roxas's `rc_duelbaut` under "The End", 1839; Cerberus's finish, 598). A Days hit's is a small one
-(REACTION_SMALL, 3: what most of KH2's player's attacks give, `atkp`'s player-team entries 3 or 4, none 2).
+(REACTION_SMALL, 3: what most of KH2's player's attacks give, `atkp`'s player-team entries 3 or 4, none 2). A full
+Days hit -- its packet's flag 0x20, `HIT_FLAG_FULL` (`Ov022_RunContactMode0`): a hit `cm.b` marks so, its first flag
+(Roxas's ground and air finishers, attacks 2 and 5, and his strong ones: never his chain's 0, 1, 3 and 4), or every hit
+at full health with the ability that asks it (`RULE_FULL_HEALTH`); Days gives it to the enemies that react to strong
+hits alone (their + 0x1ac bit 5) -- is a small finishing one (REACTION_F_SMALL, 6), which `2:92`
+(`trap_damage_is_finish`: REACTION_F_SMALL, F_BLOW, X_SMALL, X_BLOW -- 6, 7, 10, 11) reads as a finish: the
+Experiment falls apart to one alone at 70% of its health (`khdays_kh2_enemies_reflected` keeps the packet's flags for
+`khdays_kh2_enemies_hit`). KH2's reactions (the PS3 build's `YS::DAMAGE`): 0 NULL, 1 HITBACK, 2 SPOT, 3 SMALL, 4
+BLOW, 5 TORNADO, 6 F_SMALL, 7 F_BLOW, 8 S_SMALL, 9 S_BLOW, 10 X_SMALL, 11 X_BLOW, 12 HALF_HITBACK, 13 HALF_SMALL, 14
+LARGE, 15 P_BLOW, 16 P_SMALL, 17 PS_BLOW, 18 PS_SMALL, 255 IGNORE.
 
 **Damage patterns** (2026-11-14, a tester: Thunder on Roxas during his desperation move cut it short, the sky left
 dark, his orbs still falling while he fought on). Before a hit reaches the script, KH2 changes its reaction by the

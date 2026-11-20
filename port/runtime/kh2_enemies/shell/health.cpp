@@ -139,6 +139,12 @@ void show_health(const Enemy &e)
 using namespace khdays::kh2_enemies;
 using namespace khdays::kh2_enemies::shell;
 
+namespace {
+constexpr int kDaysHitFull = 0x20;        // a Days hit packet's flag (HIT_FLAG_FULL): a full hit, the finishers'
+constexpr int kReactionSmall = 3;         // YS::DAMAGE's REACTION_SMALL
+constexpr int kReactionFinishSmall = 6;   // YS::DAMAGE's REACTION_F_SMALL
+} // namespace
+
 extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
 {
     const unsigned days = unsigned(KHDAYS_REF(actor));
@@ -157,10 +163,13 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // a party member's blow (Riku's): him the striker, and the patterns that ask for one not the player's on
     Object *party = blow && e->landing_party != 0 ? Object::at(mod().memory, e->landing_party) : nullptr;
     e->landing_party = 0;
-    // its reaction: a Days hit's a small one (REACTION_SMALL, 3: most of KH2's player's attacks' in atkp); a KH2
-    // player's blow's its attacks' (atkp + 10): "The End"'s and Cerberus's finish's none (0) -- the enemy then goes on
-    // as it was (Roxas's rc_duelbaut on to his second phase); then as the enemy's damage patterns on change it
-    const int first_reaction = blow ? e->landing_reaction : 3;
+    // its reaction: a Days hit's a small one (REACTION_SMALL, 3: most of KH2's player's attacks' in atkp), a full one's
+    // (Days's finishing hit: its packet's 0x20) a small finishing one (REACTION_F_SMALL, 6: KH2's finishing reactions are
+    // 6, 7, 10 and 11, trap_damage_is_finish's -- the Experiment falls apart only to a finish at 70% of its health); a
+    // KH2 player's blow's its attacks' (atkp + 10): "The End"'s and Cerberus's finish's none (0) -- the enemy then goes
+    // on as it was (Roxas's rc_duelbaut on to his second phase); then as the enemy's damage patterns on change it
+    const int first_reaction = blow ? e->landing_reaction : e->days_full ? kReactionFinishSmall : kReactionSmall;
+    e->days_full = false;
     const int hit_reaction = hit_pattern_reaction(*e->actor, first_reaction, party != nullptr);
     // a hit its least health kept from taking any (KH2's YS::SHEET MinHp) is a hit all the same: its reaction and its
     // trigger 6 (the Prison Keeper's spits a captive out and lowers its least on it)
@@ -291,11 +300,14 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
 
 // Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): its script's FLAG_NOHIT_ATTACK and
 // FLAG_NOHIT_OBJ (+ 0x120 bits 3 and 1): no hit lands, nothing touches it (the Mole Driller under the ground) -- but
-// the hit that counts it defeated (dead_mark: Zexion's illusion ends with its hits off)
+// the hit that counts it defeated (dead_mark: Zexion's illusion ends with its hits off). Nor does a player's, of the
+// player's team, on a KH2 enemy of his team or of none (YS::ATTACK::is_strike: the Experiment's head and arms while its
+// body catches them, 1:38)
 extern "C" int khdays_kh2_enemies_untouched(void *actor)
 {
     const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
-    return e != nullptr && !e->dying && !e->dead_marked && (e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0;
+    return e != nullptr && !e->dying && !e->dead_marked &&
+           ((e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0 || !strikes_team(1, object_team(*e->actor)));
 }
 
 // Ov107_AiState_ApplyHit (prepare.py's join): no hit on a KH2 enemy from a player KH2 lets make none now -- turned into
@@ -324,6 +336,8 @@ extern "C" int khdays_kh2_enemies_disarmed(void *enemy, void *source)
 extern "C" int khdays_kh2_enemies_reflected(void *actor, void *source, int flags)
 {
     Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    if (e != nullptr) // (the hit's packet as Ov107_AiState_ApplyHit begins it: its kind for khdays_kh2_enemies_hit)
+        e->days_full = source != nullptr && (flags & kDaysHitFull) != 0;
     if (source == nullptr || e == nullptr || e->dying || e->blow_landing || !e->actor)
         return 0;
     const unsigned from = unsigned(KHDAYS_REF(source));

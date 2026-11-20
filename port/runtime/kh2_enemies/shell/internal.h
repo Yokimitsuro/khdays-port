@@ -522,6 +522,10 @@ struct Enemy final {
     // + 0xc): one at a time, a new one taking its place when asked with a priority as high or higher
     int voice_shot = 0, voice_priority = 0;
     unsigned hit_kinds = 0; // the last Days hit's kinds (its packet's high flags): its element (2:85) is of them
+    // the Days hit landing now a full one (its packet's flag 0x20, Ov022_RunContactMode0's: a hit cm.b marks so -- the
+    // combo's finishers', Roxas's attacks 2 and 5 --, or every hit at full health with the ability that asks it): KH2's
+    // finishing reaction (khdays_kh2_enemies_hit)
+    bool days_full = false;
     // its battle entry's health over KH2's Soldier's (2:9; 0 none: Days's own HP stands), and from Days's first hit on
     // a KH2 enemy its health in Days's damage (kSoldierBlows x that share blows of that hit's size) and the most of it;
     // -1 until then (Days's own HP stands). Days's fields show its share (shown_health), up to shown_most
@@ -694,8 +698,13 @@ struct Held final {
     unsigned started = 0;    // which motion this is (a new one each 1:29): his model blends from the pose before
     std::uint32_t trail = 0; // his weapon's swing's trail running (its handle), 0 none
     unsigned carried_by = 0; // the KH2 actor he is put on (1:18: its Days number), where he stands; 0 none
+    bool landed = false;     // his jump (player_jumps) met the ground: let go, his landing motion his own
 };
 inline std::map<unsigned, Held> held; // by the Days player's object
+// a jump a script gave a Days player (1:55 on him, World::player_jump), by his object: hold_tick moves him along it while
+// an enemy's motion holds him (1:29), till he lands -- his landing motion his own (KH2's class 1 lands in + 0x11c),
+// so he is let go then
+inline std::map<unsigned, Jump> player_jumps;
 // the Days players a script hid (1:133) by their object, their models' hiding as last told (khdays_kh2_enemies_holding)
 inline std::map<unsigned, bool> hidden_players, hidden_told;
 
@@ -1329,6 +1338,8 @@ public:
     void player_carry(Object &o, Object *by) override;
     void player_hide(Object &o, bool hidden) override;
     void player_steer(Object &o, const Vec3 &way, float speed) override;
+    void player_jump(Object &o, const Jump &jump) override;
+    bool player_in_loop(Object &o) override;
     void player_yaw(Object &o, float yaw) override;
     void player_let_go(Object &o, const char *why) override;
     void player_thread(Object &o, ai::Machine &m, std::uint32_t id) override;
@@ -1371,6 +1382,10 @@ const AttackParam &attack_param(int atkp);
 int attack_key(const Actor &a, int atkp);
 int attack_power(int atkp);
 int attack_team(int atkp);
+int entry_team(const std::string &name);
+int object_team(const Object &o);
+int made_team(int atkp, const Object *owner);
+bool strikes_team(int team, int target);
 bool attack_reacts(int atkp);
 const std::vector<DamagePattern> &damage_patterns();
 
@@ -1403,7 +1418,7 @@ std::uint32_t motion_attack(Enemy &e, int atkp);
 void attack(Enemy &e, const KhdaysKh2Shell &s);
 int hit_pattern_reaction(const Actor &a, int first, bool not_player = false);
 void blow_reaction(Enemy &t, int atkp);
-void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp);
+void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp, int team = 1);
 void hitback_push(int atkp, float dx, float dz, float push[3]);
 void strike(AttackObject &o, Object &target);
 void reflect_motion(Enemy &e, const AttackParam &p);

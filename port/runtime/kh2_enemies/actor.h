@@ -48,6 +48,10 @@ constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's 
 constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
 constexpr std::uint32_t kFacing = 0x680;    // vec4, its w the yaw: 1:79, 1:201
 constexpr std::uint32_t kYaw = 0x7a8;       // float: 1:4, 1:79
+// its team (YS::OBJ's, the PS3 build's + 0x3b0; 1:38): the classes' constructors make an enemy's 2 (YS::ENEMYBASE, but
+// Mushroom XIII's, is_kinoko: their scripts give their own), the player's and his party's 1 (YS::PARTY, YS::BTLNPC), a
+// gimmick's 3 (YS::GIMMICKOBJ), any other's 0. An attack strikes every team but its own and 0 (YS::ATTACK)
+constexpr std::uint32_t kTeam = 0x4dc;
 constexpr std::uint32_t kFlags8c8 = 0x8c8;  // bit 6 set and cleared by 1:104, 1:105
 constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20, 1:28); bit 2 the dead mark (1:328)
 constexpr std::uint32_t kUnitArgs = 0x9f4;  // YS::OBJ's UnitArg: its spawn's values, a word each (1:39, 1:218)
@@ -721,6 +725,15 @@ public:
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
+    // 1:63 on a player: whether the motion an enemy plays on him (1:29) has reached its loop, its blend run out (one
+    // that does not loop: its end) -- the Experiment's catch of him (253) lasts till then; false when none does
+    virtual bool player_in_loop(Object & /*player*/)
+    {
+        return false;
+    }
+    // 1:55, 1:168 on a player: his jump (class 1's arc as an actor's, `jump`'s), his motion then the enemy's he is given
+    // (1:29) -- the Experiment's reaction command 603 throws him so at it
+    virtual void player_jump(Object & /*player*/, const Jump & /*jump*/) {}
     // 1:18 / 1:102 on a player: carried by one of KH2's actors (`by`, none: let down) -- he stands where it does, the
     // camera with him (Final Xemnas's grab puts Sora on Riku, whom the pad then moves); 1:133 / 1:134 on a player his
     // model hidden and shown (YS::OBJ::hide, show)

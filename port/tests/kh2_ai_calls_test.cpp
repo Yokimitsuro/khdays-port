@@ -1234,6 +1234,11 @@ void test_near_batch()
     // 1:218 then 1:39: a unit argument; 1:180: the landing motion
     call(rig, actor, 1, 218, {self, i(1), i(77)});
     CHECK(call(rig, actor, 1, 39, {self, i(1)}).bits == 77);
+    // 1:38: its team (+ 0x4dc), the Experiment's parts' 1 while its body catches them
+    call(rig, actor, 1, 38, {self, i(1)});
+    CHECK(actor.u32(kh::field::kTeam) == 1);
+    call(rig, actor, 1, 38, {self, i(2)});
+    CHECK(actor.u32(kh::field::kTeam) == 2);
     call(rig, actor, 1, 180, {self, i(9)});
     CHECK(actor.motion.landing == 9);
 }
@@ -2473,6 +2478,55 @@ struct XigbarWorld final : kh::World {
     }
 };
 
+// The Experiment's reaction command 603 (its trigger 11): a jump given to the player (1:55 on him: the world moves him
+// along class 1's arc), his catch lasting till the motion it plays on him reaches its loop (1:63 on him, the world's)
+struct ExperimentWorld final : kh::World {
+    kh::Object *standing = nullptr;
+    bool jumped = false, in_loop = false;
+    kh::Jump jump{};
+    kh::Object *player(kh::Actor &) override
+    {
+        return standing;
+    }
+    void player_jump(kh::Object &, const kh::Jump &j) override
+    {
+        jumped = true;
+        jump = j;
+    }
+    bool player_in_loop(kh::Object &) override
+    {
+        return in_loop;
+    }
+};
+
+void test_experiment()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "1:55 5 0\n1:63 1 1\n");
+    ExperimentWorld world;
+    kh::Actor body(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "the experiment");
+    body.world = &world;
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    world.standing = &player;
+    const auto i = ai::Value::of_int;
+    const auto f = ai::Value::of_float;
+    const auto adr = ai::Value::of_address;
+    const std::uint32_t vec = rig.memory.add(16, "a vector");
+    const float w[4] = {3.0F, 300.0F, 4.0F, 10.0F}; // 3 by 4 along at 10 a tick, 300 up
+    rig.memory.write(vec, w, sizeof w);
+    // 1:55 on the player: his jump to the world, the enemy's own unmoved
+    call(rig, body, 1, 55, {adr(player.address()), adr(vec), i(3), f(0.0F), i(1)});
+    CHECK(world.jumped && world.jump.on && world.jump.arc && world.jump.rise == -300.0F);
+    CHECK(std::fabs(world.jump.apex - std::sqrt(600.0F / kh::kKh2Pull)) < 1e-3F);
+    CHECK(std::fabs(world.jump.along[0] - 6.0F) < 1e-4F && std::fabs(world.jump.along[2] - 8.0F) < 1e-4F);
+    CHECK(!body.jump.on);
+    // 1:63 on the player: the world's answer, not the running enemy's motion
+    CHECK(call(rig, body, 1, 63, {adr(player.address())}).bits == 0);
+    world.in_loop = true;
+    CHECK(call(rig, body, 1, 63, {adr(player.address())}).bits == 1);
+}
+
 void test_xigbar()
 {
     Rig rig;
@@ -2581,6 +2635,7 @@ int main()
     test_data_roxas();
     test_zexion();
     test_xigbar();
+    test_experiment();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

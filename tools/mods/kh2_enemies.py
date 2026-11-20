@@ -124,6 +124,11 @@ KINDS = {
     "B_LK100_20": "Ed",
     "B_BB120": "Shadow Stalker",
     "B_NM000": "Oogie Boogie",
+    # Christmas Town's Experiment (nm07): its head and arms are objects of their own, which its body makes (1:0)
+    "B_NM110": "The Experiment",
+    "B_NM110_HEAD": "The Experiment's head",
+    "B_NM110_L_ARM": "The Experiment's left arm",
+    "B_NM110_R_ARM": "The Experiment's right arm",
     # FINAL MIX's data battles (their Limit Cut objects, _LV99)
     "B_EX110_LV99": "Axel (Data)",
     "B_EX130_LV99": "Xaldin (Data)",

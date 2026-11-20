@@ -318,13 +318,14 @@ void Field::attack_made(std::uint32_t at, Actor &by, Object *owner, int atkp, in
     o.enemy = it->second->days;
     o.owner = owner != nullptr ? owner->address() : 0u;
     o.players = owner != nullptr && days_object(*owner) != 0;
+    o.team = made_team(atkp, owner); // (YS::ATTACK_MAGIC's: 2:10's object its owner)
     o.atkp = atkp;
     o.group = group;
     o.sub = sub;
     attacks[at] = o;
     mod().memory.set_u32(at + 0x18, std::uint32_t(atkp)); // (2:25, as a motion's attack: motion_attack)
     if (tracing())
-        khdays_log("kh2 enemies: %08x makes an attack (atkp %d, group %d)%s", o.enemy, atkp, group,
+        khdays_log("kh2 enemies: %08x makes an attack (atkp %d, group %d, team %d)%s", o.enemy, atkp, group, o.team,
                    o.players ? " of KH2's player" : "");
 }
 
@@ -362,7 +363,7 @@ void Field::attack_follow(std::uint32_t at, std::uint32_t effect)
 void Field::attack_team(std::uint32_t at, int team)
 {
     if (const auto o = attacks.find(at); o != attacks.end())
-        o->second.team = team;
+        o->second.team = team == 3 ? 4 : team;
 }
 
 void Field::attack_strike(std::uint32_t at, Object *target)
@@ -428,8 +429,10 @@ bool Field::attack_can_hit(std::uint32_t at, Object *target)
     const auto o = attacks.find(at);
     if (o == attacks.end() || target == nullptr)
         return false;
-    const bool player = days_object(*target) != 0;
-    return o->second.players ? !player && target->actor() != nullptr : player;
+    // (YS::ATTACK::is_strike's teams: a player of the player's, an enemy its own)
+    if (days_object(*target) != 0)
+        return strikes_team(o->second.team, 1);
+    return target->actor() != nullptr && strikes_team(o->second.team, object_team(*target));
 }
 
 void Field::attack_line(std::uint32_t at, const Vec3 &now, const Vec3 &before)
@@ -1504,6 +1507,7 @@ Object *Field::player(Actor &a)
         if (!o) {
             o = std::make_unique<Object>(mod().memory, "a player");
             o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
+            o->set_u32(field::kTeam, 1u); // the player's team (YS::PARTY)
         }
         if (const auto h = held.find(list[std::size_t(i)].object); h != held.end()) {
             o->set_place(h->second.place); // where the script and its motion put it
@@ -1564,6 +1568,10 @@ void Field::player_carry(Object &o, Object *by)
     if (h == held.end())
         return;
     h->second.carried_by = it != by_actor.end() ? it->second->days : 0u;
+    // what carries him (+ 0x6a0, YS::OBJ's Attach: 1:161 -- the Experiment's catch holds him while it does)
+    o.set_u32(field::kCarrier, by != nullptr && h->second.carried_by != 0 ? by->address() : 0u);
+    if (h->second.carried_by != 0 && player_jumps.erase(object) != 0) // his jump over: he is where it stands
+        o.set_bits(field::kFlags, bit::kInAir, false);
     if (tracing())
         khdays_log(h->second.carried_by != 0 ? "kh2 enemies: player %08x put on %08x (1:18)"
                                              : "kh2 enemies: player %08x let down (1:102)",
@@ -1582,6 +1590,28 @@ void Field::player_steer(Object &o, const Vec3 &way, float speed)
 {
     if (const auto h = held.find(days_object(o)); h != held.end())
         h->second.steer = {way[0] * speed, way[1] * speed, way[2] * speed};
+}
+
+void Field::player_jump(Object &o, const Jump &jump)
+{
+    const unsigned object = days_object(o);
+    if (object == 0)
+        return;
+    player_jumps[object] = jump;
+    o.set_bits(field::kFlags, bit::kInAir, true); // (1:57, 1:60: off the ground from the jump's start)
+    if (tracing())
+        khdays_log("kh2 enemies: player %08x jumps (rising %.1f over %.1f ticks, %.1f %.1f a tick along; KH2's cm)", object,
+                   double(-jump.rise), double(jump.apex), double(jump.along[0]), double(jump.along[2]));
+}
+
+bool Field::player_in_loop(Object &o)
+{
+    const auto h = held.find(days_object(o));
+    if (h == held.end() || h->second.body == nullptr || !h->second.body->motion || h->second.blend > 0.0F)
+        return false;
+    const kh2::Motion &m = *h->second.body->motion;
+    const bool loops = m.loop_from() < m.end() && m.loop_ticks() < m.length_ticks();
+    return h->second.time >= (loops ? m.loop_ticks() : m.length_ticks());
 }
 
 void Field::player_yaw(Object &o, float yaw)

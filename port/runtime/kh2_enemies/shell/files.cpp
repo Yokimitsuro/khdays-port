@@ -795,6 +795,43 @@ int attack_team(int atkp)
     return attack_param(atkp).team;
 }
 
+// The team an object of `name` is made with (field::kTeam, its class's constructor by its entry's kind): an enemy's 2
+// (3 a boss, 4 an enemy, 0xc a large one; YS::ENEMYBASE) but Mushroom XIII's (entries 0x417 to 0x423, is_kinoko:
+// YS::OBJ's 0, their scripts set it), a friend in battle's 1 (9; YS::BTLNPC, YS::PARTY), a gimmick's 3 (0x17), 0
+// another's; an enemy's when the mod has no entry for it
+int entry_team(const std::string &name)
+{
+    const std::uint32_t at = entry_record(name);
+    if (at == 0)
+        return 2;
+    const unsigned kind = mod().memory.u32(at + 4) & 0xffu, number = mod().memory.u32(at) & 0xffffu;
+    if (kind == 3 || kind == 4 || kind == 0xc)
+        return number >= 0x417u && number <= 0x423u ? 0 : 2;
+    return kind == 9 ? 1 : kind == 0x17 ? 3 : 0;
+}
+
+int object_team(const Object &o)
+{
+    return int(o.u32(field::kTeam));
+}
+
+// An attack's team as YS::ATTACK's constructor gives it (the PS3 build's, + 0x2c): its atkp's team (its + 8), its
+// owner's when that is 0 (none: 0), the player's 1 (the player made its owner); 3 made 4
+int made_team(int atkp, const Object *owner)
+{
+    int team = attack_team(atkp);
+    if (team == 0 && owner != nullptr)
+        team = object_team(*owner);
+    return team == 3 ? 4 : team;
+}
+
+// Whether an attack of `team` strikes an object of `target` (YS::ATTACK::is_strike: its + 0x2d, a byte of every team
+// but its own and 0)
+bool strikes_team(int team, int target)
+{
+    return target > 0 && target < 8 && target != team;
+}
+
 // Whether an attack gives what it strikes a reaction (its + 10: 0 and 255 none)
 bool attack_reacts(int atkp)
 {

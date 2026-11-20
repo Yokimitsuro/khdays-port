@@ -6296,6 +6296,17 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   game kept the value); laid in the frame package (`KD_MASTER`, the information), with the fade back stretched 60
   times by a local test switch, the window went white (mean 231 of 255) and back to its own in about a second.
 
+- **The Experiment** (2026-11-20, window runs, nm07 made a room, level 50; docs/KH2_ENEMIES.md, "The Experiment",
+  "Teams"): a Days hit's packet flags as `Ov107_AiState_ApplyHit` hands them on (`khdays_kh2_enemies_reflected`'s
+  `flags`): 0x26 and 0x24 on swings with flag 0x20 (`HIT_FLAG_FULL`), 0x4 on a plain swing, 0x8 on magic (Blizzard,
+  Days's kinds 0x8). Roxas's `cm.b`: every hit of attacks 2 and 5 (his first keyblade's ground and air finishers)
+  carries the first flag, none of 0, 1, 3, 4. Before Days's full hits were KH2's finishing reaction, the Experiment
+  stood at 70% of its health for good (1176 of 1680: "takes 0 of 902 damage" from then on); after, a full hit at 70%
+  sent it to `barabara_normal` (160 s). Its reaction command 603 left the player held in 252 for 290 s before he could
+  jump (1:55 on him fell to the running enemy, `self_of`); with his jump he landed 1.4 s after the press when he
+  missed, and when he touched its catch was 0 ticks long (1:63 on him read the Experiment's own motion, in its loop)
+  until 1:63 and 1:161 were his own: 1.0 s, the parts' 1:38 with 1 from its first tick (822 calls in it, 20,754 with
+  2), then the throw.
 ## 38. Days's commands on KH2's reaction command bar
 
 Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)

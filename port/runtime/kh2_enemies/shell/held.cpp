@@ -26,7 +26,10 @@ void let_go(unsigned object, const char *why)
                 r.fx->stop();
     }
     drawn_weapons.erase(object);
+    player_jumps.erase(object);
     if (const auto o = players.find(object); o != players.end() && o->second) {
+        o->second->set_bits(field::kFlags, bit::kInAir, false);
+        o->second->set_u32(field::kCarrier, 0u); // (nothing carries him once he is let go: 1:161)
         o->second->set_bits(field::kStatus, bit::kOtherMotion, false);
         o->second->set_bits(field::kStatus, bit::kKeepsCarried, false);
         // his controller's motion his own again (1:238, 1:15): the one asked for, else his idle -- Days plays the rest.
@@ -354,9 +357,28 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             if ((r.id == 3 || r.id == 24 || r.id == 30) && h.time >= float(r.start) && h.time < float(r.end))
                 air = true;
     const Vec3 asked = {h.move[0] + h.steer[0], h.move[1] + h.steer[1], h.move[2] + h.steer[2]};
-    for (int i = 0; i < 3; ++i) // a script's move (1:89), this tick's, and its steering (1:111)
-        if (air || i != 1)
-            h.place[std::size_t(i)] += h.move[std::size_t(i)] + h.steer[std::size_t(i)];
+    // a jump a script gave him (1:55: player_jumps) while nothing carries him: class 1's as an enemy's (Actor::update)
+    // -- its height by its time, its way along kept 0.9 a tick and the rest the steering's (1:111), 0.95 kept unsteered
+    // -- in the air till he meets the ground past its top, where he lands (hold's loop: let go)
+    const auto jumping = h.carried_by == 0 ? player_jumps.find(object) : player_jumps.end();
+    if (jumping != player_jumps.end()) {
+        Jump &j = jumping->second;
+        air = true;
+        const bool steered = h.steer[0] != 0.0F || h.steer[2] != 0.0F;
+        for (const std::size_t i : {std::size_t(0), std::size_t(2)})
+            j.along[i] = steered ? (1.0F - j.keep) * h.steer[i] + j.keep * j.along[i] : j.slow * j.along[i];
+        j.time += 1.0F;
+        constexpr float kHalfPi = 1.5707963F;
+        const float up = j.time >= j.apex ? j.rise + j.base + kKh2Pull * (j.time - j.apex) * (j.time - j.apex) * 0.5F
+                                          : std::sin(std::sin(j.time / j.apex * kHalfPi) * kHalfPi) * j.rise + j.base;
+        h.place = {h.place[0] + j.along[0] + h.move[0], h.place[1] + (up - j.height) + h.move[1],
+                   h.place[2] + j.along[2] + h.move[2]};
+        j.height = up;
+    } else {
+        for (int i = 0; i < 3; ++i) // a script's move (1:89), this tick's, and its steering (1:111)
+            if (air || i != 1)
+                h.place[std::size_t(i)] += h.move[std::size_t(i)] + h.steer[std::size_t(i)];
+    }
     h.move = {};
     // the room's walls stop him as KH2's collision does: his body's sphere swept along his way from where he was, slid
     // along what it meets (the Soldier's Cyclone steps him 3.6 m aside; Days's collision's ray meets no wall)
@@ -366,6 +388,22 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             if (trace_level() >= 2)
                 khdays_log("kh2 enemies: held player %08x stopped by a wall: %.1f %.1f made (KH2's cm)", object,
                            double(way[0]), double(way[2]));
+        }
+    }
+    if (jumping != player_jumps.end() && jumping->second.time >= jumping->second.apex) {
+        // falling past its top: the ground under him met (KH2's y down), where he lands
+        float from[3], to[3], hit[3];
+        to_days({h.place[0], h.place[1] - kGroundSearchUp, h.place[2]}, from);
+        to_days({h.place[0], h.place[1] + kGroundSearchDown, h.place[2]}, to);
+        if (khdays_kh2_shell_ray(shell_of(e), from, to, hit) && h.place[1] >= to_kh2(hit)[1]) {
+            h.place[1] = to_kh2(hit)[1];
+            player_jumps.erase(jumping);
+            h.landed = true;
+            if (const auto o = players.find(object); o != players.end() && o->second)
+                o->second->set_bits(field::kFlags, bit::kInAir, false);
+            if (tracing())
+                khdays_log("kh2 enemies: held player %08x lands at %.1f %.1f %.1f (KH2's cm)", object,
+                           double(h.place[0]), double(h.place[1]), double(h.place[2]));
         }
     }
     if (!air) {
@@ -562,6 +600,7 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
             if (!o) {
                 o = std::make_unique<Object>(mod().memory, "a player");
                 o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
+                o->set_u32(field::kTeam, 1u); // the player's team (YS::PARTY)
             }
             mission_damage(o->address(), std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)));
         }

@@ -636,6 +636,13 @@ void add_actor_fields(ai::Calls &calls)
                 v.v[i] = x->f(field::kPlace + 4 * i);
         a[0] = give_vec(m, "shared", v);
     });
+    // 1:38 its team (trap_obj_set_team; FUN_14042bd30: + 0x4dc): the Experiment's head and arms take the player's,
+    // 1, while its body catches what he flicked at it (rc_flick_shot_catch) -- his blows pass them, theirs strike it --
+    // and 2 again after
+    calls.set(1, 38, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]))
+            x->set_u32(field::kTeam, a[1].bits);
+    });
     // 1:39 its unit's argument n (trap_obj_unit_arg; FUN_1403b5df0: + 0x9f4 + 4 n): what the room's spawn gives each
     // object, or 1:218 sets; Days's waves give none: 0
     calls.set(1, 39, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -1392,30 +1399,40 @@ void add_motions(ai::Calls &calls)
     // then a motion; the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing); its class (1) waits in
     // + 0x648 for the motion's take-off (trigger 0, FUN_14040dd70's event 0). Class 1's movement (FUN_1403cb360) gives
     // the height by the jump's time (Jump::arc)
-    const auto begin_jump = [](Actor &x, const Vec &v) {
-        x.jump.on = true;
-        x.dashing = false;
-        x.jump.gravity = Jump{}.gravity;
-        x.jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
-        x.jump.slow = Jump{}.slow;
+    const auto jump_of = [](const Jump &before, const Vec &v) {
+        Jump j = before; // (a blow's mark kept: 10:22)
+        j.on = true;
+        j.gravity = Jump{}.gravity;
+        j.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
+        j.slow = Jump{}.slow;
         const float y = v.v[1], ticks = std::sqrt(std::fabs(2.0F * y / kKh2Pull));
-        x.jump.arc = true;
-        x.jump.up = 0.0F;
-        x.jump.height = 0.0F;
-        x.jump.time = y < 0.0F ? ticks : 0.0F;
-        x.jump.apex = y < 0.0F ? 0.0F : ticks;
-        x.jump.base = y < 0.0F ? y : 0.0F;
-        x.jump.rise = y < 0.0F ? 0.0F : -y;
+        j.arc = true;
+        j.up = 0.0F;
+        j.height = 0.0F;
+        j.time = y < 0.0F ? ticks : 0.0F;
+        j.apex = y < 0.0F ? 0.0F : ticks;
+        j.base = y < 0.0F ? y : 0.0F;
+        j.rise = y < 0.0F ? 0.0F : -y;
         const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
-        x.jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        j.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        return j;
+    };
+    const auto begin_jump = [jump_of](Actor &x, const Vec &v) {
+        x.jump = jump_of(x.jump, v);
+        x.dashing = false;
         x.velocity = x.jump.along;
         x.move_clock = 0.0F;
         x.steered = x.jump.along;
         x.set_bits(field::kFlags, bit::kInAir, true);
     };
-    const auto jump = [begin_jump](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
+    const auto jump = [begin_jump, jump_of](ai::Machine &m, std::span<ai::Value> a) {
         const Vec v = read_vec(m, a[1].bits);
+        if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: the world moves him along it
+            if (running(m)->world != nullptr)
+                running(m)->world->player_jump(*o, jump_of(Jump{}, v));
+            return;
+        }
+        Actor *x = self_of(m, a[0]);
         const Vec3 velocity = x->velocity, steered = x->steered;
         begin_jump(*x, v);
         x->play(std::int32_t(a[2].bits), a[3].f(), 0.0F);
@@ -1659,6 +1676,10 @@ void add_motions(ai::Calls &calls)
     // that does not loop its end. Data Roxas's slide waits for its 162's loop (frame 6 of 8); read as its end, a loop
     // never reached it
     calls.set(1, 63, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); is_player(o)) { // one of Days's players: the motion an enemy plays on him
+            a[0] = ai::Value::of_int(running(m)->world != nullptr && running(m)->world->player_in_loop(*o) ? 1 : 0);
+            return;
+        }
         const Actor *x = self_of(m, a[0]);
         const bool in_loop = x->motions != nullptr && x->motion.id >= 0 && x->motions->has(x->motion.id) &&
                              x->motion.blend <= 0.0F && x->motion.time >= x->motions->loop_from(x->motion.id);

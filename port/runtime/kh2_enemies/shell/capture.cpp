@@ -56,7 +56,8 @@ void Field::capture_form(Actor &by, int entry)
     c.time = 2.0F * kDriveBarTime;
     Enemy *f = start_ally(*k, p->place(), p->yaw(), c.anchor);
     c.form = f->days;
-    f->actor->play(0, 0.0F, 0.0F); // its idle (motion 0, as KH2's player's)
+    f->actor->set_u32(field::kTeam, 1u); // KH2's player (CHANGEFORM makes him anew): the player's team
+    f->actor->play(0, 0.0F, 0.0F);       // its idle (motion 0, as KH2's player's)
     captures[object] = c;
     if (tracing())
         khdays_log("kh2 enemies: player %08x turned into %s (%08x) by %08x's script", object, name.c_str(), c.form,

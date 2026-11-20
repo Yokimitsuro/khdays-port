@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 58bb24f3db2818bc94c1f288606f371d9798dc933e2d51810ee1a862d2a439ad
+# tools 0cac7a18d860d549698dd3d61284e25578c85168733a103b3c653d4a7e17b18b
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -125,6 +125,7 @@ kh2_fifth msn/us/HE18_MS108.bar
 kh2_fifth msn/us/LK02_MS102.bar
 kh2_fifth msn/us/LK14_MS103.bar
 kh2_fifth msn/us/NM03_MS103.bar
+kh2_fifth msn/us/NM07_MS204.bar
 kh2_fifth msn/us/TT20_MS603.bar
 kh2_fifth msn/us/TT20_MS603_RE.bar
 kh2_fifth obj/B_AL100_FIRE.a.us
@@ -250,6 +251,18 @@ kh2_fifth obj/B_NM000.mdlx
 kh2_fifth obj/B_NM100.a.us
 kh2_fifth obj/B_NM100.mdlx
 kh2_fifth obj/B_NM100.mset
+kh2_fifth obj/B_NM110.a.us
+kh2_fifth obj/B_NM110.mdlx
+kh2_fifth obj/B_NM110.mset
+kh2_fifth obj/B_NM110_HEAD.a.us
+kh2_fifth obj/B_NM110_HEAD.mdlx
+kh2_fifth obj/B_NM110_HEAD.mset
+kh2_fifth obj/B_NM110_L_ARM.a.us
+kh2_fifth obj/B_NM110_L_ARM.mdlx
+kh2_fifth obj/B_NM110_L_ARM.mset
+kh2_fifth obj/B_NM110_R_ARM.a.us
+kh2_fifth obj/B_NM110_R_ARM.mdlx
+kh2_fifth obj/B_NM110_R_ARM.mset
 kh2_fifth obj/F_EX030.mdlx
 kh2_fifth obj/F_EX030.mset
 kh2_fifth obj/F_EX040.mset
