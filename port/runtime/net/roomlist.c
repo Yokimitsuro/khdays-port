@@ -7,7 +7,7 @@
 #include "../input/input.h"
 #include "../core/io.h"
 #include "../core/rom.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../menus/savelist.h"
 #include "../battle/stop_magic.h"
 #include "../../host/screens/ui_text.h"
@@ -132,16 +132,6 @@ static volatile LONG editing_now;
 /* the view published */
 static SRWLOCK view_lock = SRWLOCK_INIT;
 static KhdaysRoomView *shown;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static void wr32(u32 address, u32 value)
-{
-    *(volatile u32 *)KHDAYS_W(address) = value;
-}
 
 static int in_ram(u32 address)
 {

@@ -11,7 +11,7 @@
 #include "../input/input.h"
 #include "../core/io.h"
 #include "../core/session_log.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../mods/installed.h"
 
 #include <stdio.h>
@@ -161,21 +161,6 @@ static struct {
 } steer;
 static int last_screen = -1, last_page = -1, last_entry = -1, last_tab = -1, last_config_entry = -1, last_notice = -1;
 static int last_member_page[KHDAYS_CAMP_PLACES] = {-2, -2, -2, -2};
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static u16 rd16(u32 address)
-{
-    return *(const volatile u16 *)KHDAYS_W(address);
-}
-
-static u8 rd8(u32 address)
-{
-    return *(const volatile u8 *)KHDAYS_W(address);
-}
 
 static int in_ram(u32 address)
 {

@@ -10,7 +10,7 @@
 #include "../core/io.h"
 #include "../core/rom.h"
 #include "../core/session_log.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../mods/installed.h"
 #include "../missions/missions.h"
 
@@ -206,21 +206,6 @@ static int repeat_dir; /* the direction held: -1 up, 1 down, 0 none */
 static u32 repeat_from, repeat_count;
 static KhdaysSaveRow rows[KHDAYS_SLOT_COUNT];
 static u32 rows_changed, rows_generation;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static void wr32(u32 address, u32 value)
-{
-    *(volatile u32 *)KHDAYS_W(address) = value;
-}
-
-static void wr16(u32 address, u16 value)
-{
-    *(volatile u16 *)KHDAYS_W(address) = value;
-}
 
 static int in_ram(u32 address)
 {

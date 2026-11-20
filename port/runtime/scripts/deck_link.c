@@ -6,15 +6,10 @@
 
 #include "../core/session_log.h"
 #include "../menus/camp.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "khdays_ds_symbols.h"
 
 #include <stdlib.h>
-
-static unsigned rd32(KhdaysRef at)
-{
-    return *(const volatile unsigned *)KHDAYS_W(at);
-}
 
 #define STATE_DECK 0xee0u /* GameState: the deck's cells, an item id each */
 #define DB_ROW 0x14u      /* data_0204c238's rows (MsgDb_InitTable): +8 the records, +0xc their count */
@@ -40,16 +35,6 @@ static KhdaysLinkPanel *panels; /* by id - 1 */
 static int panel_count, panels_read;
 static unsigned char *caps; /* each parameter's highest level, by its number - 1 */
 static int cap_count;
-
-static unsigned rd16(KhdaysRef at)
-{
-    return *(const volatile unsigned short *)KHDAYS_W(at);
-}
-
-static unsigned rd8(KhdaysRef at)
-{
-    return *(const volatile unsigned char *)KHDAYS_W(at);
-}
 
 /* The panels' records and the parameters' highest levels, read once from the game's databases (loaded for it when
  * they are not). */

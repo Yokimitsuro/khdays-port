@@ -11,7 +11,7 @@
 #include "../core/rom.h"
 #include "../core/session_log.h"
 #include "../core/utf8.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../../host/app/host.h"
 #include "../../host/screens/ui_text.h"
 
@@ -119,31 +119,6 @@ static int a_give; /* ... to hand the game now that it is answered */
 static u16 held;
 static int repeat_dir;
 static u32 repeat_from, repeat_count;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static u16 rd16(u32 address)
-{
-    return *(const volatile u16 *)KHDAYS_W(address);
-}
-
-static u8 rd8(u32 address)
-{
-    return *(const volatile u8 *)KHDAYS_W(address);
-}
-
-static void wr8(u32 address, u8 value)
-{
-    *(volatile u8 *)KHDAYS_W(address) = value;
-}
-
-static void wr16(u32 address, u16 value)
-{
-    *(volatile u16 *)KHDAYS_W(address) = value;
-}
 
 static int in_ram(u32 address)
 {

@@ -7,23 +7,13 @@
 #include "../core/events.h"
 #include "../net/net_session.h"
 #include "../sound/sound_bridge.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "khdays_ds_symbols.h"
 
 #include <SDL3/SDL.h>
 
 #include <string.h>
 #include <time.h>
-
-static unsigned rd32(KhdaysRef at)
-{
-    return *(const volatile unsigned *)KHDAYS_W(at);
-}
-
-static unsigned rd16(KhdaysRef at)
-{
-    return *(const volatile unsigned short *)KHDAYS_W(at);
-}
 
 #define MUSIC_TRACK 0xb46f6u /* gSoundMgr: the music player's track (a sequence), -1 none (SoundMgr_Update) */
 #define MUSIC_STOP 3         /* the sound manager's request kinds (ScriptQueue_Push's callers) */

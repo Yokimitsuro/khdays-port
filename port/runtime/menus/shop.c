@@ -4,7 +4,7 @@
 
 #include "../core/io.h"
 #include "../core/session_log.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../mods/installed.h"
 
 #include <math.h>
@@ -88,31 +88,6 @@ static u32 seen_at;
 static volatile LONG turn_milli; /* thousandths of a degree: the shop's screen sets it (host) */
 static int turned;               /* the moogle turned at this visit: put back when the turn is 0 */
 static int restore = -1;         /* the menu's option to put the cursor back on (the list just left), -1 none */
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static u16 rd16(u32 address)
-{
-    return *(const volatile u16 *)KHDAYS_W(address);
-}
-
-static u8 rd8(u32 address)
-{
-    return *(const volatile u8 *)KHDAYS_W(address);
-}
-
-static void wr16(u32 address, u16 value)
-{
-    *(volatile u16 *)KHDAYS_W(address) = value;
-}
-
-static void wr32(u32 address, u32 value)
-{
-    *(volatile u32 *)KHDAYS_W(address) = value;
-}
 
 static int in_ram(u32 address)
 {

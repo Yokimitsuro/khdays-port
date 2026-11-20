@@ -10,7 +10,7 @@
 #include "../core/rom.h"
 #include "../core/session_log.h"
 #include "../core/utf8.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../net/net_session.h"
 #include "../../hal/hal.h"
 #include "../scripts/deck_link.h"
@@ -75,26 +75,6 @@ static int data_language(void)
     case 4: return 4; /* it */
     default: return 0;
     }
-}
-
-static unsigned rd32(KhdaysRef at)
-{
-    return *(const volatile unsigned *)KHDAYS_W(at);
-}
-
-static unsigned rd16(KhdaysRef at)
-{
-    return *(const volatile unsigned short *)KHDAYS_W(at);
-}
-
-static void wr32(KhdaysRef at, unsigned value)
-{
-    *(volatile unsigned *)KHDAYS_W(at) = value;
-}
-
-static void wr16(KhdaysRef at, unsigned value)
-{
-    *(volatile unsigned short *)KHDAYS_W(at) = (unsigned short)value;
 }
 
 static KhdaysStopData data;

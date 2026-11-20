@@ -6,7 +6,7 @@
 #include "game_heap.h"
 #include "runtime.h"
 #include "session_log.h"
-#include "window.h"
+#include "game_memory.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,11 +57,6 @@ static struct Parked {
     int which;
 } *parked;
 static int parked_count, parked_room;
-
-static unsigned rd32(KhdaysRef at)
-{
-    return *(const volatile unsigned *)KHDAYS_W(at);
-}
 
 void *khdays_res_cache_table(int n)
 {

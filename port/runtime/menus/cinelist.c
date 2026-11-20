@@ -6,7 +6,7 @@
 
 #include "../core/io.h"
 #include "../input/input.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 
 #include "khdays_ds_symbols.h"
 
@@ -37,11 +37,6 @@ u32 khdays_events_vblank_count(void);
 static SRWLOCK lock = SRWLOCK_INIT;
 static KhdaysCineView shown;
 static u32 context, seen_at;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
 
 static int in_ram(u32 address)
 {

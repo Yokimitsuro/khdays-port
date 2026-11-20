@@ -9,7 +9,7 @@
 #include "../../host/app/host.h"
 #include "../core/session_log.h"
 #include "../core/vram.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -150,15 +150,6 @@ static struct {
     /* the files page as the update saw it last */
     int on, enemies, cursor;
 } vw;
-
-static u32 rd32(u32 a)
-{
-    return *(volatile u32 *)KHDAYS_W(a);
-}
-static u16 rd16(u32 a)
-{
-    return *(volatile u16 *)KHDAYS_W(a);
-}
 
 static void publish(void)
 {

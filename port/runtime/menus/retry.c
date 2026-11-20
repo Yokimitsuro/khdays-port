@@ -8,7 +8,7 @@
 #include "../input/input.h"
 #include "../core/io.h"
 #include "../core/session_log.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../../ui/bg.h"
 #include "../../ui/elements.h"
 #include "../../ui/parts.h"
@@ -58,21 +58,6 @@ static struct {
     u16 held;      /* the player's buttons at the last latch */
 } retry;
 static int trace = -1;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
-
-static u16 rd16(u32 address)
-{
-    return *(const volatile u16 *)KHDAYS_W(address);
-}
-
-static u8 rd8(u32 address)
-{
-    return *(const volatile u8 *)KHDAYS_W(address);
-}
 
 static int in_ram(u32 address)
 {

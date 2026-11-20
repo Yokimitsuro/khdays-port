@@ -6,7 +6,7 @@
 
 #include "../input/input.h"
 #include "../core/rom.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../../host/app/host.h"
 
 #include "khdays_ds_symbols.h"
@@ -41,11 +41,6 @@ static int asking, cursor, last_mode = -1, held;
 /* the buttons held when the question was answered: the game's pad would take a button it gets
  * back as a new press (an A on the review's no), so they stay the port's until let go */
 static u16 swallowed;
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
 
 void khdays_subtitles_set(int on)
 {

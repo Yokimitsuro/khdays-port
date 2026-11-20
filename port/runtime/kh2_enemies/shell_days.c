@@ -1,7 +1,7 @@
 /* The Days side of a KH2 enemy's shell (shell_days.h). The actor's fields as game/actor.h names them. */
 #include "shell_days.h"
 
-#include "../core/window.h"
+#include "../core/game_memory.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -57,19 +57,9 @@ extern int GameState_GetField(int a, int b);
 #define NODE_ANGLE 0x80u    /* u16: the way its model looks, (sin, 0, cos) of it (Ov022_StepGlideState: the heading
                                + 0x8000, its way (-sin, -cos) of the heading) */
 
-static unsigned rd32(KhdaysRef at)
-{
-    return khdays_game_ram(at) ? *(const unsigned *)KHDAYS_W(at) : 0;
-}
-
-static unsigned rd16(KhdaysRef at)
-{
-    return khdays_game_ram(at) ? *(const unsigned short *)KHDAYS_W(at) : 0;
-}
-
 static float fx(KhdaysRef at)
 {
-    return (float)(int)rd32(at) / 4096.0f;
+    return (float)(int)checked_rd32(at) / 4096.0f;
 }
 
 static int to_fx(float v)
@@ -111,11 +101,11 @@ int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out)
         out->place[i] = fx(actor + ACTOR_PLACE + 4u * (unsigned)i);
     }
     out->radius = fx(actor + ACTOR_RADIUS);
-    out->above = rd32(actor + ACTOR_GROUND_HIT) != 0 ? fx(actor + ACTOR_GROUND) - out->radius : -1.0f;
-    out->standing = (rd16(actor + ACTOR_FLAGS60) & STANDING) != 0;
-    out->own = rd32(actor + ACTOR_MODE) == 1;
-    out->hp = (short)rd16(actor + ACTOR_HP);
-    out->hp_max = (short)rd16(actor + ACTOR_HP_MAX);
+    out->above = checked_rd32(actor + ACTOR_GROUND_HIT) != 0 ? fx(actor + ACTOR_GROUND) - out->radius : -1.0f;
+    out->standing = (checked_rd16(actor + ACTOR_FLAGS60) & STANDING) != 0;
+    out->own = checked_rd32(actor + ACTOR_MODE) == 1;
+    out->hp = (short)checked_rd16(actor + ACTOR_HP);
+    out->hp_max = (short)checked_rd16(actor + ACTOR_HP_MAX);
     out->kind = khdays_game_ram(actor + ACTOR_KIND) ? *(const unsigned char *)KHDAYS_W(actor + ACTOR_KIND) : -1;
     return 1;
 }
@@ -125,7 +115,7 @@ void khdays_kh2_shell_set_hp(unsigned actor, int hp)
     if (actor == 0 || !khdays_game_ram(actor + ACTOR_HP)) {
         return;
     }
-    const int most = (short)rd16(actor + ACTOR_HP_MAX);
+    const int most = (short)checked_rd16(actor + ACTOR_HP_MAX);
     hp = hp > most ? most : hp;
     *(unsigned short *)KHDAYS_W(actor + ACTOR_HP) = (unsigned short)(hp < 1 ? 1 : hp);
 }
@@ -198,16 +188,16 @@ void khdays_kh2_shell_size(unsigned actor, float radius, float centre, float *ol
 
 int khdays_kh2_shell_players(unsigned actor, KhdaysKh2Player *out, int room)
 {
-    const unsigned scene = rd32(actor + ACTOR_SCENE);
+    const unsigned scene = checked_rd32(actor + ACTOR_SCENE);
     const unsigned list = scene + SCENE_PLAYERS;
     int n = 0;
     if (scene == 0) {
         return 0;
     }
     /* walked as List_First and List_Next do, without their cursor (the game's own walk may be under way) */
-    for (unsigned node = rd32(list + LIST_FIRST); node != 0 && node != list + LIST_END; node = rd32(node + NODE_NEXT)) {
-        const unsigned e = rd32(rd32(node + NODE_ITEM));
-        if (e == 0 || ((rd32(e + PLAYER_ACTIVE) >> 1) & 1u) == 0 || (rd16(e + ACTOR_FLAGS60) & 1u) == 0) {
+    for (unsigned node = checked_rd32(list + LIST_FIRST); node != 0 && node != list + LIST_END; node = checked_rd32(node + NODE_NEXT)) {
+        const unsigned e = checked_rd32(checked_rd32(node + NODE_ITEM));
+        if (e == 0 || ((checked_rd32(e + PLAYER_ACTIVE) >> 1) & 1u) == 0 || (checked_rd16(e + ACTOR_FLAGS60) & 1u) == 0) {
             continue;
         }
         if (out != NULL && n < room) {
@@ -256,7 +246,7 @@ void khdays_kh2_shell_player_recoil(unsigned actor, const float push[3])
 {
     /* the host's alone, as Ov022_ReceiveHit (through func_ov022_02088398) runs there */
     if (Session_GetLocalPlayerIndex() != 0 || !khdays_game_ram(actor) || !khdays_game_ram(actor + PLAYER_DRIFT + 8u) ||
-        rd16(actor + PLAYER_HP) == 0) {
+        checked_rd16(actor + PLAYER_HP) == 0) {
         return;
     }
     *(unsigned long long *)KHDAYS_W(actor + PLAYER_FLAGS) |= PLAYER_STAGGER;
@@ -286,8 +276,8 @@ typedef KhdaysRef (*CastRoutine)(KhdaysRef world, KhdaysRef params);
 /* The room's collision under the actor (its scene's), 0 none */
 static unsigned room_collision(unsigned actor)
 {
-    const unsigned scene = rd32(actor + ACTOR_SCENE);
-    return scene != 0 ? rd32(scene + SCENE_COLLISION) : 0;
+    const unsigned scene = checked_rd32(actor + ACTOR_SCENE);
+    return scene != 0 ? checked_rd32(scene + SCENE_COLLISION) : 0;
 }
 
 int khdays_kh2_shell_face_normal(unsigned face, float normal[3])
@@ -315,7 +305,7 @@ extern KhdaysRef Actor_GetRecord(KhdaysRef hit, int index);
  * tags (a ground's slot 3 is no name, Days's data puts none in 0) */
 static int named_nohit(KhdaysRef h)
 {
-    const KhdaysRef face = rd32(h + HIT_FACE);
+    const KhdaysRef face = checked_rd32(h + HIT_FACE);
     if (face == 0) { /* (a hit with no face of the room's: none named) */
         return 0;
     }
@@ -439,7 +429,7 @@ int khdays_kh2_shell_wall(unsigned actor, const float from[3], const float to[3]
 int khdays_kh2_shell_attack_slot(unsigned actor)
 {
     for (int i = 0; i < 8; ++i) { /* the actor's own eight slots */
-        if ((short)rd16(actor + ACTOR_ATTACKS + 6u * (unsigned)i) > 0) {
+        if ((short)checked_rd16(actor + ACTOR_ATTACKS + 6u * (unsigned)i) > 0) {
             return i;
         }
     }
@@ -455,14 +445,14 @@ unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *no
         *local = *(const unsigned char *)KHDAYS_W(actor + PLAYER_OWNER) == (unsigned)Session_GetLocalPlayerIndex();
     }
     if (node != NULL) {
-        *node = rd32(actor + PLAYER_NODE);
+        *node = checked_rd32(actor + PLAYER_NODE);
     }
-    return rd32(actor + PLAYER_FIELD);
+    return checked_rd32(actor + PLAYER_FIELD);
 }
 
 void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw)
 {
-    const unsigned node = rd32(actor + PLAYER_NODE);
+    const unsigned node = checked_rd32(actor + PLAYER_NODE);
     const double turn = 6.283185307179586;
     if (node == 0 || !khdays_game_ram(node + NODE_ANGLE) || !khdays_game_ram(actor + PLAYER_POS + 8u)) {
         return;
@@ -482,7 +472,7 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
 
 int khdays_kh2_shell_player_hp(unsigned actor)
 {
-    return actor != 0 && khdays_game_ram(actor + PLAYER_HP) ? (int)rd16(actor + PLAYER_HP) : -1;
+    return actor != 0 && khdays_game_ram(actor + PLAYER_HP) ? (int)checked_rd16(actor + PLAYER_HP) : -1;
 }
 
 #define PLAYER_HP_MOST 0x16u /* u16 */
@@ -496,7 +486,7 @@ extern void Ov022_ActorSetHp(KhdaysRef actor, int hp);
 
 int khdays_kh2_shell_player_most_hp(unsigned actor)
 {
-    return actor != 0 && khdays_game_ram(actor + PLAYER_HP_MOST) ? (int)rd16(actor + PLAYER_HP_MOST) : -1;
+    return actor != 0 && khdays_game_ram(actor + PLAYER_HP_MOST) ? (int)checked_rd16(actor + PLAYER_HP_MOST) : -1;
 }
 
 int khdays_kh2_shell_player_level(unsigned actor)
@@ -506,7 +496,7 @@ int khdays_kh2_shell_player_level(unsigned actor)
     }
     const unsigned member = *(const unsigned char *)KHDAYS_W(actor + PLAYER_MEMBER);
     const unsigned record = PARTY_MEMBERS + MEMBER_SIZE * (member & 3u);
-    if (!khdays_game_ram(record + MEMBER_MADE) || rd16(record + MEMBER_MADE) == 0) {
+    if (!khdays_game_ram(record + MEMBER_MADE) || checked_rd16(record + MEMBER_MADE) == 0) {
         return 0;
     }
     return (int)*(const unsigned char *)KHDAYS_W(record + MEMBER_LEVEL) + 1;
@@ -527,14 +517,14 @@ int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
         return 0;
     }
     const int dpad = Ov022_HeadingFromHeldDpad((int)actor);
-    *pressed = rd16(actor + PLAYER_PRESSED);
-    *heading = dpad < 0 ? -1 : (int)(((unsigned)dpad + (unsigned)(short)rd16(actor + PLAYER_ANGLE_BIAS)) & 0xffffu);
+    *pressed = checked_rd16(actor + PLAYER_PRESSED);
+    *heading = dpad < 0 ? -1 : (int)(((unsigned)dpad + (unsigned)(short)checked_rd16(actor + PLAYER_ANGLE_BIAS)) & 0xffffu);
     return 1;
 }
 
 void khdays_kh2_shell_player_hidden(unsigned actor, int hidden)
 {
-    const unsigned node = actor != 0 ? rd32(actor + PLAYER_NODE) : 0u;
+    const unsigned node = actor != 0 ? checked_rd32(actor + PLAYER_NODE) : 0u;
     if (node == 0 || !khdays_game_ram(node + NODE_FLAGS)) {
         return;
     }

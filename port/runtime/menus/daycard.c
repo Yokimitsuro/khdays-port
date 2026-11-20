@@ -3,7 +3,7 @@
 #include "daycard.h"
 
 #include "../core/io.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 
 #include "khdays_ds_symbols.h"
 
@@ -38,11 +38,6 @@ static u32 context, seen_at;
 static volatile LONG64 hd_drawn_at;
 static int paced;     /* this card's rolling was looked at (again from its fade in) */
 static u32 fading_at; /* the VBlank its fade in was first seen at (0 not yet) */
-
-static u32 rd32(u32 address)
-{
-    return *(const volatile u32 *)KHDAYS_W(address);
-}
 
 int khdays_daycard_fast_frames(int days)
 {

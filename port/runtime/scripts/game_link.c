@@ -3,7 +3,7 @@
 
 #include "../core/language.h"
 #include "../core/session_log.h"
-#include "../core/window.h"
+#include "../core/game_memory.h"
 #include "../core/events.h"
 #include "../../host/app/instance.h"
 #include "../menus/autosave.h"
@@ -70,11 +70,6 @@ int khdays_overlay_loaded(int id); /* runtime/core/overlays.c */
 #define ROOT_STOPPING 0x8b64u  /* bits 0-1: the field stopping or stopped (Ov002_PauseMissionScene) */
 #define GIVE_UP_FIELD 0x20efu  /* the game field the pause's Give Up sets as it confirms */
 #define ENEMY_KIND 0x19cu
-
-static unsigned rd32(KhdaysRef at)
-{
-    return *(const volatile unsigned *)KHDAYS_W(at);
-}
 
 void khdays_link_folders(const char **mods, const char **user)
 {
