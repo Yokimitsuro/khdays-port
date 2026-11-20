@@ -18,8 +18,17 @@
 /* Each image is a changing replacement (runtime/mods/textures.h) that the
  * graphics card holds. One that is given back is kept for the next image of
  * its size. */
+/* The window draws an element from its replacement's texels as they are then, its place from the frame, and
+ * may still be drawing an earlier frame: texels written in place would show at that frame's place. So an image
+ * a frame's elements were given with is written into another replacement, a copy of it; the frame's own stays
+ * until IMAGE_KEPT more writes. One a part asked for by number (khdays_ui_image_replacement) keeps the one. */
+#define IMAGE_KEPT 2
+
 typedef struct Image {
     int replacement;
+    int kept[IMAGE_KEPT]; /* the replacements it was written into before, the latest first (-1: none yet) */
+    int given;            /* an element of a frame names `replacement` */
+    int fixed;            /* (khdays_ui_image_replacement) */
     int width, height;
     int used;
     uint32_t version; /* counts its changes (khdays_ui_image_end) */
@@ -41,9 +50,11 @@ int khdays_ui_image_get(int width, int height)
     }
     for (int i = 0; i < image_count; ++i) {
         if (!images[i].used && images[i].width == width && images[i].height == height) {
-            uint32_t *texels = khdays_textures_change_begin(images[i].replacement);
+            uint32_t *texels;
+            images[i].fixed = 0; /* another part's now */
+            texels = khdays_ui_image_begin(i);
             memset(texels, 0, (size_t)width * (size_t)height * sizeof(uint32_t));
-            khdays_textures_change_end(images[i].replacement);
+            khdays_ui_image_end(i);
             images[i].used = 1;
             return i;
         }
@@ -63,6 +74,10 @@ int khdays_ui_image_get(int width, int height)
         return -1;
     }
     images[image_count].replacement = id;
+    for (int k = 0; k < IMAGE_KEPT; ++k) {
+        images[image_count].kept[k] = -1;
+    }
+    images[image_count].given = images[image_count].fixed = 0;
     images[image_count].width = width;
     images[image_count].height = height;
     images[image_count].used = 1;
@@ -80,7 +95,36 @@ void khdays_ui_image_put(int image)
 
 uint32_t *khdays_ui_image_begin(int image)
 {
-    return image >= 0 && image < image_count ? khdays_textures_change_begin(images[image].replacement) : NULL;
+    Image *im;
+    if (image < 0 || image >= image_count) {
+        return NULL;
+    }
+    im = &images[image];
+    if (im->given && !im->fixed) {
+        /* a frame has it as it is (Image): written into the replacement left alone longest, a copy first */
+        int next = im->kept[IMAGE_KEPT - 1];
+        if (next < 0) {
+            static int made;
+            char name[64];
+            snprintf(name, sizeof(name), "ui:image:%d:%d", image, ++made);
+            next = khdays_textures_add_changing(name, im->width, im->height, 0);
+        }
+        if (next >= 0) { /* (none to be had: written where it is) */
+            const KhdaysTextureReplacement *from = khdays_textures_replacement(im->replacement);
+            uint32_t *texels = khdays_textures_change_begin(next);
+            if (from != NULL && from->rgba != NULL) {
+                memcpy(texels, from->rgba, (size_t)im->width * (size_t)im->height * sizeof(uint32_t));
+            }
+            for (int k = IMAGE_KEPT - 1; k > 0; --k) {
+                im->kept[k] = im->kept[k - 1];
+            }
+            im->kept[0] = im->replacement;
+            im->replacement = next;
+            im->given = 0;
+            return texels;
+        }
+    }
+    return khdays_textures_change_begin(im->replacement);
 }
 
 void khdays_ui_image_end(int image)
@@ -105,7 +149,11 @@ const uint32_t *khdays_ui_texels(uint32_t image)
 
 int khdays_ui_image_replacement(int image)
 {
-    return image >= 0 && image < image_count ? images[image].replacement : -1;
+    if (image < 0 || image >= image_count) {
+        return -1;
+    }
+    images[image].fixed = 1; /* the part may keep the number: the image stays in this one */
+    return images[image].replacement;
 }
 
 /* --- This frame's elements ------------------------------------------------------- */
@@ -286,7 +334,7 @@ static int above(const void *a, const void *b)
 
 static void add_record(int screen, int list, const Entry *n)
 {
-    const Image *image = &images[n->e.image];
+    Image *image = &images[n->e.image];
     uint32_t *r;
     if (record_count[screen][list] == record_room[screen][list]) {
         const uint32_t room = record_room[screen][list] ? record_room[screen][list] * 2 : 32;
@@ -311,6 +359,7 @@ static void add_record(int screen, int list, const Entry *n)
     r[KE_W] = float_bits(n->e.w);
     r[KE_H] = float_bits(n->e.h);
     r[KE_IMAGE] = (uint32_t)image->replacement;
+    image->given = 1;
     r[KE_IW] = (uint32_t)image->width;
     r[KE_IH] = (uint32_t)image->height;
 }
