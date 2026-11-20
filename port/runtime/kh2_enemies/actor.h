@@ -1,6 +1,6 @@
 // A KINGDOM HEARTS II enemy as its script sees it (docs/KH2_ENEMIES.md): KH2's actor laid out at KH2's offsets (the
 // calls read and change it there, and a script may read it directly), its state machine, its motions, and the script
-// machine that drives it. Nothing here touches Days's game: the shell (shell.cpp) links an actor to a Days enemy and
+// machine that drives it. Nothing here touches Days's game: the shell (shell/) links an actor to a Days enemy and
 // gives it its world (World).
 #pragma once
 

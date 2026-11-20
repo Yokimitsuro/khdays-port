@@ -124,7 +124,7 @@ int survey(int frames, int count, char **files)
 }
 
 // --pages: each block's pictures and its pages as the port numbers their HD pictures (its distinct picture pages in
-// order, numbered on from the last block's: runtime/kh2_enemies/shell.cpp), each page written to `folder` as
+// order, numbered on from the last block's: runtime/kh2_enemies/shell/files.cpp), each page written to `folder` as
 // <block>_<tbp>_<hd number>.tga
 int pages(const char *file, const std::string &folder)
 {

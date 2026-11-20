@@ -61,7 +61,7 @@ int khdays_models_draw_placed(const char *path, const float place[16], unsigned 
 
 /* A KH2 model (.mdlx) drawn so at a place of the port's in a pose of the port's: `bones` its bones' model-space
  * matrices (KH2's centimetres, column-major, 16 floats each, as kh2::MotionPlayer::joints gives them), `count` of
- * them -- a KH2 enemy (runtime/kh2_enemies/shell.cpp); `projection` the view to the clip space (NULL: the draw's
+ * them -- a KH2 enemy (runtime/kh2_enemies/shell/draw.cpp); `projection` the view to the clip space (NULL: the draw's
  * now; given when no game draw sets it, as the 3D list closes); `hidden_parts` its subparts' parts left undrawn
  * (bit n part n: KH2's kn::ModelSKL::hidePart, the Prison Keeper's faces, the Hydra's heads). */
 int khdays_models_draw_posed(const char *path, const float place[16], const float *projection, unsigned int attr,

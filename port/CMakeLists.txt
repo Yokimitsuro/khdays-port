@@ -718,7 +718,21 @@ add_executable(khdays-native
     runtime/mods/models.cpp
     runtime/mods/kh2_corridors.cpp      # Days's standing ovals as KH2's Dark Corridor
     runtime/mods/kh2_fx_draw.cpp        # ... KH2's effects drawn (the corridor's, the KH2 enemies')
-    runtime/kh2_enemies/shell.cpp       # KH2's enemies in Days's enemies' places
+    runtime/kh2_enemies/shell/tick.cpp        # KH2's enemies in Days's enemies' places: made, gone, ticked
+    runtime/kh2_enemies/shell/files.cpp       # ... the mod's files and KH2's system tables
+    runtime/kh2_enemies/shell/field.cpp       # ... the scripts' world as Days's field answers it
+    runtime/kh2_enemies/shell/enemies.cpp     # ... an enemy set going, posed, moved
+    runtime/kh2_enemies/shell/attacks.cpp     # ... attacks made, striking, reflected
+    runtime/kh2_enemies/shell/health.cpp      # ... health and hits taken
+    runtime/kh2_enemies/shell/held.cpp        # ... players held in enemies' motions
+    runtime/kh2_enemies/shell/commands.cpp    # ... reaction commands and command menus
+    runtime/kh2_enemies/shell/events.cpp      # ... events, cameras, the screen
+    runtime/kh2_enemies/shell/party.cpp       # ... a party member (KH2's party AI)
+    runtime/kh2_enemies/shell/laser_dome.cpp  # ... Final Xemnas's laser dome
+    runtime/kh2_enemies/shell/capture.cpp     # ... a player turned into a KH2 object
+    runtime/kh2_enemies/shell/draw.cpp        # ... models and effects drawn
+    runtime/kh2_enemies/shell/texts.cpp       # ... KH2's texts in the game's language
+    runtime/kh2_enemies/shell/mission.cpp     # ... KH2's missions
     runtime/kh2_enemies/shell_days.c    # ... the Days enemy standing in, read and moved
     runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
     runtime/mods/model_bones.cpp        # ... its <model>.bones.txt

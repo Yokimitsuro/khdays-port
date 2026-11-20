@@ -41,7 +41,7 @@ read of KH2, what the port does with it, and what is not known yet.
   needs -- the calls' shapes, `00battle.bin`, `00objentry.bin`, `03system.bin`, the names (`msg/`), the command menu
   and marks (`field2d/`), KH2's font, the resident effect pictures, the player's skeleton and keyblade; an object one
   of them makes (1:0) or KH2 places with it that was not named is told, not added (Roxas's keyblades for `B_EX390`).
-  The port reads every started mod's list in load order (a kind in two, the first one's; `Mod` in `shell.cpp`), each
+  The port reads every started mod's list in load order (a kind in two, the first one's; `Mod` in `shell/internal.h`), each
   kind's own files (`obj/`, `fx/`, its voices) in its own mod, and the files they share from the first mod that has
   them (`kh2_file`: the VFS's order), the installer's "Days - KH2 Enemies" or another. Roxas with his keyblades so:
   37 MB.
@@ -297,7 +297,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 4:3, 4:5, 4:6, 4:11, 4:14, 4:15, 4:16, 4:20, 4:21, 4:22, 4:29, 4:41, 4:54, 4:55 | the field's mission: completed, a counter's count set, one more, failed, its pieces shown, hidden, its boss dead, one less, whether its pieces are up, left, a counter's count, so many more, locked, whether it is -- 4:6, 4:20 and 4:29 the counter's index; 4:5 and 4:41 the value, then the index (`YS::MISSION::SetCount(n, index)`, `AddCount(n, index)`: read the other way round until 2026-11-19) (`YS::MISSION`, `MISSION_COUNT`, `MISSION2D`) | the boss's KH2 mission ("KH2's missions", below) |
 | 6:16 | a target record emptied (`Ts::trap_target_clear`, `FUN_1403bda50`: none, 0, none, -1) | as KH2 |
 | 6:46, 6:47 | a stop put on every object of the field but two (`Ts::trap_obj_rc_stop_all`, `FUN_14053ea60`: each object's stop record at + 0x64c given the stop's number and a value, `FUN_14040a920` -- four slots of a number and a value, their kinds' flags gathered at + 0, from a table, `FUN_1403eed10`, not read); that stop taken off every object (`trap_obj_stop_end_all`, `FUN_14040a770`) | the KH2 enemies and allies but those two held whole, script and motions, while a stop is on them (as Days's Stop holds them; the stop kinds' own flags not read): Demyx's 14 |
-| 2:77, 2:78, 2:79, 2:80 | a vacuum made at a point with a strength, its handle back (`trap_vacuum_create`, `FUN_1403f8f20`: 0x34 bytes in the game's list, `DAT_142ae7dc0` -- + 0 the point, + 0x10 the kinds of object it lets be, a bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least and + 0x20 its most, the three the strength, + 0x24 its turning, 0, + 0x28 its near range, 100, + 0x2c its rate, 0.01); one let go; a kind it lets be; its point (NaN made 0). Each object's move adds their pull (`FUN_1403b8ca2` -> `FUN_1403f9130`): none on one of no weight (its entry's + 0x50), + 0x120 bit 2 or + 0x18c bit 25 set; each vacuum not letting its kind be (its entry's + 4, 0 for the player) and within reach pulls it along the ground toward its point at weight / 100 x the speed, kept between the least and the most, times (distance - near range) x rate kept between -1 and 1 | as KH2 on the KH2 enemies and allies (`vacuum_pull` in `shell.cpp`); a vacuum's turning not applied (none of the port's kinds turns one), nor any pull on Days's players: Demyx's water clones' let the player be and pull Demyx (weight 500) and each other (10) |
+| 2:77, 2:78, 2:79, 2:80 | a vacuum made at a point with a strength, its handle back (`trap_vacuum_create`, `FUN_1403f8f20`: 0x34 bytes in the game's list, `DAT_142ae7dc0` -- + 0 the point, + 0x10 the kinds of object it lets be, a bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least and + 0x20 its most, the three the strength, + 0x24 its turning, 0, + 0x28 its near range, 100, + 0x2c its rate, 0.01); one let go; a kind it lets be; its point (NaN made 0). Each object's move adds their pull (`FUN_1403b8ca2` -> `FUN_1403f9130`): none on one of no weight (its entry's + 0x50), + 0x120 bit 2 or + 0x18c bit 25 set; each vacuum not letting its kind be (its entry's + 4, 0 for the player) and within reach pulls it along the ground toward its point at weight / 100 x the speed, kept between the least and the most, times (distance - near range) x rate kept between -1 and 1 | as KH2 on the KH2 enemies and allies (`vacuum_pull` in `shell/enemies.cpp`); a vacuum's turning not applied (none of the port's kinds turns one), nor any pull on Days's players: Demyx's water clones' let the player be and pull Demyx (weight 500) and each other (10) |
 | 1:210 | the first object of the field whose entry's + 0x4c is a number, into an AI handle's + 4 (`trap_obj_search_by_part`, `FUN_1403b4180`) | as KH2 (allies too): Demyx's water clones find him so (4002) |
 | 2:51 | a reaction command put on an attack (`trap_attack_set_rc`, `FUN_140437b70`: + 0x114 the object, + 0x118 the owner, + 0x11c the command, + 0x120 its reach, + 0x124 its height -- the reach when not above 0; the PS3 build's `ATTACK_MAGIC::set_reaction_command`, 4 bytes lower) | kept as KH2 keeps them, and offered as KH2's `RC_SEARCHER::check_magic` offers it (the PS3 build's): each tick a magic attack with a command meets the player's collision with one of its reach and height at its place, the command goes to the attack's owner (`TARGET::set_attack`) -- the Hydra's Urninator, 420, on Phil's urn |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
@@ -742,7 +742,7 @@ carries (2:51, above).
 - **Its body**: many spheres (kind 1) on its legs, chest and necks; the largest of them (5 m, group 19, on only while
   it lies down) made its Days sphere first, and Roxas stood under it with the camera in its body. A large enemy's
   Days sphere is now how far its body's spheres reach along the ground at a player's height (KH2's player's body: a
-  cylinder 85 high), in its pose each frame (`footprint` in `shell.cpp`).
+  cylinder 85 high), in its pose each frame (`footprint` in `shell/commands.cpp`).
 - **Seen** (a recorded walk, Roxas attacking, the HD PACK): its tail, its fire and its dark minions; down to 80% and
   held there; Vanquish taken at `guillotine_chance`, its event sequence, a neck cut, three heads up (`atk_appear`,
   `atk_bite`, `searching`, `move`), the Hydra in `down_wait`; Phil, Pegasus and the urn standing by. **Not seen
@@ -1263,7 +1263,7 @@ studio's mission check reports it: `kh2:<name> fights only in a room made from K
 
 KH2's player is an actor its enemies' scripts move and make play their motions; Days's players are Days's. When a
 script makes one of them play a motion of its set (`1:29`, Cerberus's reaction command), the shell holds it
-(`shell.cpp`, "the players in hand") until the script gives it back (`1:13`, its own motion 0) or the enemy goes:
+(`shell/held.cpp`) until the script gives it back (`1:13`, its own motion 0) or the enemy goes:
 
 - **Days's side**: a join in `Ov022_ActorUpdate` (`khdays_kh2_enemies_holding`, next to Stop's hold) stops the
   player's Days control (its state machine, its animation, its commands: the pad's top button is the command's), and
@@ -1353,7 +1353,7 @@ kind the mod held before is one of those.
   other type 5 sets, `M_EX800_RAW`, `B_EX350`, are such too). The mod's tool reads them for each boss (kinds 3 and
   0xc) and lists the others that are no enemies, from the boss, turned so the way from it to the player is + z
   (`kh2_enemies.txt`'s eighth column); the port makes them as the boss is set going, turned to where its player stands
-  (`shell.cpp`, `start`).
+  (`shell/enemies.cpp`, `start`).
 - **What they are in Days**: no Days enemy stands in for them -- nothing of Days's hits them, locks on them, counts
   them or shows their health. The shell runs their scripts at KH2's 60 ticks a second, moves them by their motions and
   their scripts, keeps them on the room's ground (the ground under them, from their battle's Days enemy's room),
@@ -1367,7 +1367,7 @@ kind the mod held before is one of those.
 A KH2 boss's battle runs with a mission its area names: the area's battle program that places the boss's spawn
 names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, the mission's id, then its name; Demyx's
 `he17`: 75, `HE17_MS105`). The mod's tool finds it for each boss and copies `msn/us/<name>.bar` (the ninth column of
-`kh2_enemies.txt`); the port runs it as its boss is set going (`start_mission` in `shell.cpp`), one at a time.
+`kh2_enemies.txt`); the port runs it as its boss is set going (`start_mission` in `shell/mission.cpp`), one at a time.
 
 - **The file** (OpenKH's MSN page): a BAR; its entry of type 2 a 0x1c-byte header (its id, its flags: a boss's battle,
   no leaving, no prizes ...; texts, sounds) then operations {s16 code, s16 count, count u32 parameters} till 0 -- 1 to 3
@@ -1462,7 +1462,7 @@ the Magnum Loader's eight zones along its rush (group 5, on in 52A's frames 0 to
 ahead: 309, Quick Blade), the Armored Knight's (group 4: 300, Rising Sun), the Soldier's (group 6: 34, Cyclone), the
 Dusk's (group 5: 69, Reversal).
 
-- **Offered** (`zone_offer` in `shell.cpp`): while this game's own player's place (+ 0x670) lies within a zone's radius
+- **Offered** (`zone_offer` in `shell/commands.cpp`): while this game's own player's place (+ 0x670) lies within a zone's radius
   of its point (the test KH2's own uses of a zone make, `FUN_14054ae70`: the place's distance, `FUN_140140f50`, under
   the shape's + 0x10). The general check, read later, is KH2's player's searcher (`FUN_140407de0` from `FUN_1404081c0`,
   "A command menu given by a script" below: every object's shapes of kinds 5 and 14); the port takes the test above for
@@ -1605,7 +1605,7 @@ trigger 11, as a reaction command taken). A script renews it each tick it wants 
   of every object (shapes of kind 5, the command at + 2 -- 131 the object's + 0x9f0's + 0x2c -- and of kind 14,
   `TYPE_REF_RC`, the object's + 0xcf0; one with the "Require" flag, 0x40, only while the player's range 26 is its
   require, then at 0xca) and the attacks carrying one (2:51). No object of KH2's has a shape of kind 14.
-- **The port** (`World::override_top`, `take_command` and `deck_sync` in `shell.cpp`): the menu stands while a script
+- **The port** (`World::override_top`, `take_command` and `deck_sync` in `shell/commands.cpp`): the menu stands while a script
   renews it (this VBlank or the one before), and Days's command deck shows it -- its main rows (Attack, Magic, Items:
   `Ov002_DrawPanelRowText`'s main block, lines 0 to 2 its first row as Attack or a command in its place, 3 to 5 the
   rows after it) say the menu's first three commands, the fourth said by one of them chosen as the menu comes, so
@@ -1640,12 +1640,12 @@ back. Zexion alone has one among the objects the tool makes: his book, opened wi
   shown, 19 in a special state); clip 16 each slot, 11 the last; the cursor's slot clip 9 moved 8 to the right, the
   cursor's icon on it (clip 45 with a command kind's 37 to 44: in `comd` all Nobody's symbol). Each piece comes in
   three variants the tables choose by a second index (clips 9-19, 78-88 and 22-32); the first is used here.
-- **The port** (`ui/reaction_command.cpp`'s `Book`; `khdays_kh2_enemies_command_image` in `shell.cpp`): while it
+- **The port** (`ui/reaction_command.cpp`'s `Book`; `khdays_kh2_enemies_command_image` in `shell/commands.cpp`): while it
   stands, the HD picture there (kh2/fx/<name>/-<n>, n its effects' pages' count: -34.png for Zexion), the menu is
   drawn in place of Days's deck -- n KH2's four or more if Days's rows or a script's menu have more. A script's menu
   (1:237: his pages) fills all four slots, as KH2's, with a cursor of its own: on the deck's row as the menu comes,
   then a slot on or back each time Days's deck steps a row (round the four), A choosing the slot it is on
-  (`top_offer.cursor` in `shell.cpp`; Days's deck has three rows, which had shown three of the four, the fourth only
+  (`top_offer.cursor` in `shell/commands.cpp`; Days's deck has three rows, which had shown three of the four, the fourth only
   in a row where it could be chosen). Without one, Days's three rows in the first slots (the fourth empty, as KH2's
   Drive with none) and the cursor's slot on the deck's main row. The names in KH2's font as large as the reaction
   command's bar's; scaled so the title's top and the
@@ -1759,7 +1759,7 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
   its + 0x40 with its place followed when the sequence's byte + 9 is 2). Cerberus's sequences have no 0x51: KH2 plays
   them in its arena's own place. Read as Cerberus's model's axes, the first shot is 10 m before its heads, 2 m up,
   looking at its body with the player in its mouth between.
-- **The port** (`assets/src/kh2_event.cpp`, `runtime/kh2_enemies/shell.cpp`): Days's rooms are not KH2's arena, so the
+- **The port** (`assets/src/kh2_event.cpp`, `runtime/kh2_enemies/shell/events.cpp`): Days's rooms are not KH2's arena, so the
   sequence's place and turn are its target's as it starts (the call back's binding; the actor itself without a target),
   its keys turned into Days's world as an actor's own axes are. It moves on with its enemy's KH2 ticks and ends at its
   length or with its enemy. Its camera replaces the frame's (`runtime/camera/kh2_camera_hooks.c`, the end of each
@@ -2098,7 +2098,7 @@ makes the player its owner whoever made it, its team his (`set_team`: 3 counts a
 (`HitTeam` all bits but its own and 0); a team of 0 takes its owner's (`YS::OBJ`'s Team, + 0x3b0). The port's: a
 motion's attack (its ranges 10 and 33) whose `atkp` is of team 1 strikes the other KH2 enemies its spheres reach -- a
 body as a player's, its Days sphere's radius round from its feet to KH2's player's height -- each once a range, as a
-blow of the player's, and no player (`strike_enemies` in `shell.cpp`). Demyx's water clone swung in Wild Dance (its
+blow of the player's, and no player (`strike_enemies` in `shell/attacks.cpp`). Demyx's water clone swung in Wild Dance (its
 motions 241 and 242: `atkp` 1326 to 1329) so strikes Demyx and the other clones.
 
 ## Days's side: the shell
@@ -2106,7 +2106,13 @@ motions 241 and 242: `atkp` 1326 to 1329) so strikes Demyx and the other clones.
 A Days enemy is an ov107 actor (docs/RUNTIME_MAP.md sections 22 and 37): its class registered with
 `Ov107_RegisterHandler` (the Soldier: class 0x04, `Ov120_CreateNamedEntity`), its collision sphere at + 0x74, its
 model's place and turn at + 0xa0 (an srt: a quaternion, then + 0xb0 the translation), its HP at + 0x218 / + 0x21a.
-The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
+The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell. The shell's code is in
+`port/runtime/kh2_enemies/shell/`, a file a subject: `internal.h` (its types, the area's state, what one file asks of
+another), `tick.cpp` (made, gone, each tick), `files.cpp` (the mod's files, KH2's system tables), `field.cpp` (the
+scripts' `World`), `enemies.cpp`, `attacks.cpp`, `health.cpp`, `held.cpp` (players in hand), `commands.cpp` (reaction
+commands and menus), `events.cpp` (event cameras, the screen), `party.cpp`, `laser_dome.cpp`, `capture.cpp`,
+`draw.cpp`, `texts.cpp`, `mission.cpp`; `shell_days.c` beside it reads and moves the Days enemy standing in. The
+shell's life:
 
 - **Made**: `Ov002_CreateActorFromMarker` makes it from the mission's enemy table's row; a custom mission's builder
   gives each class and KH2 enemy in its place a row of its own (`studio::enemy_rows`), so the row says which KH2 enemy

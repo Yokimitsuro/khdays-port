@@ -376,15 +376,15 @@ void add_math(ai::Calls &calls)
         a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 0x18u)));
     });
     // 2:26 an attack's reflection taken as played (trap_attack_exec_reflect, the PS3 build's: its + 4's 0x40): its
-    // owner then plays no reflect motion nor state of it (YS::PIERROT::_OVR_exec_reflect, shell.cpp's reflect_enemy) --
-    // Lexaeus's trigger 19 on his own attack, met by a player's
+    // owner then plays no reflect motion nor state of it (YS::PIERROT::_OVR_exec_reflect, shell/attacks.cpp's
+    // reflect_enemy) -- Lexaeus's trigger 19 on his own attack, met by a player's
     calls.set(2, 26, [](ai::Machine &m, std::span<ai::Value> a) {
         if (a[0].bits != 0)
             m.memory().set_u32(a[0].bits + 4, m.memory().u32(a[0].bits + 4) | 0x40u);
     });
     // 1:358 a sheet's attack level (trap_sheet_set_attack_level, the PS3 build's: its + 0x24c, a byte): the record of
     // its motions' attacks' atkp entries (YS::ATTACK_OBJ's constructor gives it ATTACKPARAM::Get as the sub-number;
-    // shell.cpp's attack_key) -- Lexaeus's 0 to 3 as his fight goes on
+    // shell/files.cpp's attack_key) -- Lexaeus's 0 to 3 as his fight goes on
     calls.set(1, 358, [](ai::Machine &m, std::span<ai::Value> a) {
         if (a[0].bits == 0)
             return;
@@ -2415,7 +2415,8 @@ void add_shots(ai::Calls &calls)
     // build's YS::ATTACK_MAGIC::set_reaction_command(void *, int, float, float)): + 0x114 what it is given (its
     // receiver, 2:52's: the Hydra's urn, a block of Xigbar's shot's thread), + 0x118 the attack's owner (the one the
     // command goes to: 7:34 sets another), + 0x11c the command, + 0x120 and + 0x124 two sizes (the second, 0 or less,
-    // the first): kept as KH2 keeps them; offered as the PS3 build's RC_SEARCHER::check_magic offers it (shell.cpp)
+    // the first): kept as KH2 keeps them; offered as the PS3 build's RC_SEARCHER::check_magic offers it
+    // (shell/commands.cpp)
     calls.set(2, 51, [](ai::Machine &m, std::span<ai::Value> a) {
         const std::uint32_t at = a[0].bits;
         if (at == 0)
@@ -3247,7 +3248,8 @@ void add_world(ai::Calls &calls)
     // while a script turned him into a card or a die (1:242), else his own
     calls.set(1, 319, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
-        a[0] = ai::Value::of_int(o != nullptr && (is_player(o) || (o->u32(field::kFlags6c8) & (1u << 24)) != 0) ? 1 : 0);
+        a[0] =
+            ai::Value::of_int(o != nullptr && (is_player(o) || (o->u32(field::kFlags6c8) & (1u << 24)) != 0) ? 1 : 0);
     });
     calls.set(6, 2, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = running(m);

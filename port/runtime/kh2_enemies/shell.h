@@ -44,6 +44,14 @@ int khdays_kh2_enemies_no_contact(void *actor);
  * Ov022_TryBlockHit's) of the KH2 attack he is struck with marks it guarded: 0. 0 for any other object or hit. */
 int khdays_kh2_enemies_reflected(void *actor, void *source, int flags);
 
+/* Ov107_AiState_ApplyHit (prepare.py's join): whether a player's (`source`'s) hit on a KH2 enemy is none -- the player
+ * turned into a form (khdays_kh2_enemies_captured) or his control taken (1:42 of type 0). */
+int khdays_kh2_enemies_disarmed(void *enemy, void *source);
+
+/* Ov107_CalcHitDamage (prepare.py's join): the damage a KH2 enemy's Days class works out again in its own hit handler
+ * -- the one khdays_kh2_enemies_damage kept, once, in the frame it was kept; `amount` otherwise. */
+int khdays_kh2_enemies_dealt(void *actor, int amount);
+
 /* Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on it to land now as one hit (the last of
  * Cerberus's reaction command), its damage in `amount`; 0 none. */
 int khdays_kh2_enemies_blow(void *actor, int *amount);
@@ -55,6 +63,20 @@ int khdays_kh2_enemies_holding(void *actor);
 /* Ov022_TranslateCommandToAction (prepare.py's join): whether a KH2 enemy's script took the players' control away
  * (1:42 of type 0): every player locked as Days's own lock locks them. */
 int khdays_kh2_enemies_control_off(void);
+
+/* Ov022_TranslateCommandToAction (prepare.py's join), before its lock: whether the player's actor `actor` is turned
+ * into a KH2 object (Luxord's die and card), locked then as Days's lock locks him, his pad this frame taken for his
+ * form; func_ov022_0209c9fc (prepare.py's join): whether his weapons are left undrawn so. */
+int khdays_kh2_enemies_captured(void *actor);
+int khdays_kh2_enemies_turned(void *actor);
+
+/* ui/reaction_command.cpp: the reaction command offered to this game's own player now (its name's KH2 text number in
+ * `text`), 0 none, and its name (UTF-16, how many letters, 0 none); how many reaction commands this player took and
+ * whether an enemy holds him now (`held_now`), the last one's name and id (0 none). */
+int khdays_kh2_enemies_offered(int *text);
+int khdays_kh2_enemies_offered_name(unsigned short *out, int room);
+unsigned khdays_kh2_enemies_taken(int *held_now);
+int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int *id);
 
 /* Ov002_CollectNearbySpots (prepare.py's join): whether a KH2 enemy's prize drain (1:187) takes every prize on the
  * field however far, this frame. */
@@ -87,6 +109,10 @@ int khdays_kh2_enemies_menu_commit(signed char *kind, unsigned short *arg);
  * slot it is on --, asked each VBlank it is drawn; a slot's command's name (UTF-16, how many letters, 0 none). */
 int khdays_kh2_enemies_menu_slots(int *cursor);
 int khdays_kh2_enemies_menu_slot(int slot, unsigned short *out, int room);
+
+/* Ov002_DrawPanelRowText (prepare.py's join): the text of the deck's main block's line `line` while it shows that
+ * menu (UTF-16 into `out`, at most `room`, then a 0), how many; 0 Days's own. */
+int khdays_kh2_enemies_deck_label(int line, unsigned short *out, int room);
 
 /* Days's lock-on mark's point for the enemy `actor` locked on (Ov022_UpdateSelectionMarker's): a KH2 enemy's aim point
  * (its 0x307 shape: the Soldier's chest, Cerberus's heads) in the game's memory, else `point` as it was. DS addresses. */
@@ -141,6 +167,14 @@ int khdays_kh2_enemies_light(float room[3], float objects[3]);
 /* Whether a KH2 enemy's script asked KH2's camera to its place at once (1:193, ObjCamera::setWarp: Xaldin's Jump)
  * since the last asking: runtime/camera/kh2_camera_hooks.c's next settle takes no easing. 1 once. */
 int khdays_kh2_enemies_camera_warp(void);
+
+/* KH2's reaction camera (runtime/camera/kh2_camera_hooks.c): while a KH2 enemy holds this game's player and the object
+ * its script watches (1:207) stands, his place and that object's aim point in Days's world; 0 otherwise. */
+int khdays_kh2_enemies_reaction_camera(float player[3], float target[3]);
+
+/* Whether the room's models are left out (runtime/mods/models.cpp): a KH2 enemy's script hid the map (8:6) and has not
+ * shown it again (8:7). */
+int khdays_kh2_enemies_map_hidden(void);
 
 #ifdef __cplusplus
 }

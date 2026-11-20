@@ -8,6 +8,7 @@
 #include "../input/analog.h"
 #include "../input/controls_hooks.h"
 #include "../input/input.h"
+#include "../kh2_enemies/shell.h"
 #include "../../host/app/host.h"
 #include "khdays_ds_symbols.h"
 
@@ -392,8 +393,6 @@ static int same_place(Kh2CameraVec player)
            dx * dx + dz * dz <= WARP_DISTANCE * WARP_DISTANCE;
 }
 
-extern int khdays_kh2_enemies_camera_warp(void); /* kh2_enemies/shell.cpp: a KH2 enemy's 1:193 */
-
 /* The wanted eye, and where to cast from; 0 when the camera stays the game's. */
 static int frame_prepare(int camera, int player, int behind_yaw, int origin, int eye)
 {
@@ -743,13 +742,10 @@ static void frame_publish(int camera, int eye)
     }
 }
 
-extern int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half); /* kh2_enemies/shell.cpp */
-extern int khdays_kh2_enemies_event_end_view(float eye[3], float at[3], float *fov_half);
-
-/* A KH2 enemy's event camera (a reaction command's, runtime/kh2_enemies/shell.cpp) in place of the frame's, whichever
- * camera the field has: its eye, look-at and vertical field of view written as the game's camera's, KH2's event
- * cameras' own near plane; this camera's frames wait meanwhile (they come back as after Days' camera's), and the field
- * of view the camera had goes back once it ends. 1: the frame is the event's. */
+/* A KH2 enemy's event camera (a reaction command's, runtime/kh2_enemies/shell/events.cpp) in place of the frame's,
+ * whichever camera the field has: its eye, look-at and vertical field of view written as the game's camera's, KH2's
+ * event cameras' own near plane; this camera's frames wait meanwhile (they come back as after Days' camera's), and the
+ * field of view the camera had goes back once it ends. 1: the frame is the event's. */
 static int event_frame(int *cam)
 {
     float eye[3], at[3], half = 0.0f;
@@ -797,8 +793,6 @@ static int event_frame(int *cam)
     ++s.days_frames;
     return 1;
 }
-
-extern int khdays_kh2_enemies_reaction_camera(float player[3], float target[3]); /* kh2_enemies/shell.cpp */
 
 /* KH2's reaction camera (dk::ReactionCamera, which a KH2 enemy's 1:207 makes: Dark Thorn's reaction command) in place
  * of the frame's, whichever camera the field has, while that enemy holds this game's player and the object it watches

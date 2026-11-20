@@ -1,7 +1,7 @@
 // KINGDOM HEARTS II's effects (PAX, assets/kh2_effect.h) drawn in Days's 3D lists: their pictures' pages as the
 // port's textures (an HD picture of a page where the mod has one), and what an effect draws a tick sent as the
 // port's own polygons. Shared by KH2's Dark Corridors (kh2_corridors.cpp) and KH2's enemies
-// (runtime/kh2_enemies/shell.cpp). Main thread.
+// (runtime/kh2_enemies/shell/draw.cpp). Main thread.
 #pragma once
 
 #include "khdays/assets/kh2_effect.h"

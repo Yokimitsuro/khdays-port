@@ -8,9 +8,7 @@
 
 #include "kh2_corridors.h"
 
-extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj); // runtime/kh2_enemies
-extern "C" int khdays_kh2_enemies_light(float room[3], float objects[3]);                   // runtime/kh2_enemies
-extern "C" int khdays_kh2_enemies_map_hidden(void);                                         // runtime/kh2_enemies
+#include "../kh2_enemies/shell.h"
 extern "C" {
 #include "../../host/app/host.h" // [video] culling (KHDAYS_HOST_NO_CULLING)
 }

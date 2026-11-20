@@ -1,4 +1,4 @@
-/* The Days side of a KH2 enemy's shell (shell.cpp): the Days enemy standing in for it read and moved, the players
+/* The Days side of a KH2 enemy's shell (shell/): the Days enemy standing in for it read and moved, the players
  * near it, its hits on them -- the game's fields and routines, as runtime/scripts/enemies_link.c reaches them
  * (docs/KH2_ENEMIES.md, "Days's side: the shell"). Places are Days's units (the DS's 0x1000 = 1.0). */
 #ifndef KHDAYS_KH2_SHELL_DAYS_H
@@ -30,8 +30,8 @@ void khdays_kh2_shell_set_hp(unsigned actor, int hp);
 void khdays_kh2_shell_set_health(unsigned actor, int hp, int most);
 
 /* Its model put at `place` (its collision sphere with it) and turned by `yaw` (radians about Days's up: +z to (sin, 0,
- * cos) of it -- a KH2 yaw's days_turn, shell.cpp); the room's collision then keeps it out of the walls and on the
- * ground (Ov107_AiState_ResolveContacts, later in the same tick). */
+ * cos) of it -- a KH2 yaw's days_turn, shell/internal.h); the room's collision then keeps it out of the walls and on
+ * the ground (Ov107_AiState_ResolveContacts, later in the same tick). */
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw);
 
 /* A point of Days's world (metres) put in the game's memory as its vectors are (fx32 x3), for its own code to read:
@@ -99,7 +99,7 @@ unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *no
 
 /* A player's actor put at `place` (its feet; its node with it, Actor_SetVecAndSyncChild) and turned by `yaw`
  * (radians about Days's up: its model looks along (sin, 0, cos) of it, as Days's node angle at + 0x80 does -- a KH2
- * yaw's days_turn, shell.cpp). */
+ * yaw's days_turn, shell/internal.h). */
 void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw);
 
 /* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */

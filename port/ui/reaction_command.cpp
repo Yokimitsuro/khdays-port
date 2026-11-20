@@ -53,14 +53,8 @@ const KhdaysProfile *khdays_devices_profile(void); // host/app/devices.h
 #include <string>
 #include <vector>
 
-// the KH2 enemies' (runtime/kh2_enemies/shell.cpp)
-extern "C" int khdays_kh2_enemies_offered(int *text);
-extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room);
-extern "C" unsigned khdays_kh2_enemies_taken(int *held_now);
-extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int *id);
-extern "C" int khdays_kh2_enemies_command_image(char *archive, int archive_room, char *picture, int picture_room);
-extern "C" int khdays_kh2_enemies_menu_slots(int *cursor);
-extern "C" int khdays_kh2_enemies_menu_slot(int slot, unsigned short *out, int room);
+#include "../runtime/kh2_enemies/shell.h"
+
 // the command deck's main rows (prepare.py's joins in Ov002_PanelAdvanceCursor's file): the row its cursor is on (-1 a
 // list open, -2 no deck), how many
 extern "C" int khdays_deck_main_row(void);
