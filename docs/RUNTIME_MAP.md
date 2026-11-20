@@ -733,6 +733,13 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   (`sound:`).
 - `KHDAYS_GPU_DEBUG=1` -- the graphics card's device made with its debug
   layer and validation (when the system has them installed).
+- `KHDAYS_GPU_LOW_POWER=1` -- the low-power card asked for (a PC's integrated
+  graphics beside its own card), to measure or look at the picture there; the
+  session log's `graphics:` line names the card that plays.
+- `KHDAYS_PROFILE_GPU=1` -- every 300 pictures, the time from submitting the
+  3D's work (`raster3d:`) and the 2D's (`gfx:`: its uploads, composition,
+  capture and shrinking) to the card being done with it, each waited for: the
+  pictures are slower while it measures.
 - `KHDAYS_TRACE_PXI=1` -- each message between the game and the ARM7's
   services counted by tag and kind, the first of each kind with the game's
   functions behind it, the counts every 3600 VBlanks (section 12).

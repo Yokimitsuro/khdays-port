@@ -958,6 +958,40 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_any = 1;
 }
 
+/* KHDAYS_PROFILE_GPU: the 2D's work submitted once the card is idle and waited for (it slows the picture it
+ * measures); the time from submitting it to the card being done said every 300 pictures, as gpu_raster3d.c
+ * says the 3D's. 0 when it could not be submitted. */
+static int submit_timed(SDL_GPUCommandBuffer *cmd, int scale, int one_screen)
+{
+    static double total, most;
+    static int n;
+    SDL_GPUFence *fence;
+    Uint64 start;
+    double ms;
+    const bool idle = SDL_WaitForGPUIdle(device); /* (what was submitted before is not counted) */
+    bool waited;
+    start = SDL_GetPerformanceCounter();
+    fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (fence == NULL) {
+        return 0;
+    }
+    waited = SDL_WaitForGPUFences(device, true, &fence, 1);
+    SDL_ReleaseGPUFence(device, fence);
+    if (!idle || !waited) {
+        return 1; /* submitted, but not a time to count */
+    }
+    ms = (double)(SDL_GetPerformanceCounter() - start) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    total += ms;
+    most = ms > most ? ms : most;
+    if (++n == 300) {
+        fprintf(stderr, "gfx: 300 pictures' 2D at %dx (%s) took the card %.2f ms on average, %.2f at most\n", scale,
+                one_screen ? "one screen" : "two screens", total / n, most);
+        total = most = 0.0;
+        n = 0;
+    }
+    return 1;
+}
+
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
 static int smooth3d;
 
@@ -994,6 +1028,10 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
      * as the capture takes it */
     CapturePlan plan;
     int blend, layers;
+    static int profile_gpu = -1;
+    if (profile_gpu < 0) {
+        profile_gpu = SDL_getenv("KHDAYS_PROFILE_GPU") != NULL;
+    }
     plan_capture(p, &plan);
     blend = raster && (plan.show >= 0 || plan.capture >= 0);
     layers = raster && plan_layers(p, &plan);
@@ -1598,7 +1636,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             }
         }
     }
-    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+    if (!(profile_gpu ? submit_timed(cmd, scale, one != NULL) : SDL_SubmitGPUCommandBuffer(cmd))) {
         khdays_sequence_gpu_forget();
         valid = 0;
         return 0;

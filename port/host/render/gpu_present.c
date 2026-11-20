@@ -165,6 +165,29 @@ static int under_wine(void)
     return wine;
 }
 
+/* A GPU device by `name` (NULL: the system's choice). KHDAYS_GPU_LOW_POWER=1 asks for the low-power card (a
+ * PC's integrated graphics beside its own card), to measure or look at the picture there. */
+static SDL_GPUDevice *make_device(int debug, const char *name)
+{
+    SDL_PropertiesID props;
+    SDL_GPUDevice *made;
+    if (SDL_getenv("KHDAYS_GPU_LOW_POWER") == NULL) {
+        return SDL_CreateGPUDevice(SHADER_FORMATS, debug, name);
+    }
+    props = SDL_CreateProperties();
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_PREFERLOWPOWER_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXIL_BOOLEAN, true); /* SHADER_FORMATS */
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN, true);
+    if (name != NULL) {
+        SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, name);
+    }
+    made = SDL_CreateGPUDeviceWithProperties(props);
+    SDL_DestroyProperties(props);
+    return made;
+}
+
 /* Makes a renderer on a new GPU device. Returns NULL with the reason in `why`. */
 static SDL_Renderer *gpu_renderer(char *why, size_t size)
 {
@@ -175,9 +198,9 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
     SDL_Renderer *r;
     if (name == NULL && SDL_GetHint(SDL_HINT_GPU_DRIVER) == NULL && under_wine()) {
         /* Automatic under Wine: its Direct3D 12 is made of Vulkan (vkd3d), so Vulkan straight away */
-        made = SDL_CreateGPUDevice(SHADER_FORMATS, debug, "vulkan");
+        made = make_device(debug, "vulkan");
     }
-    device = made != NULL ? made : SDL_CreateGPUDevice(SHADER_FORMATS, debug, name);
+    device = made != NULL ? made : make_device(debug, name);
     if (device == NULL && name != NULL) {
         /* the graphics API asked for is not available: use the system's (the settings menu says so) */
         char text[480];
@@ -186,7 +209,7 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
         if (notice != NULL) {
             notice(text);
         }
-        device = SDL_CreateGPUDevice(SHADER_FORMATS, debug, NULL);
+        device = make_device(debug, NULL);
     }
     if (device == NULL) {
         SDL_snprintf(why, size, "no GPU device: %s", SDL_GetError());
