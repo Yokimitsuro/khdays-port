@@ -6,6 +6,8 @@
 
 #include <SDL3/SDL.h>
 
+#include "../../gfx/sequence_image.h"
+
 typedef struct KhdaysFramePackage KhdaysFramePackage; /* runtime/display/frame_package.h */
 
 /* Makes the pipelines and buffers on `device`. Returns 0 (with the reason in
@@ -39,10 +41,11 @@ void khdays_raster3d_set_hud_apart(int on);
 int khdays_raster3d_rasterize_hud(const KhdaysFramePackage *package, int scale, int texture_smoothing);
 int khdays_raster3d_hud_targets(SDL_GPUTexture **color, SDL_GPUTexture **attr, int *columns);
 
-/* Sets a 3D list to draw instead of the package's (a picture between two logic frames); NULL goes back
- * to the package's. */
+/* Sets a 3D list to draw instead of the package's (a picture between two logic frames), with the native
+ * sequences' programs made with it (KSI_3D_PROGRAMS of them; NULL: the package's); a NULL list goes back to the
+ * package's. */
 struct KhdaysG3dList;
-void khdays_raster3d_use_list(const struct KhdaysG3dList *list);
+void khdays_raster3d_use_list(const struct KhdaysG3dList *list, const KhdaysSequenceImage *programs);
 
 /* Whether the card's own rasterizer draws the 3D (gpu_native3d.h) rather than raster3d.hlsl alone, and
  * switching it (KHDAYS_3D=compute starts with it off): on only when the native renderer could be made. */

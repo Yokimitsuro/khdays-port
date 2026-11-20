@@ -717,6 +717,12 @@ static void port2d_compare(const KhdaysFramePackage *p)
 static KhdaysG3dList logic_list[KEPT_LISTS];
 static uint64_t logic_time[KEPT_LISTS];
 static uint8_t logic_upper[KEPT_LISTS];
+/* each kept list's native sequences (the lock-on marks, the heart counter, the prizes): a polygon of them names
+ * the program made with its own list, so a picture between two older lists is drawn with the newer one's, not
+ * with the latest package's -- its pieces were left out of such pictures. logic_programs[i] is the row of list i */
+static KhdaysSequenceImage program_rows[KEPT_LISTS][KSI_3D_PROGRAMS];
+static uint8_t logic_programs[KEPT_LISTS] = {0, 1, 2};
+_Static_assert(KEPT_LISTS == 3, "logic_programs names a row for each kept list");
 static uint32_t logic_serial = ~0u;
 static int logic_count, logic_cut;
 static int logic_pair = -1; /* the older of the two lists the last picture was placed between (-1 none) */
@@ -907,12 +913,15 @@ static void note_logic_frame(const KhdaysFramePackage *p)
     }
     if (at == KEPT_LISTS) {
         const KhdaysG3dList oldest = logic_list[0]; /* its memory reused for the copy */
+        const uint8_t oldest_programs = logic_programs[0];
         for (int i = 0; i + 1 < KEPT_LISTS; ++i) {
             logic_list[i] = logic_list[i + 1];
             logic_time[i] = logic_time[i + 1];
             logic_upper[i] = logic_upper[i + 1];
+            logic_programs[i] = logic_programs[i + 1];
         }
         logic_list[--at] = oldest;
+        logic_programs[at] = oldest_programs;
     }
     logic_serial = p->list3d_serial;
     logic_arrival = p->time;
@@ -922,6 +931,7 @@ static void note_logic_frame(const KhdaysFramePackage *p)
     }
     logic_time[at] = p->list3d_time;
     logic_upper[at] = p->upper;
+    memcpy(program_rows[logic_programs[at]], p->sequence3d_images, sizeof(program_rows[0]));
     /* a cut (the game's, the camera's, or the 3D on the other screen: the 3D on both screens, one VBlank the
      * upper's, the next the lower's): nothing between it and the lists before, which are let go -- drawn after it,
      * they would show what the screens had before it, their textures perhaps gone */
@@ -931,8 +941,11 @@ static void note_logic_frame(const KhdaysFramePackage *p)
                            camera_cut(&logic_list[at - 1], &logic_list[at]));
     if (logic_cut) {
         const KhdaysG3dList kept = logic_list[0];
+        const uint8_t kept_programs = logic_programs[0];
         logic_list[0] = logic_list[at];
         logic_list[at] = kept;
+        logic_programs[0] = logic_programs[at];
+        logic_programs[at] = kept_programs;
         logic_time[0] = logic_time[at];
         logic_upper[0] = logic_upper[at];
         at = 0;
@@ -1413,7 +1426,8 @@ static void present_now(const KhdaysFramePackage *p, int first)
     }
     last_refresh = khdays_clock_cycles();
     log_picture(list != NULL ? "between" : logic_cut ? "cut" : "newest", alpha);
-    khdays_raster3d_use_list(list);
+    khdays_raster3d_use_list(list,
+                             list != NULL && logic_pair >= 0 ? program_rows[logic_programs[logic_pair + 1]] : NULL);
     latest_drawn_by_card = 0;
     port2d_drawn = 0;
     if (port2d_ready && (p->wants & KHDAYS_WANT_2D)) {
@@ -1468,7 +1482,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 /* this VBlank's 3D is the other screen's: keep the previous picture */
                 one_drawn = 1;
                 port2d_drawn = 1;
-                khdays_raster3d_use_list(NULL);
+                khdays_raster3d_use_list(NULL, NULL);
                 return;
             }
         }
@@ -1549,7 +1563,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
             port2d_drawn = 1;
             port2d_upper = p->upper;
             latest_drawn_by_card = raster;
-            khdays_raster3d_use_list(NULL);
+            khdays_raster3d_use_list(NULL, NULL);
             if (port2d_mode == 2 && !blend_frame) { /* a screen blend's frame is not the DS's picture */
                 if (raster) {
                     port2d_compare_hd(p, n);
@@ -1578,7 +1592,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
     hd = NULL;
     scale = scale_now();
     if (!drawing_3d() || (p->wants & full) != full || !p->info[0].is3d || scale == refused_scale) {
-        khdays_raster3d_use_list(NULL);
+        khdays_raster3d_use_list(NULL, NULL);
         if (first) {
             save_shots(p, 1); /* the 1x picture: no 3D this frame, or none was asked for */
             if (profile) {
@@ -1596,7 +1610,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
             return;
         }
     }
-    khdays_raster3d_use_list(NULL);
+    khdays_raster3d_use_list(NULL, NULL);
     latest_drawn_by_card = hd != NULL;
     if (profile && first) {
         count_frame(p, (double)(SDL_GetPerformanceCounter() - start) * 1000.0 / (double)SDL_GetPerformanceFrequency());

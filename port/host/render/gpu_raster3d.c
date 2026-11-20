@@ -1043,6 +1043,7 @@ static int lay_trail(SDL_GPUCommandBuffer *cmd, int w, int h, const float t[4])
 }
 
 static const KhdaysG3dList *list_instead; /* a list to draw instead of the package's (khdays_raster3d_use_list) */
+static const KhdaysSequenceImage *programs_instead; /* that list's native sequences, not the package's */
 static int one_screen; /* khdays_raster3d_set_one_screen: do not move the HUD's polygons to the sides */
 static const KhdaysShape3d *hud_shapes; /* where the one-screen layout puts the HUD (khdays_raster3d_set_hud_shapes) */
 static int hud_shape_count;
@@ -1205,9 +1206,10 @@ static int place_hud(const KhdaysG3dList *list, int origin_x, KhdaysG3dList *pla
     return any;
 }
 
-void khdays_raster3d_use_list(const KhdaysG3dList *list)
+void khdays_raster3d_use_list(const KhdaysG3dList *list, const KhdaysSequenceImage *programs)
 {
     list_instead = list;
+    programs_instead = list != NULL ? programs : NULL;
 }
 
 /* KHDAYS_PROFILE_GPU: the 3D's time on the card, said every 300 pictures in the log. */
@@ -1285,7 +1287,10 @@ static int draw_body(const KhdaysFramePackage *p, int scale, int texture_smoothi
     const int tiles_x = (columns + TILE - 1) / TILE;
     const int w = columns * scale, h = KHDAYS_FRAME_H * scale;
     const int scratch_ok = scratch_for(list);
-    hud_programs = p->sequence3d_images;
+    /* a native sequence's polygon names the program made with its list (its token, the list's build slot): a
+     * list drawn instead comes with its own, or its pieces are not drawn at all */
+    const KhdaysSequenceImage *const programs = programs_instead != NULL ? programs_instead : p->sequence3d_images;
+    hud_programs = programs;
     KhdaysG3dList placed;
     /* In widescreen the HUD's polygons go to the sides; on one screen where the composition's 3D shapes
      * place them, or else where the game draws them. */
@@ -1450,7 +1455,7 @@ static int draw_body(const KhdaysFramePackage *p, int scale, int texture_smoothi
                record_bytes);
     }
     at += record_bytes;
-    memcpy(mapped + at, p->sequence3d_images, sequence_bytes);
+    memcpy(mapped + at, programs, sequence_bytes);
     at += sequence_bytes;
     if (corner_bytes != 0) {
         memcpy(mapped + at, khdays_native3d_corners(), corner_bytes);
