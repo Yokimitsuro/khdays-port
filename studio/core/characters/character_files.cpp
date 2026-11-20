@@ -1,5 +1,6 @@
 // A mod's characters (character_files.h).
 #include "core/characters/character_files.h"
+#include "core/files/text.h"
 
 #include "core/characters/character_pose.h"
 
@@ -26,19 +27,11 @@ namespace studio {
 
 namespace {
 
-std::string trim(const std::string& s) {
-    const auto a = s.find_first_not_of(" \t\r");
-    if (a == std::string::npos)
-        return {};
-    const auto b = s.find_last_not_of(" \t\r");
-    return s.substr(a, b - a + 1);
-}
-
 // A key with its spaces closed up: "name  es" -> "name es".
 std::string key_of(const std::string& raw) {
     std::string out;
     bool space = false;
-    for (const char c : trim(raw)) {
+    for (const char c : trimmed(raw)) {
         if (c == ' ' || c == '\t') {
             space = true;
             continue;
@@ -53,7 +46,7 @@ std::string key_of(const std::string& raw) {
 
 // A line's key, value and comment ("  # ..."); false for a comment, a part or a blank line.
 bool split_line(const std::string& line, std::string* key, std::string* value, std::string* comment) {
-    const std::string t = trim(line);
+    const std::string t = trimmed(line);
     if (t.empty() || t[0] == '#' || t[0] == '[')
         return false;
     const auto eq = t.find('=');
@@ -69,19 +62,19 @@ bool split_line(const std::string& line, std::string* key, std::string* value, s
             break;
         }
     }
-    *value = trim(rest);
+    *value = trimmed(rest);
     return true;
 }
 
 // A part's name from "[name]" (its comment after it left out); false for any other line.
 bool part_line(const std::string& line, std::string* name) {
-    const std::string t = trim(line);
+    const std::string t = trimmed(line);
     if (t.empty() || t[0] != '[')
         return false;
     const auto close = t.find(']');
     if (close == std::string::npos)
         return false;
-    *name = trim(t.substr(1, close - 1));
+    *name = trimmed(t.substr(1, close - 1));
     return true;
 }
 
@@ -163,7 +156,7 @@ IniText::Part& IniText::part(const std::string& name) {
             return p;
     // a new part at the end, a blank line before it
     Part& last = parts_.back();
-    if (!last.lines.empty() && !trim(last.lines.back()).empty())
+    if (!last.lines.empty() && !trimmed(last.lines.back()).empty())
         last.lines.emplace_back();
     parts_.push_back({name, {"[" + name + "]"}});
     return parts_.back();
@@ -203,7 +196,7 @@ void IniText::set(const std::string& part_name, const std::string& key, const st
     }
     // after the part's last line that is not blank
     std::size_t at = p.lines.size();
-    while (at > 1 && trim(p.lines[at - 1]).empty())
+    while (at > 1 && trimmed(p.lines[at - 1]).empty())
         --at;
     p.lines.insert(p.lines.begin() + static_cast<std::ptrdiff_t>(at), wanted + " = " + value);
 }
@@ -260,7 +253,7 @@ void IniText::set_entries(const std::string& part_name,
         if (!split_line(l, &k, &v, &c))
             kept.push_back(l);
     }
-    while (kept.size() > 1 && trim(kept.back()).empty())
+    while (kept.size() > 1 && trimmed(kept.back()).empty())
         kept.pop_back();
     const bool blank_after = &p != &parts_.back();
     if (entries.empty() && kept.size() == 1) {
@@ -270,7 +263,7 @@ void IniText::set_entries(const std::string& part_name,
                 continue;
             parts_.erase(parts_.begin() + static_cast<std::ptrdiff_t>(i));
             Part& before = parts_[i - 1];
-            while (!before.lines.empty() && trim(before.lines.back()).empty())
+            while (!before.lines.empty() && trimmed(before.lines.back()).empty())
                 before.lines.pop_back();
             if (i < parts_.size())
                 before.lines.emplace_back();
@@ -295,7 +288,7 @@ std::vector<std::string> IniText::part_names() const {
 void IniText::space_parts() {
     for (std::size_t i = 0; i < parts_.size(); ++i) {
         auto& lines = parts_[i].lines;
-        while (lines.size() > (i == 0 ? 0u : 1u) && trim(lines.back()).empty())
+        while (lines.size() > (i == 0 ? 0u : 1u) && trimmed(lines.back()).empty())
             lines.pop_back();
         if (i + 1 < parts_.size() && !lines.empty())
             lines.emplace_back();

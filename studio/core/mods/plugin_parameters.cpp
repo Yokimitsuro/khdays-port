@@ -3,6 +3,7 @@
 
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
+#include "core/files/text.h"
 
 #include <cstdio>
 #include <fstream>
@@ -38,15 +39,10 @@ std::string named_in_mod_ini(const fs::path& mod_folder) {
         const std::size_t equals = line.find('=');
         if (equals == std::string::npos)
             continue;
-        auto trim = [](std::string s) {
-            const auto first = s.find_first_not_of(" \t\r");
-            const auto last = s.find_last_not_of(" \t\r");
-            return first == std::string::npos ? std::string() : s.substr(first, last - first + 1);
-        };
-        if (trim(line.substr(0, equals)) == "parameters") {
-            std::string value = trim(line.substr(equals + 1));
+        if (trimmed(line.substr(0, equals)) == "parameters") {
+            std::string value = trimmed(line.substr(equals + 1));
             const auto comment = value.find(" #");
-            return trim(comment == std::string::npos ? value : value.substr(0, comment));
+            return trimmed(comment == std::string::npos ? value : value.substr(0, comment));
         }
     }
     return {};

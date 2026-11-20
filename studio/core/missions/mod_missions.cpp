@@ -1,4 +1,5 @@
 #include "core/missions/mod_missions.h"
+#include "core/files/text.h"
 
 #include "core/characters/game_items.h"
 #include "core/files/file_write.h"
@@ -190,13 +191,6 @@ std::vector<std::string> lines_of(const std::string& text) {
         at = end + 1;
     }
     return lines;
-}
-
-std::string trimmed(const std::string& s) {
-    const std::size_t a = s.find_first_not_of(" \t");
-    if (a == std::string::npos)
-        return {};
-    return s.substr(a, s.find_last_not_of(" \t") - a + 1);
 }
 
 // A text as the file writes it: line breaks as \n, a backslash doubled.

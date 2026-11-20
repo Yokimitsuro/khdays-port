@@ -1,4 +1,5 @@
 #include "core/mods/settings.h"
+#include "core/files/text.h"
 
 #include "core/files/paths.h"
 
@@ -20,14 +21,6 @@ constexpr char kPathSeparator = ';';
 constexpr const char* kExe = "";
 constexpr char kPathSeparator = ':';
 #endif
-
-std::string trim(const std::string& s) {
-    const auto a = s.find_first_not_of(" \t\r");
-    if (a == std::string::npos)
-        return {};
-    const auto b = s.find_last_not_of(" \t\r");
-    return s.substr(a, b - a + 1);
-}
 
 // The port's executable: beside the tool in an install (the port's folder), else the one the build left most
 // recently (port/build.py's folders: Release, then Debug).
@@ -96,9 +89,9 @@ fs::path find_port_root(const fs::path& current, const fs::path& tool) {
 }
 
 std::string clean_path(const std::string& typed) {
-    std::string s = trim(typed);
+    std::string s = trimmed(typed);
     while (s.size() >= 2 && (s.front() == '"' || s.front() == '\'') && s.back() == s.front())
-        s = trim(s.substr(1, s.size() - 2));
+        s = trimmed(s.substr(1, s.size() - 2));
     return s;
 }
 
@@ -120,7 +113,7 @@ Settings load_settings(const fs::path& root, std::string* note) {
         bool good = true;
         std::string line;
         while (good && std::getline(in, line)) {
-            const std::string t = trim(line);
+            const std::string t = trimmed(line);
             if (t.empty() || t[0] == '#')
                 continue;
             const auto eq = t.find('=');
@@ -128,8 +121,8 @@ Settings load_settings(const fs::path& root, std::string* note) {
                 good = false;
                 break;
             }
-            const std::string key = trim(t.substr(0, eq));
-            const std::string value = trim(t.substr(eq + 1));
+            const std::string key = trimmed(t.substr(0, eq));
+            const std::string value = trimmed(t.substr(eq + 1));
             if (key == "port")
                 read.port = clean_path(value);
             else if (key == "graphics_dump")

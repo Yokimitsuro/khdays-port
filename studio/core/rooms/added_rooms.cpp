@@ -1,4 +1,5 @@
 #include "core/rooms/added_rooms.h"
+#include "core/files/text.h"
 
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
@@ -53,11 +54,6 @@ bool write_room_source(const fs::path& folder, const std::string& source, const 
     f << "turn " << place.turn[0] << " " << place.turn[1] << " " << place.turn[2] << "\n";
     f << "move " << place.move[0] << " " << place.move[1] << " " << place.move[2] << "\n";
     return f ? true : fail_with(why, u8(folder / "room.txt") + ": could not be written");
-}
-
-std::string trimmed(const std::string& s) {
-    const auto first = s.find_first_not_of(" \t");
-    return first == std::string::npos ? std::string() : s.substr(first, s.find_last_not_of(" \t") - first + 1);
 }
 
 }  // namespace
