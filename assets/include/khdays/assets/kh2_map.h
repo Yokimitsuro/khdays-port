@@ -257,6 +257,15 @@ struct CollisionFace final {
     std::uint32_t surface = 0;  // the COCT's surface flags
 };
 
+// A surface word's fields (`dk::ATTR_BIT`, read from the PS3 build): its kind in the low four bits (KIND_NULL 0,
+// FLOOR 1, WALL 2, DUMMY0 3, STEP 4, WATER 5), then whom it stops (the faces a test reads, `setSelectMask`).
+constexpr std::uint32_t kSurfaceKind = 0xFU;
+constexpr std::uint32_t kSurfaceWall = 2U;
+constexpr std::uint32_t kStopsPlayer = 0x10U;
+constexpr std::uint32_t kStopsEnemy = 0x20U;
+constexpr std::uint32_t kStopsFlyingEnemy = 0x40U;
+constexpr std::uint32_t kStopsAttack = 0x80U;
+
 std::vector<CollisionFace> read_collision(const std::uint8_t* data, std::size_t size, std::size_t at);
 
 // --- The map ---

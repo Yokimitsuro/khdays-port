@@ -203,7 +203,7 @@ std::vector<std::string> name_choices() {
     std::vector<std::string> out;
     for (const auto& n : m.collision.named)
         out.push_back(n.text());
-    for (const char* t : {"nohit", "nocatch", "sea", "nocam", "slide", "sea2", "sicon"}) {
+    for (const char* t : kSurfaceTags) {
         if (std::find(out.begin(), out.end(), t) == out.end())
             out.push_back(t);
     }
@@ -247,8 +247,7 @@ const Texture* texture(const GameModel& g, const std::string& name) {
 
 // The kind a named record is, by its name.
 S named_kind(const std::string& name) {
-    static const char* const tags[] = {"nohit", "nocatch", "sea", "nocam", "slide", "sea2", "sicon"};
-    for (const char* t : tags) {
+    for (const char* t : kSurfaceTags) {
         if (name == t)
             return S::map_kind_tag;
     }

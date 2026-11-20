@@ -50,8 +50,12 @@ Room object_model(const std::uint8_t* data, std::size_t size, const std::filesys
                   const std::string& name, const PictureSink& write_picture, const ObjectOptions& options = {});
 
 // The map's own floors and walls (its ID_ collision) as a scene in the map's units and axes, like its
-// model: one mesh drawn from both sides, for a room change to make the room's collision from. Throws
-// std::runtime_error when the map has none.
+// model, for a room change to make the room's collision from: a face that stops no character nor attack left
+// out, the others by material, each named as a room's export names them -- the list Days's builder puts it in
+// by its facing (`ground`, `wall` or `ceiling`), then `nohit` for a wall that stops characters but not attacks
+// (KH2's invisible walls: Days's attacks and camera go through those) and `slide` for a KH2 wall that faces up (one
+// stands on no wall: Days lets no jump land on it); walls drawn from both sides, grounds and ceilings from
+// their own. Throws std::runtime_error when the map has none.
 Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::string& name);
 
 }  // namespace khdays::assets::kh2

@@ -250,8 +250,11 @@ is chosen). It changes at once and is kept in the settings.
      where the game's movement steps onto a slope), a ceiling when it faces
      down, else a wall; a face stands on the side its corners turn
      counter-clockwise (glTF's front; a material drawn both sides stands both
-     ways). A separate, simpler collision model can be given instead. Each of
-     the room's own models becomes yours, nothing, or stays the game's.
+     ways). A material named as the export names the floor and walls
+     (`ground`, `wall` or `ceiling`, then names: `wall nohit`) gives its faces
+     the surface tags among those names. A separate, simpler collision model
+     can be given instead. Each of the room's own models becomes yours,
+     nothing, or stays the game's.
    - "Save into the mod" writes `files/mi/wd/wd_<code>` (the world rebuilt
      from your copy of the game, only the replaced rooms' collision new) and
      `graphics/mi/wd/wd_<code>#<entry>/mdl/<model>.gltf`; the change itself
@@ -524,7 +527,9 @@ kind of face, its names in the material) to a glTF to build on.
 
 replace a room by a model (placed as its change says, or as it is) or by a
 KH2 map of the player's collection (`kh2:tt02`: taken out, made and placed
-first by KH2's units; `kh2-collision` takes the map's own floors and walls), or make it again from the change the mod holds, and
+first by KH2's units; `kh2-collision` takes the map's own floors and walls, as
+KH2 has them: what stops no one left out, its invisible walls `nohit`, a wall
+facing up a `slide` ground), or make it again from the change the mod holds, and
 print what was made and every warning (markers left in a wall or with no
 ground under them named); give a room back to the game; write every world the mod changes
 again from its changes (after a game update, or on another player's copy).

@@ -109,7 +109,9 @@ constexpr std::size_t kLargestShippedCollision = 77624;
 
 // A room's collision made from `source` over the original room's: its header, markers and named
 // records kept, the faces new (coplanar neighbours joined into convex quads, classified, named by
-// `rules`), the tree built over them. False with the reason (docs/STUDIO.md, "Rooms").
+// `rules` and by their material's own name -- one named as a room's export names its collision,
+// `ground`, `wall` or `ceiling` then names, gives the surface tags among them), the tree built over
+// them. False with the reason (docs/STUDIO.md, "Rooms").
 bool build_collision(const CollisionSource& source, const RoomCollision& original, const CollisionRules& rules,
                      RoomCollision* out, CollisionReport* report, std::string* why);
 

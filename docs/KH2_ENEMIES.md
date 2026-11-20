@@ -2178,15 +2178,25 @@ shell's life:
   against the coliseum's wall (its ring's edge, 8.8 m out) until his script changed class.
 - **A KH2 room's floors and walls** (its `ID_` COCT, what the studio's KH2 rooms are made from): each face's
   attribute word (`dk::Attr`, the PS3 build's `dk::ATTR_BIT`, its fields from the top bit down) holds its kind in
-  bits 0-3 (1 a floor, 2 a wall, whatever its plane; 4 and 5 rarer, mostly facing up), whom it stops in bits 4-8
-  (0x10 the player, 0x20 enemies, 0x40 flying enemies, 0x80 attacks, 0x100 `hit_safety`), then `ik` 0x200,
-  `dangle` 0x400, `barrier` 0x800, `msg_wall` 0x1000, `callback` 0x2000, `carib_disp` 0xc000, `belt` 0x10000,
-  `polygon_se` 0x60000, `hit_rtn` 0x80000, `nohit_floor` 0x100000. Over the 278 maps of the six packages: 127,357
-  walls that stop everyone (a sixth of them facing up more than 0.6) and 82,932 walls that stop none of the three
-  (`OctCollFile::setSelectMask` picks the faces a test reads). The coliseum he00: the stands' steps (0x284) stop only
-  attacks and feet (`ik`), the corner columns' pyramid tops (0x1f2, facing up 0.78) are walls. The studio's import
-  (`kh2_room`'s `collision_scene`) keeps none of it: every face kept, as a ground, wall or ceiling by its plane, both
-  sides (the columns' capitals' backs, facing up 0.23, are grounds in Days's lists). Not changed yet.
+  bits 0-3 (the PS3 build's names: `KIND_NULL` 0, `KIND_FLOOR` 1, `KIND_WALL` 2 whatever its plane, `KIND_DUMMY0` 3,
+  `KIND_STEP` 4, `KIND_WATER` 5), whom it stops in bits 4-8 (0x10 the player, 0x20 enemies, 0x40 flying enemies, 0x80
+  attacks, 0x100 `hit_safety`), then `ik` 0x200, `dangle` 0x400, `barrier` 0x800, `msg_wall` 0x1000, `callback`
+  0x2000, `carib_disp` 0xc000, `belt` 0x10000, `polygon_se` 0x60000, `hit_rtn` 0x80000, `nohit_floor` 0x100000. A
+  face's corners turn the way its stored plane faces (every face of he00, tt00, hb00, al00, ca00). Over the 278 maps
+  of the six packages: 127,357 walls that stop everyone (a sixth of them facing up more than 0.6), 82,158 walls that
+  stop attacks alone (0x82, the visible walls behind the invisible ones characters meet: 0x172, 38,591, everyone but
+  attacks) and about 2,000 faces that stop no one (`OctCollFile::setSelectMask` picks the faces a test reads). The
+  coliseum he00: the stands' steps (0x284) stop only attacks and feet (`ik`), the corner columns' pyramid tops
+  (0x1f2, facing up 0.78) are walls, the battle's fence at 9.2 m round the middle (0x1132) stops the player and
+  enemies alone and is a `msg_wall`. The studio's import (`kh2_room`'s `collision_scene`) gives Days what each says:
+  a face that stops no one left out, a wall that stops characters but not attacks named `nohit` (Days's own invisible
+  walls are: its attacks' parts and its camera go through those, `Ov022_CastMove`, `data_ov002_0207e640`; Days names
+  no ground nor ceiling so, its camera would go under a floor), a wall
+  facing up a ground named `slide` (Days's jump lands on none, `Ov022_StepJumpState`: Days names grounds so, never
+  walls), walls from both sides, grounds and ceilings from their own (until 2026-11-20 every face both sides: the
+  columns' capitals' backs, facing up 0.23, were grounds). Days has one collision for everyone, so a face that stops
+  attacks alone still stops characters, and one that stops enemies alone still stops the player. The shell's casts
+  (`khdays_kh2_shell_ray`, `_wall`) read every face, `nohit` too, as before.
 - **Motions in the air**: KH2's air classes add no pull while + 0x18c has 0x1000020 or bit 6 (`FUN_1403cb100`,
   `FUN_1403cb500`): ranges 3, 24 and 30 (`FUN_14040d810`: 30 sets bit 24, which `1:60` counts as off the ground).
   The port's pull leaves those motions alone; its jumps (1:55, 1:156) still follow their own arc in them.

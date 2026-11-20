@@ -371,15 +371,18 @@ Bytes collision() {
     const std::size_t tables = w.size();
     w.zeros(64);
     const std::size_t faces = w.size();
-    // A floor (a quad) and a wall (a triangle).
-    for (const auto& v : {std::array<int, 4>{0, 1, 2, 3}, std::array<int, 4>{0, 1, 4, -1}}) {
+    // A floor (a quad facing up) stopping the player, a wall (a triangle) stopping enemies, neither stopping attacks;
+    // a wall facing up stopping everyone; a floor stopping no one; a wall stopping attacks alone.
+    const std::array<std::array<int, 5>, 5> list{{
+        {0, 3, 2, 1, 0}, {0, 1, 4, -1, 1}, {0, 3, 1, -1, 2}, {1, 2, 4, -1, 3}, {0, 4, 3, -1, 4}}};
+    for (const auto& v : list) {
         w.u16(0);
-        for (const int i : v) {
-            w.u16(static_cast<unsigned>(i));
+        for (std::size_t i = 0; i < 4; ++i) {
+            w.u16(static_cast<unsigned>(v[i]));
         }
         w.u16(0);
         w.u16(0xFFFF);
-        w.u16(v[3] < 0 ? 1 : 0);
+        w.u16(static_cast<unsigned>(v[4]));
     }
     const std::size_t vertices = w.size();
     for (const auto& p :
@@ -391,16 +394,17 @@ Bytes collision() {
         w.f32(1.0F);
     }
     const std::size_t flags = w.size();
-    w.u32(0x31);
-    w.u32(0x20);
+    for (const std::uint32_t f : {0x31U, 0x20U, 0x1f2U, 0x401U, 0x82U}) {
+        w.u32(f);
+    }
     w.set_u32(tables + 0 * 8 + 0, 0);  // header
     w.set_u32(tables + 0 * 8 + 4, 0x50);
     w.set_u32(tables + 3 * 8 + 0, static_cast<std::uint32_t>(faces));
-    w.set_u32(tables + 3 * 8 + 4, 32);
+    w.set_u32(tables + 3 * 8 + 4, static_cast<std::uint32_t>(16 * list.size()));
     w.set_u32(tables + 4 * 8 + 0, static_cast<std::uint32_t>(vertices));
     w.set_u32(tables + 4 * 8 + 4, 80);
     w.set_u32(tables + 7 * 8 + 0, static_cast<std::uint32_t>(flags));
-    w.set_u32(tables + 7 * 8 + 4, 8);
+    w.set_u32(tables + 7 * 8 + 4, 20);
     return w.b;
 }
 
@@ -715,7 +719,7 @@ void test_map() {
     expect(near(kh2::evaluate(m.curves[1], 5.0F), 50.5F), "Hermite middle");
 
     const auto faces = kh2::read_collision(file.data(), file.size(), e[2].offset);
-    expect(faces.size() == 3, "quad split, triangle kept");
+    expect(faces.size() == 6 && faces[5].surface == 0x82, "quad split, triangles kept");
     expect(near(faces[0].corners[2][2], 100.0F) && faces[0].surface == 0x31, "floor in the model's axes");
     expect(near(faces[2].corners[2][1], 100.0F) && faces[2].surface == 0x20, "wall in the model's axes");
 
@@ -822,11 +826,18 @@ void test_room(const Bytes& file) {
 
     // the map's own floors and walls, as a scene in its units and axes
     const auto walls = kh2::collision_scene(file.data(), file.size(), "tt99");
-    expect(walls.meshes.size() == 1 && walls.meshes[0].primitives.size() == 1 && walls.materials[0].double_sided,
-           "collision scene");
-    const auto& cp = walls.meshes[0].primitives[0];
-    expect(cp.positions.size() == 9 && near(cp.positions[2][2], 100.0F) && near(cp.positions[8][1], 100.0F),
+    std::vector<std::string> names;
+    for (const auto& m : walls.materials)
+        names.push_back(m.name + (m.double_sided ? " (both sides)" : ""));
+    expect(names == std::vector<std::string>{"ground", "wall nohit (both sides)", "ground slide", "wall (both sides)"},
+           "collision materials: nohit on a wall attacks pass, a wall facing up slides, walls from both sides");
+    expect(walls.meshes.size() == 1 && walls.meshes[0].primitives.size() == 4, "a primitive per material");
+    const auto& cp = walls.meshes[0].primitives;
+    expect(cp[0].material == 0 && cp[0].positions.size() == 6 && near(cp[0].positions[2][2], 100.0F) &&
+               cp[1].positions.size() == 3 && near(cp[1].positions[2][1], 100.0F),
            "collision triangles in the model's axes");
+    expect(cp[2].positions.size() == 3 && cp[3].positions.size() == 3 && cp[3].material == 3,
+           "the floor stopping no one left out");
 
     const std::string gltf = khdays::assets::scene_to_gltf(scene);
     for (const char* part : {"\"khdays_frames\"", "\"khdays_scroll\"", "\"khdays_loop\":true", "\"skins\"",

@@ -410,6 +410,32 @@ TEST(names_given_to_a_model_land_in_their_slots) {
     CHECK(why.find("triangle") != std::string::npos);
 }
 
+TEST(a_material_named_as_the_export_names_it_gives_its_surface_tags) {
+    const RoomCollision original = room();
+    CollisionSource s;
+    quad(&s, {-3, 0, -3}, {-3, 0, 3}, {3, 0, 3}, {3, 0, -3}, "ground nohit slide");  // both tags
+    quad(&s, {3, 0, -3}, {3, 0, 3}, {9, 0, 3}, {9, 0, -3}, "wall gate06 brick");    // neither a tag: none
+    quad(&s, {9, 0, -3}, {9, 0, 3}, {15, 0, 3}, {15, 0, -3}, "nohit");              // no list word: none
+    CollisionRules rules;
+    rules.drop_original = {"gate01"};  // (else the room's gate ground is copied in)
+    RoomCollision built;
+    CollisionReport report;
+    std::string why;
+    CHECK(build_collision(s, original, rules, &built, &report, &why));
+    CHECK(built.faces[kGround].size() == 3);  // the list still by its facing: "wall" names it, it faces up
+    // the room's own nohit (record 0) taken, slide added after its records
+    CHECK(built.named.size() == 3 && built.named[2].text() == "slide");
+    int tagged = 0, plain = 0;
+    for (const auto& f : built.faces[kGround]) {
+        if (f.slots[1] == 0 && f.slots[2] == 2)
+            ++tagged;
+        if (f.slots[1] == 0xff && f.slots[2] == 0xff)
+            ++plain;
+    }
+    CHECK(tagged == 1 && plain == 2);
+    CHECK(check_collision(built, original).empty());
+}
+
 TEST(a_wide_room_keeps_its_tree_within_the_walk) {
     // tiny grounds over 400 units: the tree stops at the eighth level
     CollisionSource s;

@@ -4388,6 +4388,11 @@ movement rows in the game (the native build, `KHDAYS_TRACE_PLAYER`).
   faces), flags (0x8000 the last of its node's run; nothing else on disk), 3 or 4 corners (convex
   but one), its plane, slots at +0x80 (0 gates; 1 and 2 surface tags and walls that open; a
   ground's slot 3 a small number 0-14 that is no name) and, for a ground, one word not read.
+- **Where the game puts its surface tags** (2026-11-20, `khdays-studio --world-info` over every mission room):
+  `nohit` on 1,526 walls of 63 rooms and on no ground nor ceiling; `nocam` on 99 walls and 6 grounds; `sicon` on 83
+  walls; `slide` (no jump lands, `Ov022_StepJumpState`) on 138 grounds of 20 rooms and no wall; `nocatch` on 266
+  grounds, `sea` 16 and `sea2` 648, all grounds. A room made from a KH2 map names its faces after these
+  (docs/KH2_ENEMIES.md, "A KH2 room's floors and walls").
 - **A world's gate models** (entry 1: a count, then 0x90 each, keyed by a link row's key): five
   descriptors of 0x1c as `Ov002_BuildModelSlot` uses them -- kind, the archive entry it loads (0
   none, 255 the gate itself, 45 and 46 Twilight Town's `gate_lock2` and `lightwall`), a turn in

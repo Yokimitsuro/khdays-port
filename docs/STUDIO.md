@@ -98,6 +98,10 @@ convex pieces of four corners, each classified by its facing, its names from the
 rules in the slots their kind takes (gates slot 0, the others 1 and 2), a
 ground's slot 3 and last word from the nearest ground of the original -- and the
 tree is built over them (a root square of a power of two holding every face).
+A material named as the room's export names its collision (`ground`, `wall` or
+`ceiling`, then names: `wall nohit`) gives its faces the surface tags among those
+names by itself; gates and walls that open stay the rules' (the modder places
+them), and the face's list stays its facing's.
 It is checked before it is saved: written and read back the same, every face 3-4
 corners, convex, its bounds its corners', a plane the game can build, every slot
 naming a record or none, the tree as the walk wants and no deeper than it goes,
@@ -139,8 +143,17 @@ of the room model's corners agree on with the map's, at KH2's scale; a mod's
 the room's own pair first, marked, with its evidence. The map's own floors and walls (its `ID_`
 collision, `kh2_room`'s `collision_scene`) are a fourth choice for a KH2 room's
 collision: written as `<map>_collision.gltf` beside its model and taken like
-another model's, placed as the model is (the Usual Spot's: 334 grounds, 847
-walls, 155 ceilings, a fifth of the floors made from its visible model).
+another model's, placed as the model is. Each face goes by what KH2 says of it
+(its attribute word, docs/KH2_ENEMIES.md "A KH2 room's floors and walls"): one
+that stops no character nor attack is left out; a wall that stops characters but
+not attacks (KH2's invisible walls) is named `nohit`, which Days's attacks and
+camera go through, as Days's own invisible walls are (Days names walls alone so:
+its camera would go under a floor named so); a KH2 wall that faces up
+(the top of a column, of a railing) is a ground named `slide`, on which Days
+lands no jump; a wall stops from both sides, a ground or ceiling from its own (a
+ceiling's back is no ground). One stopping attacks alone stays a face: Days's
+one collision stops characters with it too. The materials carry those names
+(`ground nohit`, `wall`, `ground slide` ...).
 
 **Rooms from the collections** (`core/rooms/collection_source.h`). The maps of KINGDOM HEARTS FINAL MIX, KINGDOM
 HEARTS II FINAL MIX, Re:Chain of Memories and Birth by Sleep FINAL MIX (KINGDOM HEARTS HD 1.5+2.5 ReMIX, setting

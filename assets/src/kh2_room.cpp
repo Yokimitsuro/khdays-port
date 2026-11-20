@@ -29,6 +29,19 @@ namespace {
 constexpr float kScrollUnit = 2147483648.0F;
 // A piece placed this far down waits for an event to be shown (y 1,000,000 seen).
 constexpr float kHiddenHeight = 100000.0F;
+// A face whose unit normal's y is above this is a ground for Days, below its negative a ceiling, else a wall:
+// where `Actor_ResolveMove` steps onto a surface (0x333 / 4096), the studio's room builder's default.
+constexpr float kGroundLimit = 0x333 / 4096.0F;
+
+// How much a triangle faces up: its unit normal's y ((b - a) x (c - a)); 0 when it has no area.
+float facing_up(const std::array<std::array<float, 3>, 3>& c) {
+    const std::array<float, 3> e0{c[1][0] - c[0][0], c[1][1] - c[0][1], c[1][2] - c[0][2]};
+    const std::array<float, 3> e1{c[2][0] - c[0][0], c[2][1] - c[0][1], c[2][2] - c[0][2]};
+    const std::array<float, 3> n{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                 e0[0] * e1[1] - e0[1] * e1[0]};
+    const float length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    return length > 0.0F ? n[1] / length : 0.0F;
+}
 
 // Turns about x, then y, then z (radians) as a quaternion x y z w.
 std::array<float, 4> quaternion(const float x, const float y, const float z) {
@@ -588,12 +601,33 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
     Scene scene;
     scene.name = name + " collision";
     scene.nodes.push_back({"room"});
-    SceneMaterial mat;
-    mat.name = "kh2 collision";
-    mat.double_sided = true;  // a wall stops from both sides
-    scene.materials.push_back(mat);
-    ScenePrimitive prim;
+    SceneMesh mesh{"collision", 0, {}, {}};
+    std::map<std::string, std::size_t> primitive_of;  // by material
     for (const auto& f : faces) {
+        const std::uint32_t characters = f.surface & (kStopsPlayer | kStopsEnemy | kStopsFlyingEnemy);
+        const bool attacks = (f.surface & kStopsAttack) != 0;
+        if (characters == 0 && !attacks)
+            continue;
+        const float up = facing_up(f.corners);
+        const bool ground = up > kGroundLimit;
+        const bool wall = !ground && up >= -kGroundLimit;
+        std::string material = ground ? "ground" : wall ? "wall" : "ceiling";
+        // (on walls alone, as Days's rooms name them: its camera's line goes through a nohit face, and through a
+        // floor it would go under it)
+        if (wall && characters != 0 && !attacks)
+            material += " nohit";
+        if (ground && (f.surface & kSurfaceKind) == kSurfaceWall)
+            material += " slide";
+        auto found = primitive_of.find(material);
+        if (found == primitive_of.end()) {
+            SceneMaterial mat;
+            mat.name = material;
+            mat.double_sided = wall;  // a wall stops from both sides; a ground's other side would be a ceiling
+            found = primitive_of.emplace(material, mesh.primitives.size()).first;
+            mesh.primitives.emplace_back().material = static_cast<int>(scene.materials.size());
+            scene.materials.push_back(std::move(mat));
+        }
+        ScenePrimitive& prim = mesh.primitives[found->second];
         for (const auto& corner : f.corners) {
             prim.indices.push_back(static_cast<std::uint32_t>(prim.positions.size()));
             prim.positions.push_back(corner);
@@ -601,7 +635,8 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
             prim.colors.push_back({255, 255, 255, 255});
         }
     }
-    scene.meshes.push_back({"collision", 0, {}, {std::move(prim)}});
+    if (!mesh.primitives.empty())
+        scene.meshes.push_back(std::move(mesh));
     return scene;
 }
 

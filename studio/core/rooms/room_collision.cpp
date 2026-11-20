@@ -20,6 +20,27 @@ constexpr int kDz[4] = {-1, -1, 1, 1};
 constexpr std::uint16_t kLast = 0x8000, kSkip = 0x4000;
 constexpr std::size_t kSplitAbove = 8;
 
+// The surface tags a collision material's own name gives its faces: a name as a room's export writes one --
+// `ground`, `wall` or `ceiling`, then names (`wall nohit`; KH2's maps' floors and walls are named so) -- gives
+// those of its names that are surface tags. Gates and walls that open stay the rules': the modder places them.
+std::vector<std::string> tags_in_name(const std::string& material) {
+    std::vector<std::string> words;
+    for (std::size_t at = 0; at < material.size();) {
+        const std::size_t end = std::min(material.find(' ', at), material.size());
+        if (end > at)
+            words.push_back(material.substr(at, end - at));
+        at = end + 1;
+    }
+    std::vector<std::string> tags;
+    if (words.empty() || (words[0] != "ground" && words[0] != "wall" && words[0] != "ceiling"))
+        return tags;
+    for (std::size_t k = 1; k < words.size(); ++k) {
+        if (std::find(kSurfaceTags.begin(), kSurfaceTags.end(), words[k]) != kSurfaceTags.end())
+            tags.push_back(words[k]);
+    }
+    return tags;
+}
+
 struct Square {
     std::int64_t x = 0, z = 0, size = 0;
     Square child(int c) const {
@@ -469,6 +490,7 @@ bool build_collision(const CollisionSource& source, const RoomCollision& origina
         std::size_t index = 0;
     };
     std::vector<Tri> tris;
+    std::map<std::string, std::vector<std::string>> tags_of;  // tags_in_name's, by material
     for (std::size_t t = 0; t < source.triangles.size(); ++t) {
         if (t < source.passable.size() && source.passable[t] != 0) {
             ++r.passable;
@@ -495,6 +517,10 @@ bool build_collision(const CollisionSource& source, const RoomCollision& origina
             const auto m = rules.names_by_material.find(source.materials[t]);
             if (m != rules.names_by_material.end())
                 names.insert(m->second.begin(), m->second.end());
+            auto own = tags_of.find(source.materials[t]);
+            if (own == tags_of.end())
+                own = tags_of.emplace(source.materials[t], tags_in_name(source.materials[t])).first;
+            names.insert(own->second.begin(), own->second.end());
         }
         const auto byt = rules.names_by_triangle.find(t);
         if (byt != rules.names_by_triangle.end())

@@ -52,6 +52,9 @@ struct NamedRecord {
     std::string text() const;
 };
 
+// The surface tags' names, in the order of the game's table (`data_ov002_0207e640`: tags 2 to 8).
+inline constexpr std::array<const char*, 7> kSurfaceTags{"nohit", "nocatch", "sea", "nocam", "slide", "sea2", "sicon"};
+
 enum FaceList { kGround = 0, kWall = 1, kCeiling = 2 };
 
 // Whether slot `position` of a face of list `list` names a record (see RoomFace).
