@@ -16,6 +16,7 @@
 #include "../scripts/deck_link.h"
 #include "../scripts/game_link.h"
 #include "khdays_ds_symbols.h"
+#include "../core/bytes.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -288,16 +289,6 @@ void khdays_stop_pictures(KhdaysRef archive)
  * clock is the 3D one, the same orange: its edges and ground take the indices of Blizzard's, the magics' purple. */
 #define SHOP_PICTURES "ui/shop/res"
 #define PICTURE_SIDE 16u
-
-static u32 le16(const unsigned char *p)
-{
-    return (u32)p[0] | (u32)p[1] << 8;
-}
-
-static u32 le32(const unsigned char *p)
-{
-    return le16(p) | le16(p + 2) << 16;
-}
 
 /* The pack's first block whose magic is `magic` (its size in `*bytes`), or NULL. */
 static unsigned char *pack_block(unsigned char *pack, u32 size, const char *magic, u32 *bytes)

@@ -23,6 +23,7 @@
 #include "../scripts/folders.h"
 #include "../scripts/manifest.h"
 #include "../scripts/mods_log.h"
+#include "../core/bytes.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -372,11 +373,6 @@ void khdays_missions_set_best(int number, int value)
 #define LIST_KINDS 0xfu
 #define LIST_CATEGORY(flags) ((flags) >> 8 & 0xffu)
 
-static unsigned rd16(const unsigned char *p)
-{
-    return (unsigned)p[0] | (unsigned)p[1] << 8;
-}
-
 /* Whether mission number `number` has been cleared: in the story (its status) or in Mission Mode (a rank in its
  * transfer field, the only one Mission Mode's results write). */
 static int cleared(int number)
@@ -485,14 +481,14 @@ int khdays_missions_eligible(const void *record, unsigned int flags)
 {
     const unsigned char *r = record;
     const KhdaysMission *m =
-        numbered != 0 ? khdays_missions_by_number(&registry, (int)rd16(r + KHDAYS_LIST_NUMBER)) : NULL;
-    if (m == NULL || (int)rd16(r + KHDAYS_LIST_FILE) != m->file) {
+        numbered != 0 ? khdays_missions_by_number(&registry, (int)le16(r + KHDAYS_LIST_NUMBER)) : NULL;
+    if (m == NULL || (int)le16(r + KHDAYS_LIST_FILE) != m->file) {
         return -1;
     }
     /* its own Mission Mode row, in its category, when the list takes that kind */
     const unsigned asked = flags & LIST_KINDS & 1u << (KHDAYS_ENTRY_MISSION - 1);
     if (r[KHDAYS_LIST_KIND] != KHDAYS_ENTRY_MISSION || asked == 0 ||
-        rd16(r + KHDAYS_LIST_CATEGORY) != LIST_CATEGORY(flags)) {
+        le16(r + KHDAYS_LIST_CATEGORY) != LIST_CATEGORY(flags)) {
         return 0;
     }
     return unlocked(m) && room_offers(m);

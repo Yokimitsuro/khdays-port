@@ -6,6 +6,7 @@
 #include "../runtime/missions/room.h"
 #include "../runtime/missions/save_part.h"
 #include "../runtime/missions/tables.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -589,16 +590,6 @@ static void the_save_part(void)
 
 /* ---- The tables -------------------------------------------------------------------------------- */
 
-static unsigned rd16(const unsigned char *p)
-{
-    return (unsigned)p[0] | (unsigned)p[1] << 8;
-}
-
-static unsigned rd32(const unsigned char *p)
-{
-    return rd16(p) | rd16(p + 2) << 16;
-}
-
 /* A list record of the given file, number and kind with `texts` (ASCII, each its own), as the game's. */
 static size_t make_record(unsigned char *at, unsigned file, unsigned number, unsigned kind, const char *const *texts)
 {
@@ -629,14 +620,14 @@ static void record_text(const unsigned char *record, int t, char *out, size_t si
 {
     const unsigned char *p = record + KHDAYS_LIST_TEXTS;
     for (int k = 0; k < t; ++k) {
-        while (rd16(p) != 0) {
+        while (le16(p) != 0) {
             p += 2;
         }
         p += 2;
     }
     size_t n = 0;
-    for (; rd16(p) != 0 && n + 1 < size; p += 2) {
-        out[n++] = (char)rd16(p);
+    for (; le16(p) != 0 && n + 1 < size; p += 2) {
+        out[n++] = (char)le16(p);
     }
     out[n] = '\0';
 }
@@ -666,13 +657,13 @@ static void list_rows(void)
     if (out != NULL) {
         /* the game's four, then each new mission's Mission Mode row alone (no story row, none of its template's
          * other entries) */
-        CHECK(rd16(out) == 6 && memcmp(out + 2, file + 2, size - 2) == 0);
+        CHECK(le16(out) == 6 && memcmp(out + 2, file + 2, size - 2) == 0);
         const unsigned char *rec = out + size;
-        CHECK(rd16(rec + KHDAYS_LIST_FILE) == (unsigned)r.list[0].file);
-        CHECK(rd16(rec + KHDAYS_LIST_NUMBER) == (unsigned)r.list[0].number);
-        CHECK(rd16(rec + KHDAYS_LIST_FIRST_DAY) == 0xffff && rd16(rec + KHDAYS_LIST_LAST_DAY) == 0xffff);
-        CHECK(rd16(rec + KHDAYS_LIST_CATEGORY) == 1 && rd16(rec + KHDAYS_LIST_SHOWN) == 95);
-        CHECK(rec[0x10] == 7 && rec[KHDAYS_LIST_KIND] == KHDAYS_ENTRY_MISSION && rd16(rec + KHDAYS_LIST_SECONDS) == 90);
+        CHECK(le16(rec + KHDAYS_LIST_FILE) == (unsigned)r.list[0].file);
+        CHECK(le16(rec + KHDAYS_LIST_NUMBER) == (unsigned)r.list[0].number);
+        CHECK(le16(rec + KHDAYS_LIST_FIRST_DAY) == 0xffff && le16(rec + KHDAYS_LIST_LAST_DAY) == 0xffff);
+        CHECK(le16(rec + KHDAYS_LIST_CATEGORY) == 1 && le16(rec + KHDAYS_LIST_SHOWN) == 95);
+        CHECK(rec[0x10] == 7 && rec[KHDAYS_LIST_KIND] == KHDAYS_ENTRY_MISSION && le16(rec + KHDAYS_LIST_SECONDS) == 90);
         char words[64];
         record_text(rec, 0, words, sizeof(words));
         CHECK(strcmp(words, "Nouveau") == 0); /* French: its own */
@@ -680,12 +671,12 @@ static void list_rows(void)
         CHECK(strcmp(words, "Win.") == 0); /* no description: the objective */
         record_text(rec, 2, words, sizeof(words));
         CHECK(strcmp(words, "Win.") == 0);
-        const unsigned char *p = rec + rd16(rec);
-        CHECK(rd16(p + KHDAYS_LIST_CATEGORY) == 4 && p[0x10] == 0 && rd16(p + KHDAYS_LIST_SHOWN) == 96);
-        CHECK(p[KHDAYS_LIST_KIND] == KHDAYS_ENTRY_MISSION && rd16(p + KHDAYS_LIST_REWARD) == KHDAYS_REWARD_MISSION);
+        const unsigned char *p = rec + le16(rec);
+        CHECK(le16(p + KHDAYS_LIST_CATEGORY) == 4 && p[0x10] == 0 && le16(p + KHDAYS_LIST_SHOWN) == 96);
+        CHECK(p[KHDAYS_LIST_KIND] == KHDAYS_ENTRY_MISSION && le16(p + KHDAYS_LIST_REWARD) == KHDAYS_REWARD_MISSION);
         record_text(p, 0, words, sizeof(words));
         CHECK(strcmp(words, "Plain") == 0); /* no French: the English */
-        CHECK(p + rd16(p) == out + out_size);
+        CHECK(p + le16(p) == out + out_size);
     }
     free(out);
     /* a list that does not read: left as it is */
@@ -712,13 +703,13 @@ static void mdb_rows(void)
     CHECK(khdays_missions_number(&r, &s, NULL, NULL) == 2);
     size_t out_size = 0;
     unsigned char *out = khdays_tables_mdb(file, sizeof(file), &r, &out_size);
-    CHECK(out != NULL && out_size == 4 + 4 * KHDAYS_MDB_ROW && rd32(out) == 4);
+    CHECK(out != NULL && out_size == 4 + 4 * KHDAYS_MDB_ROW && le32(out) == 4);
     if (out != NULL) {
         const unsigned char *row = out + 4 + 2 * KHDAYS_MDB_ROW;
-        CHECK(rd16(row) == (unsigned)r.list[0].file && row[4] == 7 && rd32(row + KHDAYS_MDB_LEVEL) == 30);
-        CHECK(rd32(row + KHDAYS_MDB_LEVEL_SESSION) == 30);
+        CHECK(le16(row) == (unsigned)r.list[0].file && row[4] == 7 && le32(row + KHDAYS_MDB_LEVEL) == 30);
+        CHECK(le32(row + KHDAYS_MDB_LEVEL_SESSION) == 30);
         row += KHDAYS_MDB_ROW;
-        CHECK(rd16(row) == (unsigned)r.list[1].file && row[4] == 0);
+        CHECK(le16(row) == (unsigned)r.list[1].file && row[4] == 0);
     }
     free(out);
     khdays_field_store_free(&s);
@@ -769,14 +760,14 @@ static void the_games_tables(const char *decompressed)
         unsigned char *out = khdays_tables_list(file, size, &r, l, &out_size);
         CHECK(out != NULL && memcmp(out + 2, file + 2, size - 2) == 0);
         if (out != NULL) {
-            const unsigned count = rd16(out), game = rd16(file);
+            const unsigned count = le16(out), game = le16(file);
             unsigned mine = 0;
             size_t at = 2;
             for (unsigned i = 0; i < count && at + KHDAYS_LIST_TEXTS <= out_size; ++i) {
                 if (i >= game) {
-                    mine += rd16(out + at + KHDAYS_LIST_FILE) >= KHDAYS_FILE_FIRST;
+                    mine += le16(out + at + KHDAYS_LIST_FILE) >= KHDAYS_FILE_FIRST;
                 }
-                at += rd16(out + at);
+                at += le16(out + at);
             }
             CHECK(at == out_size && mine == count - game);
             CHECK(count == game + 20); /* each its Mission Mode row alone */
@@ -790,7 +781,7 @@ static void the_games_tables(const char *decompressed)
     CHECK(file != NULL);
     if (file != NULL) {
         unsigned char *out = khdays_tables_mdb(file, size, &r, &out_size);
-        CHECK(out != NULL && rd32(out) == rd32(file) + 20 && out_size == size + 20 * KHDAYS_MDB_ROW);
+        CHECK(out != NULL && le32(out) == le32(file) + 20 && out_size == size + 20 * KHDAYS_MDB_ROW);
         CHECK(out != NULL && memcmp(out + 4, file + 4, size - 4) == 0);
         free(out);
         free(file);

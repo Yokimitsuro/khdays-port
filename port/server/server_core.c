@@ -3,6 +3,7 @@
  * the socket and the loop. Past the memory budget the oldest record goes, and silent ones are
  * forgotten (docs/MULTIPLAYER.md, "khdays-server"). */
 #include "server_core.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,16 +162,6 @@ static void put32(unsigned char *p, unsigned int v)
 {
     put16(p, v & 0xffff);
     put16(p + 2, v >> 16);
-}
-
-static unsigned int get16(const unsigned char *p)
-{
-    return (unsigned int)p[0] | (unsigned int)p[1] << 8;
-}
-
-static unsigned int get32(const unsigned char *p)
-{
-    return get16(p) | get16(p + 2) << 16;
 }
 
 static int same_address(const KhdaysNetAddress *x, const KhdaysNetAddress *y)
@@ -558,7 +549,7 @@ static void on_register(const KhdaysNetAddress *from, const unsigned char *sende
     unsigned char seen[6];
     unsigned int found, slot = 0;
     Group *g;
-    if (size < 20 || size > BODY_MOST || get32(body + 16) > size - 20) {
+    if (size < 20 || size > BODY_MOST || le32(body + 16) > size - 20) {
         return;
     }
     found = table_find(&server.group_by_id, group_hash(sender), sender, group_matches);
@@ -568,7 +559,7 @@ static void on_register(const KhdaysNetAddress *from, const unsigned char *sende
         if (!same_address(&g->address, from) && since(now, g->seen) < GROUP_MOVES_AFTER_MS) {
             return; /* someone else using this group's id: not its host */
         }
-        if (g->ggid != get32(body + 12) || g->build != get32(body) || g->body_size != size) {
+        if (g->ggid != le32(body + 12) || g->build != le32(body) || g->body_size != size) {
             /* Another game or build, or an announcement of another size:
              * start the group again (it is charged to the budget anew). */
             drop_group(slot);
@@ -583,8 +574,8 @@ static void on_register(const KhdaysNetAddress *from, const unsigned char *sende
         if (!make_room(bytes)) {
             return;
         }
-        key.ggid = get32(body + 12);
-        key.build = get32(body);
+        key.ggid = le32(body + 12);
+        key.build = le32(body);
         index_slot = table_find(&server.index_by_game, game_hash(key.ggid, key.build), &key, index_matches);
         if (index_slot == NONE) {
             const unsigned int i = slab_take(&server.indexes, sizeof(Index));
@@ -656,9 +647,9 @@ static void on_list(const KhdaysNetAddress *from, const unsigned char *body, uns
     if (size < 10 || room < 6) {
         return;
     }
-    key.build = get32(body);
-    key.ggid = get32(body + 4);
-    first = get16(body + 8);
+    key.build = le32(body);
+    key.ggid = le32(body + 4);
+    first = le16(body + 8);
     index_slot = table_find(&server.index_by_game, game_hash(key.ggid, key.build), &key, index_matches);
     if (index_slot != NONE) {
         const Index *index = &INDEX(index_slot - 1);
@@ -784,7 +775,7 @@ static void on_relay(const KhdaysNetAddress *from, const unsigned char *body, un
     if (!server.relay || size < 4 + HEADER) {
         return;
     }
-    token = get32(body);
+    token = le32(body);
     found = table_find(&server.pair_by_token, token_hash(token), &token, pair_token_matches);
     if (found == NONE) {
         return;
@@ -828,10 +819,10 @@ static void on_relay(const KhdaysNetAddress *from, const unsigned char *body, un
 void khdays_server_datagram(const KhdaysNetAddress *from, const unsigned char *d, long got, u64 now)
 {
     unsigned int size;
-    if (got < HEADER || get32(d) != MAGIC || d[5] != VERSION) {
+    if (got < HEADER || le32(d) != MAGIC || d[5] != VERSION) {
         return;
     }
-    size = get16(d + 6);
+    size = le16(d + 6);
     if ((long)HEADER + (long)size > got) {
         return;
     }

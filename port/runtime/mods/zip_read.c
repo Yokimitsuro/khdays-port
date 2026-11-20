@@ -1,6 +1,7 @@
 /* A ZIP archive read from memory (zip_read.h). The deflated entries are inflated by stb_image's inflater
  * (compiled in host/render/png_io.c). */
 #include "zip_read.h"
+#include "../core/bytes.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -13,16 +14,6 @@ int stbi_zlib_decode_noheader_buffer(char *obuffer, int olen, const char *ibuffe
 #define LOCAL_SIGNATURE 0x04034b50u
 #define END_SIZE 22
 #define COMMENT_MOST 0xffff
-
-static uint32_t rd16(const unsigned char *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
-}
-
-static uint32_t rd32(const unsigned char *p)
-{
-    return rd16(p) | rd16(p + 2) << 16;
-}
 
 static uint32_t crc32_of(const unsigned char *p, size_t n)
 {
@@ -52,7 +43,7 @@ static long end_record(const unsigned char *data, size_t size)
         return -1;
     }
     for (size_t at = size - END_SIZE;; --at) {
-        if (rd32(data + at) == END_SIGNATURE) {
+        if (le32(data + at) == END_SIGNATURE) {
             return (long)at;
         }
         if (at == 0 || size - at >= END_SIZE + COMMENT_MOST) {
@@ -72,7 +63,7 @@ int khdays_zip_open(KhdaysZip *z, const unsigned char *data, size_t size, const 
         return 0;
     }
     const unsigned char *e = data + end;
-    const uint32_t count = rd16(e + 10), dir_size = rd32(e + 12), dir_at = rd32(e + 16);
+    const uint32_t count = le16(e + 10), dir_size = le32(e + 12), dir_at = le32(e + 16);
     if (count == 0xffffu || dir_at == 0xffffffffu) {
         *why = "a ZIP64 archive (not read)";
         return 0;
@@ -88,13 +79,13 @@ int khdays_zip_open(KhdaysZip *z, const unsigned char *data, size_t size, const 
     }
     size_t at = dir_at;
     for (uint32_t i = 0; i < count; ++i) {
-        if (at + 46 > (size_t)dir_at + dir_size || rd32(data + at) != ENTRY_SIGNATURE) {
+        if (at + 46 > (size_t)dir_at + dir_size || le32(data + at) != ENTRY_SIGNATURE) {
             *why = "its directory is broken";
             khdays_zip_close(z);
             return 0;
         }
         const unsigned char *h = data + at;
-        const uint32_t name_n = rd16(h + 28), extra_n = rd16(h + 30), comment_n = rd16(h + 32);
+        const uint32_t name_n = le16(h + 28), extra_n = le16(h + 30), comment_n = le16(h + 32);
         if (at + 46 + name_n > (size_t)dir_at + dir_size) {
             *why = "its directory is broken";
             khdays_zip_close(z);
@@ -109,12 +100,12 @@ int khdays_zip_open(KhdaysZip *z, const unsigned char *data, size_t size, const 
         }
         memcpy(en->name, h + 46, name_n);
         en->name[name_n] = '\0';
-        en->flags = rd16(h + 8);
-        en->method = rd16(h + 10);
-        en->crc = rd32(h + 16);
-        en->packed = rd32(h + 20);
-        en->size = rd32(h + 24);
-        en->header = rd32(h + 42);
+        en->flags = le16(h + 8);
+        en->method = le16(h + 10);
+        en->crc = le32(h + 16);
+        en->packed = le32(h + 20);
+        en->size = le32(h + 24);
+        en->header = le32(h + 42);
         ++z->count;
         at += 46 + name_n + extra_n + comment_n;
     }
@@ -133,11 +124,11 @@ unsigned char *khdays_zip_extract(const KhdaysZip *z, int i, size_t *size, const
         *why = "packed in a way this does not read (only stored or deflated)";
         return NULL;
     }
-    if ((size_t)en->header + 30 > z->size || rd32(z->data + en->header) != LOCAL_SIGNATURE) {
+    if ((size_t)en->header + 30 > z->size || le32(z->data + en->header) != LOCAL_SIGNATURE) {
         *why = "its entry is broken";
         return NULL;
     }
-    const size_t from = (size_t)en->header + 30 + rd16(z->data + en->header + 26) + rd16(z->data + en->header + 28);
+    const size_t from = (size_t)en->header + 30 + le16(z->data + en->header + 26) + le16(z->data + en->header + 28);
     if (from > z->size || en->packed > z->size - from) {
         *why = "its entry is past the archive's end";
         return NULL;

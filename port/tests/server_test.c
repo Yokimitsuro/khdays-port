@@ -4,6 +4,7 @@
  * datagram that asked for it, that both sides are introduced, that datagrams
  * are relayed only within their pair, and that a closed room is gone. */
 #include "../host/net/net.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,16 +29,6 @@ static void put32(unsigned char *p, unsigned int v)
 {
     put16(p, v & 0xffff);
     put16(p + 2, v >> 16);
-}
-
-static unsigned int get16(const unsigned char *p)
-{
-    return (unsigned int)p[0] | (unsigned int)p[1] << 8;
-}
-
-static unsigned int get32(const unsigned char *p)
-{
-    return get16(p) | get16(p + 2) << 16;
 }
 
 /* A datagram of `kind` from `id`, its body padded with zeros to `padded`. */
@@ -68,11 +59,11 @@ static long wait_for(KhdaysUdp *udp, int kind, int ms, long *got)
         long size;
         khdays_host_udp_wait(&udp, 1, 20);
         while ((size = khdays_host_udp_receive(udp, &from, reply, sizeof(reply))) >= 0) {
-            if (size >= HEADER && get32(reply) == MAGIC && reply[4] == kind) {
+            if (size >= HEADER && le32(reply) == MAGIC && reply[4] == kind) {
                 if (got != NULL) {
                     *got = size;
                 }
-                return (long)get16(reply + 6);
+                return (long)le16(reply + 6);
             }
         }
     }
@@ -110,7 +101,7 @@ static int run(const KhdaysNetAddress *server)
         send_kind(host, server, host_id, K_REGISTER, announce, 20 + sizeof(info), 0);
         size = wait_for(host, K_REGISTERED, 100, NULL);
     }
-    if (size != 6 || get16(reply + HEADER + 4) != khdays_host_udp_port(host)) {
+    if (size != 6 || le16(reply + HEADER + 4) != khdays_host_udp_port(host)) {
         return fail("REGISTERED did not tell the host its address");
     }
     /* the list, asked with a full datagram */
@@ -119,15 +110,15 @@ static int run(const KhdaysNetAddress *server)
     put16(body + 8, 0);
     send_kind(guest, server, guest_id, K_LIST, body, 10, 1200 - HEADER);
     size = wait_for(guest, K_ROOMS, 1000, &got);
-    if (size < 6 || get16(reply + HEADER) != 1 || get16(reply + HEADER + 4) != 1 ||
-        memcmp(reply + HEADER + 6, host_id, 6) != 0 || get16(reply + HEADER + 18) != 20 + sizeof(info) ||
+    if (size < 6 || le16(reply + HEADER) != 1 || le16(reply + HEADER + 4) != 1 ||
+        memcmp(reply + HEADER + 6, host_id, 6) != 0 || le16(reply + HEADER + 18) != 20 + sizeof(info) ||
         memcmp(reply + HEADER + 20, announce, 20 + sizeof(info)) != 0) {
         return fail("the room was not listed as registered");
     }
     /* ... and with a short one: never a longer answer */
     send_kind(guest, server, guest_id, K_LIST, body, 10, 0);
     size = wait_for(guest, K_ROOMS, 1000, &got);
-    if (size < 6 || got > HEADER + 10 || get16(reply + HEADER) != 1 || get16(reply + HEADER + 4) != 0) {
+    if (size < 6 || got > HEADER + 10 || le16(reply + HEADER) != 1 || le16(reply + HEADER + 4) != 0) {
         return fail("a short LIST had an answer longer than itself");
     }
     /* the guest asks for the room: both sides told the other */
@@ -136,13 +127,13 @@ static int run(const KhdaysNetAddress *server)
     send_kind(guest, server, guest_id, K_CONNECT, body, 16, 0);
     size = wait_for(guest, K_PEER, 1000, NULL);
     if (size != 16 || memcmp(reply + HEADER + 4, host_id, 6) != 0 ||
-        get16(reply + HEADER + 14) != khdays_host_udp_port(host)) {
+        le16(reply + HEADER + 14) != khdays_host_udp_port(host)) {
         return fail("the guest was not told the host");
     }
-    token = get32(reply + HEADER);
+    token = le32(reply + HEADER);
     size = wait_for(host, K_PEER, 1000, NULL);
-    if (size != 16 || get32(reply + HEADER) != token || memcmp(reply + HEADER + 4, guest_id, 6) != 0 ||
-        get16(reply + HEADER + 14) != khdays_host_udp_port(guest)) {
+    if (size != 16 || le32(reply + HEADER) != token || memcmp(reply + HEADER + 4, guest_id, 6) != 0 ||
+        le16(reply + HEADER + 14) != khdays_host_udp_port(guest)) {
         return fail("the host was not told the guest");
     }
     /* relayed both ways, as it came */
@@ -180,11 +171,11 @@ static int run(const KhdaysNetAddress *server)
     for (int attempt = 0; attempt < 10; ++attempt) {
         send_kind(guest, server, guest_id, K_LIST, body, 10, 1200 - HEADER);
         size = wait_for(guest, K_ROOMS, 300, NULL);
-        if (size >= 6 && get16(reply + HEADER) == 0) {
+        if (size >= 6 && le16(reply + HEADER) == 0) {
             break;
         }
     }
-    if (size < 6 || get16(reply + HEADER) != 0) {
+    if (size < 6 || le16(reply + HEADER) != 0) {
         return fail("the room was still listed after it was withdrawn");
     }
     memset(body, 0, 16);
@@ -473,7 +464,7 @@ static int flood(const char *exe, const char *log)
         stop_server(&process);
         return fail("the flood's session was not introduced");
     }
-    token = get32(reply + HEADER);
+    token = le32(reply + HEADER);
     start = last_heard = khdays_host_net_clock_ms();
     while (khdays_host_net_clock_ms() - start < 6000) {
         const unsigned long long now = khdays_host_net_clock_ms();

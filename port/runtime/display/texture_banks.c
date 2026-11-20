@@ -11,6 +11,7 @@
 #include "../mods/names.h"
 #include "../mods/textures.h"
 #include "../../gpu/texdecode.h"
+#include "../core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,18 +95,6 @@ static int tracing(void)
     return trace;
 }
 
-static u32 rd32(const u8 *at)
-{
-    u32 v;
-    memcpy(&v, at, 4);
-    return v;
-}
-
-static u32 rd16(const u8 *at)
-{
-    return (u32)at[0] | (u32)at[1] << 8;
-}
-
 static void drop(Bank *b)
 {
     for (int i = 0; i < 4; ++i) {
@@ -122,7 +111,7 @@ static void drop(Bank *b)
 void khdays_texture_banks_file(void *file)
 {
     const KhdaysRef start = KHDAYS_REF(file);
-    const u32 size = rd32((const u8 *)file + 8); /* the Nitro header's file size */
+    const u32 size = le32((const u8 *)file + 8); /* the Nitro header's file size */
     const KhdaysRef end = start + (size > 16 ? size : 16);
     for (int i = 0; live > 0 && i < nbanks; ++i) {
         if (banks[i].live && banks[i].start < end && start < banks[i].end) {
@@ -198,10 +187,10 @@ void khdays_texture_banks_close(void *file, void *tex, int allocated)
 {
     u8 *t = (u8 *)tex;
     /* Tex_LoadVram's texels and 4x4 texels, Gfx_UploadBlock's palettes: place, size, data */
-    const u32 tex_at = (rd32(t + 0x08) & 0xffff) << 3, tex_size = rd16(t + 0x0c) << 3;
-    const u32 c4_at = (rd32(t + 0x18) & 0xffff) << 3, c4_size = rd16(t + 0x1c) << 3;
+    const u32 tex_at = (le32(t + 0x08) & 0xffff) << 3, tex_size = le16(t + 0x0c) << 3;
+    const u32 c4_at = (le32(t + 0x18) & 0xffff) << 3, c4_size = le16(t + 0x1c) << 3;
     const u32 index_at = ((c4_at & 0x1ffff) >> 1) + 0x20000 + ((c4_at & 0x40000) >> 2);
-    const u32 pltt_at = (rd32(t + 0x2c) & 0xffff) << 3, pltt_size = rd16(t + 0x30) << 3;
+    const u32 pltt_at = (le32(t + 0x2c) & 0xffff) << 3, pltt_size = le16(t + 0x30) << 3;
     u32 tex_end = 0, pltt_end = pltt_size ? pltt_at + pltt_size : 0;
     Bank *b = NULL;
     int number = 0;
@@ -226,21 +215,21 @@ void khdays_texture_banks_close(void *file, void *tex, int allocated)
             b->live = 1;
             ++live;
             b->start = KHDAYS_REF(file);
-            b->end = KHDAYS_REF(t) + rd32(t + 0x14); /* texInfo.ofsTex: where the images start */
+            b->end = KHDAYS_REF(t) + le32(t + 0x14); /* texInfo.ofsTex: where the images start */
             if (b->end <= b->start) {
                 b->end = KHDAYS_REF(t);
             }
             if (tex_size) {
-                upload(&b->uploads[0], b->tex, tex_at, t + rd32(t + 0x14), tex_size);
+                upload(&b->uploads[0], b->tex, tex_at, t + le32(t + 0x14), tex_size);
                 *(u16 *)(t + 0x10) |= 1;
             }
             if (c4_size) {
-                upload(&b->uploads[1], b->tex, c4_at, t + rd32(t + 0x24), c4_size);
-                upload(&b->uploads[2], b->tex, index_at, t + rd32(t + 0x28), c4_size / 2);
+                upload(&b->uploads[1], b->tex, c4_at, t + le32(t + 0x24), c4_size);
+                upload(&b->uploads[2], b->tex, index_at, t + le32(t + 0x28), c4_size / 2);
                 *(u16 *)(t + 0x20) |= 1;
             }
             if (pltt_size) {
-                upload(&b->uploads[3], b->pltt, pltt_at, t + rd32(t + 0x38), pltt_size);
+                upload(&b->uploads[3], b->pltt, pltt_at, t + le32(t + 0x38), pltt_size);
             }
             *(u16 *)(t + 0x32) |= 1;
             khdays_log("texture memory: %s's textures (%u bytes, %u in 4x4, palettes %u) past the DS's VRAM: "

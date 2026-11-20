@@ -3,18 +3,9 @@
  * each decoded once a frame as the DS defines it (GBATEK, "DS Video", "LCD
  * I/O"). */
 #include "describe.h"
+#include "../runtime/core/bytes.h"
 
 #include <string.h>
-
-static uint32_t rd16(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
-}
-
-static uint32_t rd32(const uint8_t *p)
-{
-    return rd16(p) | rd16(p + 2) << 16;
-}
 
 /* A coefficient: 0-31 as written, 16 and above the whole. */
 static uint32_t coefficient(uint32_t v)
@@ -27,7 +18,7 @@ static uint32_t coefficient(uint32_t v)
 static void window_y_step(KhdaysGfxLatch *latch, const uint8_t *io, int line)
 {
     for (int w = 0; w < 2; ++w) {
-        const uint32_t winv = rd16(io + 0x44 + 2 * w);
+        const uint32_t winv = le16(io + 0x44 + 2 * w);
         if (((uint32_t)line & 0xff) == (winv & 0xff)) {
             latch->win_y[w] = 0;
         } else if (((uint32_t)line & 0xff) == (winv >> 8)) {
@@ -86,7 +77,7 @@ static void describe_layer(const uint8_t *e, uint32_t dispcnt, int engine, int b
 {
     static const uint32_t bitmap_w[4] = {128, 256, 512, 512};
     static const uint32_t bitmap_h[4] = {128, 256, 256, 512};
-    const uint32_t cnt = rd16(e + 0x08 + 2 * bg);
+    const uint32_t cnt = le16(e + 0x08 + 2 * bg);
     const uint32_t size = cnt >> 14;
     const int family = layer_family(dispcnt, engine, bg);
     const uint32_t char_base = (engine == 0 ? ((dispcnt >> 24) & 7) * 0x10000u : 0) + ((cnt >> 2) & 15) * 0x4000u;
@@ -96,8 +87,8 @@ static void describe_layer(const uint8_t *e, uint32_t dispcnt, int engine, int b
     *shown = (dispcnt & (0x100u << bg)) && family >= 0;
     layer[KDL_CHARS] = char_base;
     layer[KDL_MAP] = map_base;
-    layer[KDL_HOFS] = rd16(e + 0x10 + 4 * bg) & 0x1ff;
-    layer[KDL_VOFS] = rd16(e + 0x12 + 4 * bg) & 0x1ff;
+    layer[KDL_HOFS] = le16(e + 0x10 + 4 * bg) & 0x1ff;
+    layer[KDL_VOFS] = le16(e + 0x12 + 4 * bg) & 0x1ff;
     if (family < 0) {
         layer[KDL_KIND] = KDK_NONE | (cnt & 3) << 8;
         return;
@@ -138,11 +129,11 @@ static void describe_layer(const uint8_t *e, uint32_t dispcnt, int engine, int b
         if (cnt & 0x2000) {
             kind |= KDL_WRAP;
         }
-        layer[KDL_PAPB] = rd16(regs + 0) | rd16(regs + 2) << 16;
-        layer[KDL_PCPD] = rd16(regs + 4) | rd16(regs + 6) << 16;
+        layer[KDL_PAPB] = le16(regs + 0) | le16(regs + 2) << 16;
+        layer[KDL_PCPD] = le16(regs + 4) | le16(regs + 6) << 16;
         /* 28-bit signed, 8 fractional bits */
-        layer[KDL_REFX] = (uint32_t)((int32_t)(rd32(regs + 8) << 4) >> 4);
-        layer[KDL_REFY] = (uint32_t)((int32_t)(rd32(regs + 12) << 4) >> 4);
+        layer[KDL_REFX] = (uint32_t)((int32_t)(le32(regs + 8) << 4) >> 4);
+        layer[KDL_REFY] = (uint32_t)((int32_t)(le32(regs + 12) << 4) >> 4);
     }
     if (cnt & 0x40) {
         kind |= KDL_MOSAIC;
@@ -157,7 +148,7 @@ static void describe_sprites(const uint8_t *oam, uint32_t *desc)
     for (int i = 0; i < 128; ++i) {
         const uint8_t *entry = oam + 8 * i;
         uint32_t *s = desc + KD_SPRITES + i * KD_SPRITE_WORDS;
-        const uint32_t a0 = rd16(entry), a1 = rd16(entry + 2), a2 = rd16(entry + 4);
+        const uint32_t a0 = le16(entry), a1 = le16(entry + 2), a2 = le16(entry + 4);
         const uint32_t affine = (a0 & 0x100) != 0;
         const uint32_t shape = a0 >> 14, size = a1 >> 14;
         uint32_t w, h, bw, bh, flags;
@@ -185,8 +176,8 @@ static void describe_sprites(const uint8_t *oam, uint32_t *desc)
         if (affine) {
             const uint8_t *group = oam + 32 * ((a1 >> 9) & 31);
             flags |= KDS_AFFINE;
-            s[KDS_PAPB] = rd16(group + 6) | rd16(group + 14) << 16;
-            s[KDS_PCPD] = rd16(group + 22) | rd16(group + 30) << 16;
+            s[KDS_PAPB] = le16(group + 6) | le16(group + 14) << 16;
+            s[KDS_PCPD] = le16(group + 22) | le16(group + 30) << 16;
         } else {
             flags |= (a1 & 0x1000 ? KDS_HFLIP : 0) | (a1 & 0x2000 ? KDS_VFLIP : 0);
         }
@@ -201,10 +192,10 @@ void khdays_gfx_describe(const uint8_t *io, const uint8_t *palette, const uint8_
                          KhdaysGfxLatch *latch, uint32_t desc[KHDAYS_DESC_WORDS])
 {
     const uint8_t *e = io + (engine ? 0x1000 : 0);
-    const uint32_t dispcnt = rd32(e);
+    const uint32_t dispcnt = le32(e);
     uint32_t display = (dispcnt >> 16) & 3, flags;
-    const uint32_t bldcnt = rd16(e + 0x50), bldalpha = rd16(e + 0x52), master = rd16(e + 0x6c);
-    const uint32_t mosaic = rd16(e + 0x4c);
+    const uint32_t bldcnt = le16(e + 0x50), bldalpha = le16(e + 0x52), master = le16(e + 0x6c);
+    const uint32_t mosaic = le16(e + 0x4c);
     memset(desc, 0, KHDAYS_DESC_WORDS * sizeof(uint32_t));
     if (engine == 1) {
         display &= 1;
@@ -235,16 +226,16 @@ void khdays_gfx_describe(const uint8_t *io, const uint8_t *palette, const uint8_
                    ((engine == 0 && (dispcnt & (1u << 22))) ? KDO_BITMAP_STEP256 : 0) |
                    ((dispcnt & 0x20) ? KDO_BITMAP_WIDE : 0) | ((dispcnt & (1u << 31)) ? KDO_OBJ_EXT_PAL : 0) |
                    ((dispcnt & (1u << 30)) ? KDO_BG_EXT_PAL : 0);
-    desc[KD_BACKDROP] = rd16(palette + (engine ? 0x400 : 0)) & 0x7fff;
+    desc[KD_BACKDROP] = le16(palette + (engine ? 0x400 : 0)) & 0x7fff;
     desc[KD_MASTER] = coefficient(master) | (master & 0xc000);
     desc[KD_BLEND] = (bldcnt & 0x3f) | (bldcnt & 0x3f00) | ((bldcnt >> 6) & 3) << 16;
-    desc[KD_COEF] = coefficient(bldalpha) | coefficient(bldalpha >> 8) << 8 | coefficient(rd16(e + 0x54)) << 16;
-    desc[KD_WIN0X] = window_columns(rd16(e + 0x40));
-    desc[KD_WIN1X] = window_columns(rd16(e + 0x42));
-    desc[KD_WININ] = rd16(e + 0x48) & 0x3f3f;
-    desc[KD_WINOUT] = rd16(e + 0x4a) & 0x3f3f;
+    desc[KD_COEF] = coefficient(bldalpha) | coefficient(bldalpha >> 8) << 8 | coefficient(le16(e + 0x54)) << 16;
+    desc[KD_WIN0X] = window_columns(le16(e + 0x40));
+    desc[KD_WIN1X] = window_columns(le16(e + 0x42));
+    desc[KD_WININ] = le16(e + 0x48) & 0x3f3f;
+    desc[KD_WINOUT] = le16(e + 0x4a) & 0x3f3f;
     desc[KD_MOSAIC] = ((mosaic & 15) + 1) | (((mosaic >> 4) & 15) + 1) << 8;
-    desc[KD_HOFS3D] = rd16(e + 0x10) & 0x1ff;
+    desc[KD_HOFS3D] = le16(e + 0x10) & 0x1ff;
     desc[KD_VRAM] = (dispcnt >> 18) & 3;
     describe_sprites(oam + (engine ? 0x400 : 0), desc);
     for (int line = 0; line < 263; ++line) {

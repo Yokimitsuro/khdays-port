@@ -2,20 +2,11 @@
 #include "tables.h"
 
 #include "../core/utf8.h"
+#include "../core/bytes.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
-static unsigned rd16(const unsigned char *p)
-{
-    return (unsigned)p[0] | (unsigned)p[1] << 8;
-}
-
-static unsigned rd32(const unsigned char *p)
-{
-    return rd16(p) | rd16(p + 2) << 16;
-}
 
 static void wr16(unsigned char *p, unsigned v)
 {
@@ -64,7 +55,7 @@ static unsigned char *grow(Bytes *b, size_t n)
 static size_t text_units(const unsigned char *p, const unsigned char *end)
 {
     for (size_t n = 0; p + 2 * n + 1 < end; ++n) {
-        if (rd16(p + 2 * n) == 0) {
+        if (le16(p + 2 * n) == 0) {
             return n + 1;
         }
     }
@@ -94,14 +85,14 @@ static int list_records(const unsigned char *file, size_t size, const unsigned c
     if (size < 2) {
         return -1;
     }
-    const int count = (int)rd16(file);
+    const int count = (int)le16(file);
     const unsigned char **places = malloc(((size_t)count + 1) * sizeof(*places));
     if (places == NULL) {
         return -1;
     }
     size_t offset = 2;
     for (int i = 0; i < count; ++i) {
-        const size_t record = offset + 2 <= size ? rd16(file + offset) : 0;
+        const size_t record = offset + 2 <= size ? le16(file + offset) : 0;
         if (record < KHDAYS_LIST_TEXTS || record > size - offset) {
             free(places);
             return -1;
@@ -158,7 +149,7 @@ static void put_record(Bytes *b, const unsigned char *pattern, const KhdaysMissi
     }
     /* the rest of the pattern's texts as they are (its format) */
     const unsigned char *p = pattern != NULL ? pattern + KHDAYS_LIST_TEXTS : NULL;
-    const unsigned char *end = pattern != NULL ? pattern + rd16(pattern) : NULL;
+    const unsigned char *end = pattern != NULL ? pattern + le16(pattern) : NULL;
     for (int t = 0; t < 4; ++t) {
         const size_t units = p != NULL ? text_units(p, end) : 0;
         if (t >= (entry ? 3 : 0)) {
@@ -202,7 +193,7 @@ unsigned char *khdays_tables_list(const unsigned char *file, size_t size, const 
         }
         for (int k = 0; k < count && m->template_file != 0; ++k) {
             const unsigned kind = records[k][KHDAYS_LIST_KIND];
-            if ((int)rd16(records[k] + KHDAYS_LIST_FILE) == m->template_file) {
+            if ((int)le16(records[k] + KHDAYS_LIST_FILE) == m->template_file) {
                 entry = entry == NULL && kind == KHDAYS_ENTRY_MISSION ? records[k] : entry;
                 story = story == NULL && kind == KHDAYS_ENTRY_STORY ? records[k] : story;
             }
@@ -229,7 +220,7 @@ unsigned char *khdays_tables_mdb(const unsigned char *file, size_t size, const K
     if (size < 4) {
         return NULL;
     }
-    const unsigned count = rd32(file);
+    const unsigned count = le32(file);
     if (count > (size - 4) / KHDAYS_MDB_ROW) {
         return NULL;
     }
@@ -256,7 +247,7 @@ unsigned char *khdays_tables_mdb(const unsigned char *file, size_t size, const K
         /* the last of the template's rows, as the game's lookup takes the last (Ov002_SelectTableEntry) */
         for (unsigned k = 0; k < count && m->template_file != 0; ++k) {
             const unsigned char *game = file + 4 + (size_t)k * KHDAYS_MDB_ROW;
-            if ((int)(short)rd16(game) == m->template_file) {
+            if ((int)(short)le16(game) == m->template_file) {
                 memcpy(row, game, KHDAYS_MDB_ROW);
             }
         }
@@ -289,7 +280,7 @@ unsigned char *khdays_tables_placed(const unsigned char *file, size_t size, cons
     if (size < 4) {
         return NULL;
     }
-    const unsigned count = rd32(file);
+    const unsigned count = le32(file);
     if (count > (size - 4) / 4) {
         return NULL;
     }
@@ -311,7 +302,7 @@ unsigned char *khdays_tables_placed(const unsigned char *file, size_t size, cons
     }
     wr32(head, count + added);
     for (unsigned k = 0; k < count; ++k) {
-        wr32(head + 4 + 4 * k, rd32(file + 4 + 4 * k) + (unsigned)moved);
+        wr32(head + 4 + 4 * k, le32(file + 4 + 4 * k) + (unsigned)moved);
     }
     memcpy(head + 4 + 4u * ((size_t)count + added), file + 4 + 4u * count, body);
     unsigned next = count;

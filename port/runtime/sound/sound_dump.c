@@ -11,6 +11,7 @@
 #include "../../sound/replace.h"
 #include "../../sound/snd7_native.h"
 #include "../../sound/stream_reader.h"
+#include "../core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,16 +48,6 @@ static int wanted(const char *identifier)
         }
     }
     return only_count == 0;
-}
-
-static uint32_t rd16(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
-}
-
-static uint32_t rd32(const uint8_t *p)
-{
-    return rd16(p) | rd16(p + 2) << 16;
 }
 
 /* --- Where it goes ------------------------------------------------------------------ */
@@ -166,13 +157,13 @@ static uint8_t *file_copy(const KhdaysSoundArchive *a, uint32_t file_id, uint32_
 static uint32_t record_word(const KhdaysSoundArchive *a, uint32_t record, uint32_t at)
 {
     uint8_t b[4];
-    return khdays_sound_archive_read(a, record + at, b, 4) == 4 ? rd32(b) : 0;
+    return khdays_sound_archive_read(a, record + at, b, 4) == 4 ? le32(b) : 0;
 }
 
 static uint32_t record_half(const KhdaysSoundArchive *a, uint32_t record, uint32_t at)
 {
     uint8_t b[2];
-    return khdays_sound_archive_read(a, record + at, b, 2) == 2 ? rd16(b) : 0;
+    return khdays_sound_archive_read(a, record + at, b, 2) == 2 ? le16(b) : 0;
 }
 
 /* --- Waves -------------------------------------------------------------------------- */
@@ -195,9 +186,9 @@ static void dump_waves(const KhdaysSoundArchive *a)
             free(swar);
             continue;
         }
-        waves = rd32(swar + 0x38);
+        waves = le32(swar + 0x38);
         for (uint32_t i = 0; i < waves && 0x3c + 4 * i + 4 <= size; ++i) {
-            const uint32_t at = rd32(swar + 0x3c + 4 * i);
+            const uint32_t at = le32(swar + 0x3c + 4 * i);
             const uint8_t *param = swar + at;
             uint32_t loop_words, words, frames, per_word, header;
             char identifier[256];
@@ -209,8 +200,8 @@ static void dump_waves(const KhdaysSoundArchive *a)
             if (!wanted(identifier)) {
                 continue;
             }
-            loop_words = rd16(param + 6);
-            words = loop_words + rd32(param + 8);
+            loop_words = le16(param + 6);
+            words = loop_words + le32(param + 8);
             if (param[0] > 2 || at + 12 + 4 * (uint64_t)words > size) {
                 fprintf(stderr, "dump: wave %u of wave archive %d is not a wave this reads\n", i, n);
                 ++failed;
@@ -225,7 +216,7 @@ static void dump_waves(const KhdaysSoundArchive *a)
             }
             frames = khdays_sound_decode(param + 12, words, param[0], samples);
             /* a loop from its start (after ADPCM's header) to its end */
-            write_wav(identifier, rd16(param + 2), 1, samples, frames,
+            write_wav(identifier, le16(param + 2), 1, samples, frames,
                       param[1] != 0 && loop_words * per_word >= header && loop_words * per_word - header < frames,
                       loop_words * per_word - header, frames);
             free(samples);
@@ -290,8 +281,8 @@ static void dump_streams(const KhdaysSoundArchive *a)
             continue;
         }
         channels = h[0x1a] < 2 ? h[0x1a] : 2;
-        blocks = rd32(h + 0x2c);
-        frames = blocks != 0 ? (blocks - 1) * rd32(h + 0x34) + rd32(h + 0x3c) : 0;
+        blocks = le32(h + 0x2c);
+        frames = blocks != 0 ? (blocks - 1) * le32(h + 0x34) + le32(h + 0x3c) : 0;
         prepared.player = 0;
         prepared.channels = channels;
         for (int c = 0; c < channels; ++c) {
@@ -317,8 +308,8 @@ static void dump_streams(const KhdaysSoundArchive *a)
                 samples[(size_t)i * (size_t)channels + (size_t)c] = (int16_t)s;
             }
         }
-        write_wav(identifier, rd16(h + 0x1c), channels, samples, frames, h[0x19] != 0 && rd32(h + 0x20) < frames,
-                  rd32(h + 0x20), frames);
+        write_wav(identifier, le16(h + 0x1c), channels, samples, frames, h[0x19] != 0 && le32(h + 0x20) < frames,
+                  le32(h + 0x20), frames);
         free(samples);
     }
     /* khdays_streams has no free: its few buffers go with the process */
@@ -436,12 +427,12 @@ static void dump_sequences(const KhdaysSoundArchive *a)
         if (!wanted(identifier)) {
             continue;
         }
-        if (!load_bank(a, (int)rd16(param)) || (file = load_sequence_file(a, record_word(a, record, 0), &size)) == 0) {
+        if (!load_bank(a, (int)le16(param)) || (file = load_sequence_file(a, record_word(a, record, 0), &size)) == 0) {
             fprintf(stderr, "dump: %s: its bank or its file cannot be loaded\n", identifier);
             ++failed;
             continue;
         }
-        render(a, identifier, file + rd32((const uint8_t *)KHDAYS_W(file) + 0x18), 0, param);
+        render(a, identifier, file + le32((const uint8_t *)KHDAYS_W(file) + 0x18), 0, param);
     }
 }
 
@@ -463,12 +454,12 @@ static void dump_sequence_archives(const KhdaysSoundArchive *a)
             free(ssar);
             continue;
         }
-        entries = rd32(ssar + 0x1c);
+        entries = le32(ssar + 0x1c);
         for (uint32_t e = 0; e < entries && 0x20 + 12 * e + 12 <= size; ++e) {
             const uint8_t *info = ssar + 0x20 + 12 * e;
             char identifier[256];
             uint32_t file, file_size;
-            if (rd32(info) == 0xffffffffu) {
+            if (le32(info) == 0xffffffffu) {
                 continue; /* NNS_SND_SEQ_ARC_INVALID_OFFSET */
             }
             khdays_sound_archive_identifier(a, KHDAYS_SOUND_SEQUENCE_ARCHIVE_ENTRY, n, (int)e, identifier,
@@ -476,13 +467,13 @@ static void dump_sequence_archives(const KhdaysSoundArchive *a)
             if (!wanted(identifier)) {
                 continue;
             }
-            if (!load_bank(a, (int)rd16(info + 4)) ||
+            if (!load_bank(a, (int)le16(info + 4)) ||
                 (file = load_sequence_file(a, record_word(a, record, 0), &file_size)) == 0) {
                 fprintf(stderr, "dump: %s: its bank or its file cannot be loaded\n", identifier);
                 ++failed;
                 continue;
             }
-            render(a, identifier, file + rd32(ssar + 0x18), rd32(info), info + 4);
+            render(a, identifier, file + le32(ssar + 0x18), le32(info), info + 4);
         }
         free(ssar);
     }

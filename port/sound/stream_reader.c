@@ -2,6 +2,7 @@
  * are NNSi_SndArcStrm_MakeWaveData's (0x0201d6dc, libs/nns/snd/calls in
  * khdays-decomp), each on this stream's own copy of the player's state. */
 #include "stream_reader.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,11 +63,6 @@ struct KhdaysStreams {
     int8_t index_table[16];
     int16_t step_table[89];
 };
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
 
 static void *grow(uint8_t **buffer, uint32_t *size, uint32_t need)
 {

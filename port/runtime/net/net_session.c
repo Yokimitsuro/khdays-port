@@ -6,6 +6,7 @@
 #include "../core/session_log.h"
 #include "../core/sha1.h"
 #include "../../host/net/net.h"
+#include "../core/bytes.h"
 
 #include <SDL3/SDL.h>
 
@@ -459,16 +460,6 @@ static void put32(unsigned char *p, unsigned int v)
     put16(p + 2, v >> 16);
 }
 
-static unsigned int get16(const unsigned char *p)
-{
-    return (unsigned int)p[0] | (unsigned int)p[1] << 8;
-}
-
-static unsigned int get32(const unsigned char *p)
-{
-    return get16(p) | get16(p + 2) << 16;
-}
-
 static void put64(unsigned char *p, u64 v)
 {
     put32(p, (unsigned int)v);
@@ -477,7 +468,7 @@ static void put64(unsigned char *p, u64 v)
 
 static u64 get64(const unsigned char *p)
 {
-    return (u64)get32(p) | (u64)get32(p + 4) << 32;
+    return (u64)le32(p) | (u64)le32(p + 4) << 32;
 }
 
 /* Sends a datagram, applying the testing knobs: it may be dropped (loss) or
@@ -1107,7 +1098,7 @@ static void room_seen(const unsigned char *id, const KhdaysNetAddress *address, 
     if (size < 20 || net.role == HOST || memcmp(id, net.id, ID_SIZE) == 0) {
         return;
     }
-    info_size = get32(body + 16);
+    info_size = le32(body + 16);
     if (info_size > size - 20) {
         return;
     }
@@ -1123,9 +1114,9 @@ static void room_seen(const unsigned char *id, const KhdaysNetAddress *address, 
         r->address = *address;
         r->local = local;
     }
-    r->build = get32(body);
+    r->build = le32(body);
     r->open = body[10] != 0;
-    r->ggid = get32(body + 12);
+    r->ggid = le32(body + 12);
     r->seen = now;
     free(r->info);
     r->info = copy_of(body + 20, info_size);
@@ -1134,10 +1125,10 @@ static void room_seen(const unsigned char *id, const KhdaysNetAddress *address, 
     {
         /* its details, when its build sends them */
         const unsigned int at = 20 + info_size;
-        r->details = size - at >= DETAILS_FIXED && get32(body + at) == DETAILS_MAGIC;
+        r->details = size - at >= DETAILS_FIXED && le32(body + at) == DETAILS_MAGIC;
         if (r->details) {
-            const unsigned int ms = get16(body + at + 4);
-            const unsigned int name = get16(body + at + 24);
+            const unsigned int ms = le16(body + at + 4);
+            const unsigned int name = le16(body + at + 24);
             r->host_server_ms = ms == 0xffffu ? -1 : (int)ms;
             r->most = body[at + 6];
             r->locked = (body[at + 7] & 1) != 0;
@@ -1185,9 +1176,9 @@ static void on_server(unsigned int kind, const unsigned char *body, unsigned int
         if (size < 6 || !net.scanning) {
             return;
         }
-        total = get16(body);
-        first = get16(body + 2);
-        count = get16(body + 4);
+        total = le16(body);
+        first = le16(body + 2);
+        count = le16(body + 4);
         if (first == 0 && net.list_waiting) {
             server_round_trip(net.list_sent, now);
             net.list_waiting = 0;
@@ -1198,12 +1189,12 @@ static void on_server(unsigned int kind, const unsigned char *body, unsigned int
             if (size - at < 14) {
                 return;
             }
-            length = get16(body + at + 12);
+            length = le16(body + at + 12);
             if (length > size - at - 14) {
                 return;
             }
-            address.ip = get32(body + at + 6);
-            address.port = (unsigned short)get16(body + at + 10);
+            address.ip = le32(body + at + 6);
+            address.port = (unsigned short)le16(body + at + 10);
             room_seen(body + at, &address, 0, body + at + 14, length, now);
             at += 14 + length;
         }
@@ -1220,9 +1211,9 @@ static void on_server(unsigned int kind, const unsigned char *body, unsigned int
         if (size < CONNECT_BODY) {
             return;
         }
-        token = get32(body);
-        address.ip = get32(body + 10);
-        address.port = (unsigned short)get16(body + 14);
+        token = le32(body);
+        address.ip = le32(body + 10);
+        address.port = (unsigned short)le16(body + 14);
         put32(punch, token);
         if (net.role == HOST) {
             /* A guest is on its way: punch toward it until it arrives. Only
@@ -1349,7 +1340,7 @@ static void refuse_for_mods(const Route *to)
  * without Stop apart (khdays_net_last_refusal_stop_off). */
 static void take_refusal_mods(const unsigned char *body, unsigned int size)
 {
-    const unsigned int count = size >= 3 ? get16(body + 1) : 0;
+    const unsigned int count = size >= 3 ? le16(body + 1) : 0;
     unsigned int at = 3, shown = 0, written = 0, length = 0;
     char *text = (char *)malloc(size * 2 + 1);
     free(net.refusal_mods);
@@ -1396,11 +1387,11 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
     const unsigned char *sender, *body;
     unsigned int kind, size;
     Peer *p;
-    if (got < HEADER || get32(d) != MAGIC || d[5] != 1) {
+    if (got < HEADER || le32(d) != MAGIC || d[5] != 1) {
         return;
     }
     kind = d[4];
-    size = get16(d + 6);
+    size = le16(d + 6);
     if ((long)HEADER + (long)size > got) {
         return;
     }
@@ -1411,7 +1402,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
             /* a relayed datagram: handle it as if it came from the other player */
             Route relayed;
             relayed.address = net.server;
-            relayed.relay = get32(body);
+            relayed.relay = le32(body);
             if (relayed.relay != 0) {
                 on_datagram(&relayed, body + 4, (long)size - 4, now);
             }
@@ -1440,7 +1431,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
          * which no firewall blocks (its announcement may have come in on any
          * of the machine's interfaces). */
         address.ip = own_address(from->address.ip) ? 0x7f000001u : from->address.ip;
-        address.port = (unsigned short)get16(body + 8);
+        address.port = (unsigned short)le16(body + 8);
         room_seen(sender, &address, 1, body, size, now);
         return;
     }
@@ -1465,8 +1456,8 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
             }
             return;
         }
-        refuse = get32(body) != net.build                     ? KHDAYS_NET_REFUSE_BUILD
-                 : get32(body + 4) != own_mods_fingerprint()  ? KHDAYS_NET_REFUSE_MODS
+        refuse = le32(body) != net.build                     ? KHDAYS_NET_REFUSE_BUILD
+                 : le32(body + 4) != own_mods_fingerprint()  ? KHDAYS_NET_REFUSE_MODS
                  : !net.open                                  ? KHDAYS_NET_REFUSE_CLOSED
                  : (unsigned int)members() >= net.max_members ? KHDAYS_NET_REFUSE_FULL
                  : !password_proven(sender, body, size)       ? KHDAYS_NET_REFUSE_PASSWORD
@@ -1553,11 +1544,11 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
             if (size - at < RECORD_HEADER) {
                 return;
             }
-            length = get16(body + at);
+            length = le16(body + at);
             if (length > size - at - RECORD_HEADER) {
                 return;
             }
-            received_record(p, port, get32(body + at + 2), body + at + RECORD_HEADER, length);
+            received_record(p, port, le32(body + at + 2), body + at + RECORD_HEADER, length);
             at += RECORD_HEADER + length;
         }
         return;
@@ -1566,7 +1557,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         if (p == NULL || size < 12 || body[0] >= PORTS) {
             return;
         }
-        acknowledged(p, body[0], get32(body + 4), get32(body + 8), now);
+        acknowledged(p, body[0], le32(body + 4), le32(body + 8), now);
         return;
     case PING:
         if (p != NULL && size >= 8) {
@@ -1606,8 +1597,8 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         return;
     case STICK:
         if (net.role == HOST && p != NULL && p->state == MEMBER && size >= STICK_BODY) {
-            p->stick.x = (short)get16(body);
-            p->stick.y = (short)get16(body + 2);
+            p->stick.x = (short)le16(body);
+            p->stick.y = (short)le16(body + 2);
             p->stick.run_threshold = body[4];
             p->stick.walk_speed = body[5];
             p->stick.on = body[6];
@@ -1915,7 +1906,7 @@ static unsigned int ping_body(u64 now, unsigned char **body, int *room)
 static void ping_levels(Peer *p, const unsigned char *body, unsigned int size)
 {
     if (net.role == HOST && size >= 10) {
-        p->level = (int)get16(body + 8);
+        p->level = (int)le16(body + 8);
         p->stop = size >= 10 + STOP_BYTES ? get_stop(body + 10) : 0;
     } else if (net.role == GUEST && size >= 9) {
         const unsigned int count = body[8];
@@ -1926,7 +1917,7 @@ static void ping_levels(Peer *p, const unsigned char *body, unsigned int size)
         for (unsigned int k = 0; k < count && 9 + 3 * k + 3 <= size; ++k) {
             const unsigned int aid = body[9 + 3 * k];
             net.levels = (int *)grow(net.levels, &net.level_room, (int)aid + 1, sizeof(*net.levels));
-            net.levels[aid] = (int)get16(body + 9 + 3 * k + 1);
+            net.levels[aid] = (int)le16(body + 9 + 3 * k + 1);
         }
         forget_stops();
         if (at < size) {

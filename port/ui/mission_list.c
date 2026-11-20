@@ -2,6 +2,7 @@
  * section 14, "The badges on the mission's panel" and "The crowns on the story's day list". */
 #include "mission_list.h"
 #include "../runtime/core/rom.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,16 +15,6 @@
 #define CHEST_FLAG_BASE 9         /* Ov025_CountGroupFlagsSet: the entry's number + 9 */
 
 static KhdaysRomReader *reader; /* its own: this runs at VBlank, maybe inside the game's own reading */
-
-static uint32_t le16(const uint8_t *p)
-{
-    return (uint32_t)(p[0] | p[1] << 8);
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return le16(p) | le16(p + 2) << 16;
-}
 
 static int read_file(const char *path, int entry, uint8_t **data, uint32_t *size)
 {

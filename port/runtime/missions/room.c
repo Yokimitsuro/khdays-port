@@ -1,5 +1,6 @@
 /* The new missions a copy brings to a multiplayer room (room.h). */
 #include "room.h"
+#include "../core/bytes.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -15,11 +16,6 @@ static void put16(unsigned char *p, unsigned v)
 {
     p[0] = (unsigned char)v;
     p[1] = (unsigned char)(v >> 8);
-}
-
-static unsigned get16(const unsigned char *p)
-{
-    return (unsigned)p[0] | (unsigned)p[1] << 8;
 }
 
 unsigned char *khdays_missions_room_list(const KhdaysMissions *r, size_t *size)
@@ -62,7 +58,7 @@ int khdays_missions_room_next(const unsigned char *list, size_t size, size_t *at
     if (list == NULL || *at + 2 > size) {
         return 0;
     }
-    const size_t n = get16(list + *at);
+    const size_t n = le16(list + *at);
     if (n == 0 || *at + 2 + n + DIGEST + 4 > size) {
         return 0;
     }
@@ -70,8 +66,8 @@ int khdays_missions_room_next(const unsigned char *list, size_t size, size_t *at
     out->identity = (const char *)p;
     out->identity_size = n;
     out->digest = p + n;
-    out->number = (int)get16(p + n + DIGEST);
-    out->file = (int)get16(p + n + DIGEST + 2);
+    out->number = (int)le16(p + n + DIGEST);
+    out->file = (int)le16(p + n + DIGEST + 2);
     *at += 2 + n + DIGEST + 4;
     return 1;
 }

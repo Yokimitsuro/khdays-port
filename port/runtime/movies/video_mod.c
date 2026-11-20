@@ -20,6 +20,7 @@
 #endif
 #define PL_MPEG_IMPLEMENTATION
 #include "pl_mpeg.h"
+#include "../core/bytes.h"
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
@@ -45,11 +46,6 @@ static struct {
 
 /* the ring, between the sound thread and a stop */
 static SRWLOCK ring_lock = SRWLOCK_INIT;
-
-static u32 le32(const u8 *p)
-{
-    return p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24;
-}
 
 static void show(const plm_frame_t *frame)
 {

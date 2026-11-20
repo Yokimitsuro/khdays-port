@@ -7,6 +7,7 @@
 #include "../runtime/display/texture_banks.h"
 #include "../runtime/mods/textures.h"
 #include "../gpu/texdecode.h"
+#include "../runtime/core/bytes.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -172,11 +173,6 @@ static void put16(unsigned char *at, uint32_t v)
     at[1] = (unsigned char)(v >> 8);
 }
 
-static uint32_t get16(const unsigned char *at)
-{
-    return (uint32_t)at[0] | (uint32_t)at[1] << 8;
-}
-
 /* A model file at `ref`: a Nitro header of `size` bytes, its texture block at +0x40 with an 8x8 256-colour
  * texture (texel i colour i % 16) for texture place 0x100, an 8x8 4x4-compressed one for 0x40008 and its
  * indices, and 16 colours (colour i red i + `shade`) for palette place 0x20 -- the keys as
@@ -234,7 +230,7 @@ int main(void)
     tex = model_file(0x02100000u, 0x400, 0);
     set_up_in_a_bank(0x02100000u, tex, 1);
     CHECK(strstr(logged, "bank 1") != NULL);
-    CHECK((get16(tex + 0x10) & 1) && (get16(tex + 0x20) & 1) && (get16(tex + 0x32) & 1));
+    CHECK((le16(tex + 0x10) & 1) && (le16(tex + 0x20) & 1) && (le16(tex + 0x32) & 1));
 
     /* a draw of a model in the file: its textures from bank 1; one outside it inside that draw, from the
      * DS's; and back */
