@@ -79,10 +79,15 @@ Actor *running(ai::Machine &m)
     return static_cast<Actor *>(m.user());
 }
 
-// The segments BGHITs were cast along (6:51), by their records: 6:52 casts beside them for the surface's normal
-std::map<std::uint32_t, std::pair<Vec3, Vec3>> &bghit_segments()
+// The segments BGHITs were cast along (6:51) and the faces they read, by their records: 6:52 casts beside them for the
+// surface's normal
+struct BgHitSegment {
+    Vec3 from{}, to{};
+    int kind = kBgAll;
+};
+std::map<std::uint32_t, BgHitSegment> &bghit_segments()
 {
-    static std::map<std::uint32_t, std::pair<Vec3, Vec3>> segments;
+    static std::map<std::uint32_t, BgHitSegment> segments;
     return segments;
 }
 
@@ -908,13 +913,14 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 40, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:347 whether a line between two objects is clear (trap_obj_can_see, FUN_14042c330: each one's aim point, 1:88's
     // FUN_1403b5cb0, then FUN_1403f3c20 -- the room's collision cast from the first's to the second's, FUN_14040c2b0 --
-    // seen when it meets none): the room's, Days's (World::ray). Barbossa's aim
+    // seen when it meets none; the PS3's YS::BG::CanSee(from, to, 4): attacks' faces): the room's, Days's
+    // (World::ray). Barbossa's aim
     calls.set(1, 347, [](ai::Machine &m, std::span<ai::Value> a) {
         World *w = running(m)->world;
         Object *from = object_of(m, a[0]), *to = object_of(m, a[1]);
         Vec3 p, q, hit;
         const bool seen = w != nullptr && from != nullptr && to != nullptr && w->aim_point(*from, p) &&
-                          w->aim_point(*to, q) && !w->ray(*running(m), p, q, hit);
+                          w->aim_point(*to, q) && !w->ray(*running(m), p, q, kBgAttacks, hit);
         a[0] = ai::Value::of_int(seen ? 1 : 0);
     });
     // 1:250 the player's lock-on reach times a rate (trap_status_set_lockon_ratio, FUN_1404308d0: DAT_142a1141c and
@@ -2468,29 +2474,33 @@ void add_shots(ai::Calls &calls)
         if (World *w = world(m))
             w->attack_line(a[0].bits, xyz(read_vec(m, a[1].bits)), xyz(read_vec(m, a[2].bits)));
     });
-    // 1:141 the ground under a point: a cast from it down a depth (FUN_14042e8b0 -> FUN_1403f3dd0, flags 4), the
-    // point it meets written (else the point itself), whether it meets one
+    // 1:141 the ground under a point: a cast from it down a depth (FUN_14042e8b0 -> FUN_1403f3dd0, flags 4: attacks'
+    // faces), the point it meets written (else the point itself), whether it meets one
     calls.set(1, 141, [world](ai::Machine &m, std::span<ai::Value> a) {
         const Vec3 from = xyz(read_vec(m, a[0].bits));
         Vec3 hit = from;
         World *w = world(m);
-        const bool met = w != nullptr && w->ray(*running(m), from, {from[0], from[1] + a[2].f(), from[2]}, hit);
+        const bool met =
+            w != nullptr && w->ray(*running(m), from, {from[0], from[1] + a[2].f(), from[2]}, kBgAttacks, hit);
         Vec out;
         out.v[0] = met ? hit[0] : from[0], out.v[1] = met ? hit[1] : from[1], out.v[2] = met ? hit[2] : from[2];
         out.v[3] = 1.0F;
         m.memory().write(a[1].bits, out.v, sizeof out.v);
         a[0] = ai::Value::of_int(met ? 1 : 0);
     });
-    // 6:51 whether a segment meets the room (FUN_14053eb70 -> FUN_14040c2b0: a YS::BGHIT, from, to, flags): the point
-    // it meets at the record's + 0 (CrossPos), its polygon at + 0x14 (-1 none; Days's rooms number none KH2 knows: 0),
-    // the object whose collision it is at + 0x18 (0: the room)
+    // 6:51 whether a segment meets the room (FUN_14053eb70 -> FUN_14040c2b0: a YS::BGHIT, from, to, flags -- the faces
+    // read in the low 16 bits, 0x10000 objects' too; of the scripts' 65 calls 15 give an enemy's body, 1 or 0x10001,
+    // 2 the player's, 0 or 0x10000, and 47 attacks', 0x10004): the point it meets at the record's + 0
+    // (CrossPos), its polygon at + 0x14 (-1 none; Days's rooms number none KH2 knows: 0), the object whose collision it
+    // is at + 0x18 (0: the room)
     calls.set(6, 51, [world](ai::Machine &m, std::span<ai::Value> a) {
         const Vec3 from = xyz(read_vec(m, a[1].bits)), to = xyz(read_vec(m, a[2].bits));
+        const int kind = int(a[3].bits & 0xffffu);
         Vec3 hit{};
         World *w = world(m);
-        const bool met = w != nullptr && w->ray(*running(m), from, to, hit);
+        const bool met = w != nullptr && w->ray(*running(m), from, to, kind, hit);
         const std::uint32_t record = a[0].bits;
-        bghit_segments()[record] = {from, to}; // (6:52's)
+        bghit_segments()[record] = {from, to, kind}; // (6:52's)
         m.memory().set_u32(record + 0x14, met ? 0u : 0xffffffffu);
         if (met) {
             const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
@@ -2509,7 +2519,8 @@ void add_shots(ai::Calls &calls)
         World *w = world(m);
         const auto seg = bghit_segments().find(a[0].bits);
         if (w != nullptr && seg != bghit_segments().end()) {
-            const Vec3 from = seg->second.first, to = seg->second.second;
+            const Vec3 from = seg->second.from, to = seg->second.to;
+            const int kind = seg->second.kind;
             Vec3 way = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
             const float n = std::sqrt(way[0] * way[0] + way[1] * way[1] + way[2] * way[2]);
             if (n > 0.0F) {
@@ -2533,7 +2544,7 @@ void add_shots(ai::Calls &calls)
                     constexpr float kApart = 5.0F; // cm
                     const Vec3 f = {from[0] + side[0] * kApart, from[1] + side[1] * kApart, from[2] + side[2] * kApart};
                     const Vec3 t = {to[0] + side[0] * kApart, to[1] + side[1] * kApart, to[2] + side[2] * kApart};
-                    return w->ray(*running(m), f, t, hit);
+                    return w->ray(*running(m), f, t, kind, hit);
                 };
                 Vec3 normal = {-way[0], -way[1], -way[2]};
                 if (cast({0.0F, 0.0F, 0.0F}, p0) && cast(across, p1) && cast(other, p2)) {
@@ -2574,7 +2585,7 @@ void add_shots(ai::Calls &calls)
         if (w != nullptr)
             w->wall_sweep(*running(m), at, 0.0F, way, false);
         Vec3 p = {at[0] + way[0], at[1], at[2] + way[2]}, hit{};
-        if (w != nullptr && w->ray(*running(m), {p[0], p[1] - 200.0F, p[2]}, {p[0], p[1] + 1000.0F, p[2]}, hit))
+        if (w != nullptr && w->ray(*running(m), {p[0], p[1] - 200.0F, p[2]}, {p[0], p[1] + 1000.0F, p[2]}, kBgAll, hit))
             p = hit;
         Vec v;
         v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2], v.v[3] = 1.0F;
@@ -2591,7 +2602,8 @@ void add_shots(ai::Calls &calls)
         Vec3 ground{};
         World *w = world(m);
         const float up = std::max(std::fabs(a[3].f()), std::fabs(a[4].f()));
-        if (w != nullptr && up > 0.0F && w->ray(*running(m), {p[0], p[1] - up, p[2]}, {p[0], p[1] + up, p[2]}, ground))
+        if (w != nullptr && up > 0.0F &&
+            w->ray(*running(m), {p[0], p[1] - up, p[2]}, {p[0], p[1] + up, p[2]}, kBgAll, ground))
             p = ground;
         Vec v;
         v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2], v.v[3] = 1.0F;
@@ -3180,14 +3192,17 @@ void add_world(ai::Calls &calls)
         if (World *w = running(m)->world)
             w->screen_shake(a[0].f(), a[1].f(), a[2].f(), a[3].f(), a[4].f(), a[5].f(), a[6].f());
     });
-    // 1:135 where a segment meets the room (trap_bg_cross_pos -> YS::BG::GetCrossPos(from, to, out, flags)): the point
+    // 1:135 where a segment meets the room (trap_bg_cross_pos -> YS::BG::GetCrossPos(from, to, out, flags): the faces
+    // read in the flags' low 16 bits, as 6:51's): the point
     // at the third argument, the polygon's number back (below 0 none); 1:137 that polygon's normal (trap_bg_get_normal
     // -> dk::Octree::getNormal). Xigbar's shots glance off the room's walls so
     calls.set(1, 135, [](ai::Machine &m, std::span<ai::Value> a) {
         World *w = running(m)->world;
         Vec3 hit{};
         const int polygon =
-            w != nullptr ? w->bg_cross(*running(m), xyz(read_vec(m, a[0].bits)), xyz(read_vec(m, a[1].bits)), hit) : -1;
+            w != nullptr ? w->bg_cross(*running(m), xyz(read_vec(m, a[0].bits)), xyz(read_vec(m, a[1].bits)),
+                                       int(a[3].bits & 0xffffu), hit)
+                         : -1;
         if (polygon >= 0) {
             const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
             m.memory().write(a[2].bits, p, sizeof p);

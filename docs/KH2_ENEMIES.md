@@ -2163,7 +2163,8 @@ shell's life:
   rush (motion 203, 23 m in a second and a half) left the coliseum through its ring's and its stands' walls (built
   from KH2's `he00` collision, both there) and stopped 50 m out where its floor ends. The scripts' casts of the room
   (`World::ray`: 1:347's line of sight, 6:51's segment and 6:52's normal, 1:141's ground) meet the three lists, the
-  nearest, as the camera's line does (the sphere cast with no radius is a line); 1:247's point round another is swept
+  nearest, as the camera's line does (the sphere cast with no radius is a line), each reading the faces its kind of
+  test reads ("Whom a test of the room asks for", below); 1:247's point round another is swept
   out to with the actor's body and kept its body short of the first wall (the Will's warp beside the player, 4 to 6 m
   off him, had put him outside the ring, where Days's player cannot reach him).
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
@@ -2195,8 +2196,18 @@ shell's life:
   facing up a ground named `slide` (Days's jump lands on none, `Ov022_StepJumpState`: Days names grounds so, never
   walls), walls from both sides, grounds and ceilings from their own (until 2026-11-20 every face both sides: the
   columns' capitals' backs, facing up 0.23, were grounds). Days has one collision for everyone, so a face that stops
-  attacks alone still stops characters, and one that stops enemies alone still stops the player. The shell's casts
-  (`khdays_kh2_shell_ray`, `_wall`) read every face, `nohit` too, as before.
+  attacks alone still stops characters, and one that stops enemies alone still stops the player.
+- **Whom a test of the room asks for** (2026-11-20): KH2's tests of its collision read the faces their flags' low 16
+  bits name (`dk::OctCollFile::selectPolygon`, the PS3 build: 0 and 6 those that stop the player, 1 enemies, 2 flying
+  enemies, 3 the player or `hit_rtn`, 4 attacks, 5 `hit_safety`, 15 and any other every face; bit 16 the objects'
+  collision too, `YS::BGHIT::check_line`). `YS::BG::CanSee` (1:347's line of sight) asks for attacks' faces, as 1:141's
+  ground under a point does (flags 4); the scripts' 6:51 calls ask 47 times of 65 for attacks' (0x10004), 15 for an
+  enemy's body's (1, 0x10001), 2 for the player's (0, 0x10000), and 1:135 is given its own. The port's tests of
+  attacks' faces go through a wall named `nohit` (`khdays_kh2_shell_ray_face`'s `attacks`: a face whose slot 1 or 2
+  names a record tagged 2, read as `Ov022_StepJumpState` reads a floor's tags, cast again 2 mm past it), so a KH2
+  enemy's shots, lines of sight and attacks' floors pass the invisible walls, as in KH2 and as Days's own attacks'
+  parts do (`Ov022_CastMove`); its body's sweeps (`wall_sweep`) and the other tests still meet them. The attacks'
+  own floor (2:41) asks for attacks' faces too; Days names no ground `nohit`, so floors stop them all.
 - **Motions in the air**: KH2's air classes add no pull while + 0x18c has 0x1000020 or bit 6 (`FUN_1403cb100`,
   `FUN_1403cb500`): ranges 3, 24 and 30 (`FUN_14040d810`: 30 sets bit 24, which `1:60` counts as off the ground).
   The port's pull leaves those motions alone; its jumps (1:55, 1:156) still follow their own arc in them.

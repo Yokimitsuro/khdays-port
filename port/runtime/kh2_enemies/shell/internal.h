@@ -1271,7 +1271,7 @@ public:
     void screen_shake(float life, float period_x, float period_y, float size_x, float size_y, float speed_x,
                       float speed_y) override;
     void screen_white(bool out, float frames) override;
-    int bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit) override;
+    int bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, int kind, Vec3 &hit) override;
     bool bg_normal(int polygon, Vec3 &normal) override;
     void camera_watch(Object &o) override;
     void camera_home() override;
@@ -1282,7 +1282,7 @@ public:
     void light_fade_out(std::uint32_t handle, float ticks) override;
     void light_fade_in(std::uint32_t handle, float ticks) override;
     bool attack_on_floor(std::uint32_t at) override;
-    bool ray(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit) override;
+    bool ray(Actor &a, const Vec3 &from, const Vec3 &to, int kind, Vec3 &hit) override;
     bool wall_sweep(Actor &a, const Vec3 &place, float radius, Vec3 &way, bool slide) override;
     bool record_distance(std::uint32_t record, const Vec3 &point, float &out) override;
     void attack_on_hit(std::uint32_t at, Actor &, std::uint32_t routine, std::uint32_t value) override;

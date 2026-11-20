@@ -632,13 +632,13 @@ void attack_objects(Enemy &e)
             continue;
         }
         // the room's floor met (2:41, + 8 bit 4: Hades's fire shots end on it): a ray from its middle down by its size
-        // (KH2's y down) strikes the ground
+        // (KH2's y down) strikes the ground, the faces attacks meet
         if (o.placed && !o.on_floor) {
             const float reach = std::max(std::max(radius, height * 0.5F), 1.0F);
             float from[3], to[3], hit[3];
             to_days(o.at, from);
             to_days({o.at[0], o.at[1] + reach, o.at[2]}, to);
-            o.on_floor = khdays_kh2_shell_ray(shell_of(e), from, to, hit) != 0;
+            o.on_floor = khdays_kh2_shell_ray_face(shell_of(e), from, to, 1, hit, nullptr) != 0;
             if (o.on_floor) { // where (2:42: + 0xb4)
                 const Vec3 at = to_kh2(hit);
                 const float met[4] = {at[0], at[1], at[2], 1.0F};

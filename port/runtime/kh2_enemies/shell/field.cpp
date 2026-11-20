@@ -941,7 +941,7 @@ void Field::screen_white(bool out, float frames)
         khdays_log("kh2 enemies: the screen fades %s white over %.0f frames", out ? "to" : "back from", double(frames));
 }
 
-int Field::bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit)
+int Field::bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, int kind, Vec3 &hit)
 {
     const auto it = by_actor.find(&a);
     if (it == by_actor.end())
@@ -950,7 +950,7 @@ int Field::bg_cross(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit)
     unsigned face = 0;
     to_days(from, f);
     to_days(to, t);
-    if (!khdays_kh2_shell_ray_face(shell_of(*it->second), f, t, h, &face))
+    if (!khdays_kh2_shell_ray_face(shell_of(*it->second), f, t, kind == kBgAttacks, h, &face))
         return -1;
     hit = to_kh2(h);
     // the face's record names it (the collision's own memory, below 0x80000000 as all the port's)
@@ -1025,7 +1025,7 @@ bool Field::attack_on_floor(std::uint32_t at)
     return o != attacks.end() && o->second.on_floor;
 }
 
-bool Field::ray(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit)
+bool Field::ray(Actor &a, const Vec3 &from, const Vec3 &to, int kind, Vec3 &hit)
 {
     const auto it = by_actor.find(&a);
     if (it == by_actor.end())
@@ -1033,7 +1033,18 @@ bool Field::ray(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit)
     float f[3], t[3], h[3];
     to_days(from, f);
     to_days(to, t);
-    if (!khdays_kh2_shell_ray(shell_of(*it->second), f, t, h))
+    const unsigned shell = shell_of(*it->second);
+    const bool met = khdays_kh2_shell_ray_face(shell, f, t, kind == kBgAttacks, h, nullptr) != 0;
+    if (kind == kBgAttacks && trace_level() >= 2) {
+        // (traced: where a character's cast would have stopped)
+        float wall[3];
+        if (khdays_kh2_shell_ray(shell, f, t, wall) &&
+            (!met || std::fabs(wall[0] - h[0]) + std::fabs(wall[1] - h[1]) + std::fabs(wall[2] - h[2]) > 0.01F))
+            khdays_log("kh2 enemies: %08x's attack's line goes through a nohit wall at %.2f %.2f %.2f (%s beyond)",
+                       it->second->days, double(wall[0]), double(wall[1]), double(wall[2]),
+                       met ? "a face" : "nothing");
+    }
+    if (!met)
         return false;
     hit = to_kh2(h);
     return true;

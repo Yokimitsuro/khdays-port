@@ -75,8 +75,11 @@ void khdays_kh2_shell_player_recoil(unsigned actor, const float push[3]);
  * the three (the ray alone meets no wall). */
 int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3]);
 /* The same, and the face it meets in `face` (the collision's own record, while the room stands: KH2's 1:135 gives
- * its polygon so, 1:137 its normal) */
-int khdays_kh2_shell_ray_face(unsigned actor, const float from[3], const float to[3], float hit[3], unsigned *face);
+ * its polygon so, 1:137 its normal; may be NULL). With `attacks`, as KH2's attacks see the room: a face named nohit
+ * (a wall characters alone meet: Days's invisible walls, as Ov022_CastMove's parts go through them, and a KH2 map's
+ * made into a room) is gone through */
+int khdays_kh2_shell_ray_face(unsigned actor, const float from[3], const float to[3], int attacks, float hit[3],
+                              unsigned *face);
 /* A face's plane normal (a unit way, Days's axes) from its record; whether it has one */
 int khdays_kh2_shell_face_normal(unsigned face, float normal[3]);
 

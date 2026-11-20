@@ -1847,6 +1847,7 @@ struct PortRoyalWorld final : kh::World {
     kh::Lights lights;
     bool seen = true;        // on the screen (1:56)
     bool wall = false;       // the room's collision between two points (1:347)
+    int ray_kind = -1;       // the faces it read
     kh::Object *player(kh::Actor &) override
     {
         return nullptr;
@@ -1880,8 +1881,9 @@ struct PortRoyalWorld final : kh::World {
         out = o.place();
         return true;
     }
-    bool ray(kh::Actor &, const kh::Vec3 &, const kh::Vec3 &to, kh::Vec3 &hit) override
+    bool ray(kh::Actor &, const kh::Vec3 &, const kh::Vec3 &to, int kind, kh::Vec3 &hit) override
     {
+        ray_kind = kind;
         hit = to;
         return wall;
     }
@@ -1999,6 +2001,7 @@ void test_port_royal()
     CHECK(call(rig, actor, 1, 347, {self, adr(other.address())}).i() == 1);
     world.wall = true;
     CHECK(call(rig, actor, 1, 347, {self, adr(other.address())}).i() == 0);
+    CHECK(world.ray_kind == kh::kBgAttacks); // KH2's YS::BG::CanSee reads attacks' faces
 
     // 1:251: a room's light faded in over 2 ticks or fewer at once, its colour kept
     using Bytes = std::array<std::uint8_t, 3>;
@@ -2182,8 +2185,10 @@ struct RoxasWorld final : kh::World {
     {
         return nullptr;
     }
-    bool ray(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, kh::Vec3 &hit) override
+    std::vector<int> ray_kinds; // the faces each cast read
+    bool ray(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, int kind, kh::Vec3 &hit) override
     {
+        ray_kinds.push_back(kind);
         if ((from[2] - 100.0F) * (to[2] - 100.0F) > 0.0F || from[2] == to[2])
             return false;
         const float s = (100.0F - from[2]) / (to[2] - from[2]);
@@ -2249,12 +2254,19 @@ void test_data_roxas()
     // 1:223: the camera given back
     call(rig, roxas, 1, 223, {i(1)});
     CHECK(world.home);
-    // 6:51 then 6:52: a segment through the wall meets it at z 100; its normal faces back along the way (-z)
+    // 6:51 then 6:52: a segment through the wall meets it at z 100; its normal faces back along the way (-z); both read
+    // the faces the flags' low 16 bits say (0x10004: attacks', objects' too)
     const std::uint32_t hit = rig.memory.add(0x40, "a test's BGHIT");
-    CHECK(call(rig, roxas, 6, 51, {adr(hit), adr(vec(rig.memory, 10, 0, 0)), adr(vec(rig.memory, 10, 0, 200))}).i() ==
-          1);
+    world.ray_kinds.clear();
+    CHECK(call(rig, roxas, 6, 51,
+               {adr(hit), adr(vec(rig.memory, 10, 0, 0)), adr(vec(rig.memory, 10, 0, 200)), i(0x10004)})
+              .i() == 1);
     rig.memory.read(call(rig, roxas, 6, 52, {adr(hit)}).bits, v, sizeof v);
     CHECK(std::fabs(v[0]) < 1e-4F && std::fabs(v[1]) < 1e-4F && std::fabs(v[2] + 1.0F) < 1e-4F);
+    CHECK(world.ray_kinds == std::vector<int>(4, kh::kBgAttacks));
+    world.ray_kinds.clear();
+    call(rig, roxas, 6, 51, {adr(hit), adr(vec(rig.memory, 10, 0, 0)), adr(vec(rig.memory, 10, 0, 200)), i(0x10001)});
+    CHECK(world.ray_kinds == std::vector<int>{1}); // an enemy's body's
     // 10:52: motions 140 to 150 reflect
     roxas.motion.id = 145;
     CHECK(call(rig, roxas, 10, 52, {self}).i() == 1);
@@ -2439,8 +2451,10 @@ struct XigbarWorld final : kh::World {
     {
         shake = {life, px, py, sx, sy, vx, vy};
     }
-    int bg_cross(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, kh::Vec3 &hit) override
+    int cross_kind = -1; // the faces 1:135 read
+    int bg_cross(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, int kind, kh::Vec3 &hit) override
     {
+        cross_kind = kind;
         if (to[0] < 0.0F)
             return -1;
         hit = {(from[0] + to[0]) / 2.0F, (from[1] + to[1]) / 2.0F, (from[2] + to[2]) / 2.0F};
@@ -2513,6 +2527,7 @@ void test_xigbar()
     rig.memory.write(from, a, sizeof a);
     rig.memory.write(to, b, sizeof b);
     CHECK(call(rig, xigbar, 1, 135, {adr(from), adr(to), adr(hit), i(4)}).i() == 77);
+    CHECK(world.cross_kind == kh::kBgAttacks);
     rig.memory.read(hit, v, sizeof v);
     CHECK(v[0] == 2.0F && v[1] == 1.0F && v[2] == 3.0F);
     rig.memory.read(call(rig, xigbar, 1, 137, {i(77)}).bits, v, sizeof v);

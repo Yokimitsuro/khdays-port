@@ -310,6 +310,13 @@ struct Jump final {
     float keep = 0.9F, slow = 0.95F;
 };
 
+// The faces a test of the room reads (KH2's dk::OctCollFile::selectPolygon: the flags' low 16 bits, the rest the
+// test's own): 0 and 6 those that stop the player, 1 enemies, 2 flying enemies, 3 the player or hit_rtn, 4 attacks,
+// 5 hit_safety, 15 (and any other) all. In Days's rooms a wall that stops characters alone is named nohit (Days's own
+// invisible walls, and a KH2 map's made into a room): attacks' tests go through it, the others meet it
+constexpr int kBgAttacks = 4;
+constexpr int kBgAll = 15;
+
 // What the scripts reach of the world around an actor (the shell's: Days's players and ground; a made-up one in the
 // tests). Each says the KH2 function it stands for.
 class World {
@@ -455,14 +462,15 @@ public:
         return false;
     }
     // A segment of KH2's world against the room's collision (Days's, under the actor): where it first meets it
-    // (FUN_14040c2b0's cast: 6:51, 1:141's ground under a point, 1:248's)
-    virtual bool ray(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
+    // (FUN_14040c2b0's cast: 6:51, 1:141's ground under a point, 1:248's), the faces read those a test of `kind`
+    // reads (kBgAttacks: no wall that stops characters alone)
+    virtual bool ray(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, int /*kind*/, Vec3 & /*hit*/)
     {
         return false;
     }
     // 1:135: the same segment and the polygon it meets (trap_bg_cross_pos -> YS::BG::GetCrossPos), where in `hit`; a
     // number for that polygon (1:137's), below 0 none
-    virtual int bg_cross(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
+    virtual int bg_cross(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, int /*kind*/, Vec3 & /*hit*/)
     {
         return -1;
     }
