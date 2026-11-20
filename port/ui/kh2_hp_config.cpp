@@ -1,5 +1,6 @@
 // Shared gauge, label, reticle and information settings; no game or graphics-device dependencies.
 #include "kh2_hp_config.h"
+#include "flat_json.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -12,171 +13,31 @@
 
 namespace khdays::ui::kh2 {
 namespace {
-using Value = std::variant<std::string, double, bool>;
-using Object = std::map<std::string, Value>;
-class Reader {
-    std::string text;
-    std::size_t at = 0;
-    Object values;
-    std::set<std::string> keys;
-    [[noreturn]] void fail() const
-    {
-        throw std::runtime_error("gauge JSON: invalid object at byte " + std::to_string(at));
-    }
-    char next()
-    {
-        while (at < text.size() && (text[at] == ' ' || text[at] == '\n' || text[at] == '\r' || text[at] == '\t'))
-            ++at;
-        return at < text.size() ? text[at] : '\0';
-    }
-    void take(char c)
-    {
-        if (next() != c)
-            fail();
-        ++at;
-    }
-    std::string string()
-    {
-        take('"');
-        std::string out;
-        while (at < text.size() && text[at] != '"') {
-            char c = text[at++];
-            if (static_cast<unsigned char>(c) < 32)
-                fail();
-            if (c == '\\') {
-                if (at == text.size())
-                    fail();
-                c = text[at++];
-                switch (c) {
-                case '"':
-                case '\\':
-                case '/': break;
-                case 'n': c = '\n'; break;
-                case 'r': c = '\r'; break;
-                case 't': c = '\t'; break;
-                case 'b': c = '\b'; break;
-                case 'f': c = '\f'; break;
-                default: fail();
-                }
-            }
-            out += c;
-        }
-        take('"');
-        return out;
-    }
-    Value value()
-    {
-        if (next() == '"')
-            return string();
-        for (const auto &[word, boolean] : {std::pair{"true", true}, std::pair{"false", false}}) {
-            const std::string token(word);
-            if (text.compare(at, token.size(), token) == 0) {
-                at += token.size();
-                return boolean;
-            }
-        }
-        const auto start = at;
-        if (next() == '-')
-            ++at;
-        auto digit = [&] { return at < text.size() && text[at] >= '0' && text[at] <= '9'; };
-        if (!digit())
-            fail();
-        if (text[at] == '0')
-            ++at;
-        else
-            while (digit())
-                ++at;
-        if (at < text.size() && text[at] == '.') {
-            ++at;
-            if (!digit())
-                fail();
-            while (digit())
-                ++at;
-        }
-        if (at < text.size() && (text[at] == 'e' || text[at] == 'E')) {
-            ++at;
-            if (at < text.size() && (text[at] == '+' || text[at] == '-'))
-                ++at;
-            if (!digit())
-                fail();
-            while (digit())
-                ++at;
-        }
-        double n = 0;
-        const auto parsed = std::from_chars(text.data() + start, text.data() + at, n);
-        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + at || !std::isfinite(n))
-            fail();
-        return n;
-    }
-
-    void object(const std::string &prefix, int depth)
-    {
-        if (depth > 4)
-            fail();
-        take('{');
-        if (next() != '}')
-            for (;;) {
-                const auto key = string();
-                if (key.empty() || key.find('.') != std::string::npos)
-                    fail();
-                const auto name = prefix + key;
-                if (!keys.insert(name).second)
-                    fail();
-                take(':');
-                if (next() == '{') {
-                    const bool label = key == "player_icon" || key == "limit_text";
-                    const bool allowed =
-                        (prefix.empty() &&
-                         (key == "party" || key == "enemy" || key == "reticles" || key == "information" ||
-                          key == "obtained" || key == "backpack_full" || key == "breakthrough" || key == "locked_on" ||
-                          key == "mission_panel" || key == "heart_points" || key == "presentation" || label)) ||
-                        (prefix == "heart_points." && key == "animations") ||
-                        (prefix == "reticles." && (key == "soft_lock" || key == "hard_lock" || key == "interact" ||
-                                                   key == "chain" || key == "error")) ||
-                        (prefix == "party." && (key == "slots" || label)) ||
-                        (prefix == "party.slots." && (key == "1" || key == "2" || key == "3")) ||
-                        ((prefix == "party.slots.1." || prefix == "party.slots.2." || prefix == "party.slots.3.") &&
-                         label);
-                    if (!allowed)
-                        fail();
-                    object(name + '.', depth + 1);
-                } else
-                    values.emplace(name, value());
-                if (next() != ',')
-                    break;
-                ++at;
-            }
-        take('}');
-    }
-
-public:
-    explicit Reader(std::string input) : text(std::move(input)) {}
-    Object read()
-    {
-        object("", 0);
-        if (next() != '\0' || at != text.size())
-            fail();
-        return values;
-    }
-};
-template <class T> T get(Object &o, const char *key, T fallback)
+using json::Object;
+constexpr const char *kWhat = "gauge";
+const json::Rules kRules{
+    4,
+    [](const std::string &prefix, const std::string &key, int) {
+        const bool label = key == "player_icon" || key == "limit_text";
+        return (prefix.empty() &&
+                (key == "party" || key == "enemy" || key == "reticles" || key == "information" || key == "obtained" ||
+                 key == "backpack_full" || key == "breakthrough" || key == "locked_on" || key == "mission_panel" ||
+                 key == "heart_points" || key == "presentation" || label)) ||
+               (prefix == "heart_points." && key == "animations") ||
+               (prefix == "reticles." &&
+                (key == "soft_lock" || key == "hard_lock" || key == "interact" || key == "chain" || key == "error")) ||
+               (prefix == "party." && (key == "slots" || label)) ||
+               (prefix == "party.slots." && (key == "1" || key == "2" || key == "3")) ||
+               ((prefix == "party.slots.1." || prefix == "party.slots.2." || prefix == "party.slots.3.") && label);
+    },
+    [](const std::string &, int) { return true; }};
+template <class T> T get(Object &o, const std::string &key, T fallback)
 {
-    auto i = o.find(key);
-    if (i == o.end())
-        return fallback;
-    const auto *v = std::get_if<T>(&i->second);
-    if (!v)
-        throw std::runtime_error(std::string("gauge JSON: wrong type for ") + key);
-    T result = *v;
-    o.erase(i);
-    return result;
+    return json::get(o, key, fallback, kWhat);
 }
-double number(Object &o, const char *key, double fallback, double lo, double hi, bool integer = false)
+double number(Object &o, const std::string &key, double fallback, double lo, double hi, bool integer = false)
 {
-    const double n = get(o, key, fallback);
-    if (n < lo || n > hi || (integer && n != std::floor(n)))
-        throw std::runtime_error(std::string("gauge JSON: out of range ") + key);
-    return n;
+    return json::number(o, key, fallback, lo, hi, integer, kWhat);
 }
 void resource_name(const std::string &value, const std::string &key)
 {
@@ -186,14 +47,7 @@ void resource_name(const std::string &value, const std::string &key)
 }
 Object read_file(const std::filesystem::path &path)
 {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file || file.tellg() < 0 || file.tellg() > 262144)
-        throw std::runtime_error("gauge JSON: cannot read " + path.string());
-    std::string text(static_cast<std::size_t>(file.tellg()), '\0');
-    file.seekg(0);
-    if (!file.read(text.data(), std::streamsize(text.size())))
-        throw std::runtime_error("gauge JSON: incomplete file");
-    return Reader(std::move(text)).read();
+    return json::read_file(path, kWhat, kRules);
 }
 } // namespace
 

@@ -337,12 +337,16 @@ target_link_libraries(khdays-kh2-ai-calls-test PRIVATE khdays-kh2-ai)
 target_compile_options(khdays-kh2-ai-calls-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-kh2-ai-calls COMMAND khdays-kh2-ai-calls-test)
 
+# the HUD's JSON settings files (the gauges', the portraits', the minimap's) read flat
+add_library(khdays-flat-json STATIC ui/flat_json.cpp)
+target_compile_options(khdays-flat-json PRIVATE /W4 /std:c++20 /EHsc)
+
 add_library(khdays-kh2-gauge STATIC ui/kh2_hp_gauge.cpp ui/kh2_hp_config.cpp ui/kh2_enemy_gauge.cpp)
-target_link_libraries(khdays-kh2-gauge PUBLIC khdays-kh2-sequence khdays-hud-settings)
+target_link_libraries(khdays-kh2-gauge PUBLIC khdays-kh2-sequence khdays-hud-settings khdays-flat-json)
 target_compile_options(khdays-kh2-gauge PRIVATE /W4 /std:c++20 /EHsc)
 
 add_library(khdays-kh2-portrait STATIC ui/kh2_portrait.cpp)
-target_link_libraries(khdays-kh2-portrait PUBLIC khdays-kh2-sequence)
+target_link_libraries(khdays-kh2-portrait PUBLIC khdays-kh2-sequence khdays-flat-json)
 target_compile_options(khdays-kh2-portrait PRIVATE /W4 /std:c++20 /EHsc)
 
 add_executable(khdays-kh2-portrait-test tests/kh2_portrait_test.cpp ui/kh2_portrait_hud.cpp ui/kh2_party_hud.cpp ui/kh2_hud_labels.cpp)

@@ -1,4 +1,5 @@
 #include "kh2_portrait.h"
+#include "flat_json.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -10,210 +11,25 @@
 
 namespace khdays::ui::kh2 {
 namespace {
-using Value = std::variant<std::string, double, bool>;
-using Object = std::map<std::string, Value>;
-// The small portrait schema needs objects and scalar leaves, with no external JSON dependency.
-class Reader {
-    std::string text;
-    std::size_t at = 0;
-    Object values;
-    std::set<std::string> keys;
-    [[noreturn]] void fail() const
-    {
-        throw std::runtime_error("portrait JSON: invalid object at byte " + std::to_string(at));
-    }
-    char next()
-    {
-        while (at < text.size() && (text[at] == ' ' || text[at] == '\n' || text[at] == '\r' || text[at] == '\t'))
-            ++at;
-        return at < text.size() ? text[at] : '\0';
-    }
-    void take(char c)
-    {
-        if (next() != c)
-            fail();
-        ++at;
-    }
-    unsigned hex()
-    {
-        unsigned value = 0;
-        for (int i = 0; i < 4; ++i) {
-            if (at == text.size())
-                fail();
-            const char c = text[at++];
-            const int n = c >= '0' && c <= '9'   ? c - '0'
-                          : c >= 'a' && c <= 'f' ? c - 'a' + 10
-                          : c >= 'A' && c <= 'F' ? c - 'A' + 10
-                                                 : -1;
-            if (n < 0)
-                fail();
-            value = value * 16 + unsigned(n);
-        }
-        return value;
-    }
-    std::string string()
-    {
-        take('"');
-        std::string out;
-        while (at < text.size() && text[at] != '"') {
-            char c = text[at++];
-            if (static_cast<unsigned char>(c) < 32)
-                fail();
-            if (c == '\\') {
-                if (at == text.size())
-                    fail();
-                c = text[at++];
-                switch (c) {
-                case '"':
-                case '\\':
-                case '/': break;
-                case 'n': c = '\n'; break;
-                case 'r': c = '\r'; break;
-                case 't': c = '\t'; break;
-                case 'b': c = '\b'; break;
-                case 'f': c = '\f'; break;
-                case 'u': {
-                    unsigned v = hex();
-                    if (v >= 0xd800 && v <= 0xdbff) {
-                        if (at + 2 > text.size() || text[at++] != '\\' || text[at++] != 'u')
-                            fail();
-                        const unsigned low = hex();
-                        if (low < 0xdc00 || low > 0xdfff)
-                            fail();
-                        v = 0x10000 + (v - 0xd800) * 1024 + low - 0xdc00;
-                    } else if (v >= 0xdc00 && v <= 0xdfff)
-                        fail();
-                    if (v < 0x80)
-                        out += char(v);
-                    else {
-                        if (v < 0x800)
-                            out += char(0xc0 | (v >> 6));
-                        else {
-                            if (v < 0x10000)
-                                out += char(0xe0 | (v >> 12));
-                            else {
-                                out += char(0xf0 | (v >> 18));
-                                out += char(0x80 | ((v >> 12) & 63));
-                            }
-                            out += char(0x80 | ((v >> 6) & 63));
-                        }
-                        out += char(0x80 | (v & 63));
-                    }
-                    continue;
-                }
-                default: fail();
-                }
-            }
-            out += c;
-        }
-        take('"');
-        return out;
-    }
-    Value scalar()
-    {
-        if (next() == '"')
-            return string();
-        for (const auto &[word, value] : {std::pair{"true", true}, std::pair{"false", false}}) {
-            const std::string token(word);
-            if (text.compare(at, token.size(), token) == 0) {
-                at += token.size();
-                return value;
-            }
-        }
-        const auto start = at;
-        if (next() == '-')
-            ++at;
-        auto digit = [&] { return at < text.size() && text[at] >= '0' && text[at] <= '9'; };
-        if (!digit())
-            fail();
-        if (text[at] == '0')
-            ++at;
-        else
-            while (digit())
-                ++at;
-        if (at < text.size() && text[at] == '.') {
-            ++at;
-            if (!digit())
-                fail();
-            while (digit())
-                ++at;
-        }
-        if (at < text.size() && (text[at] == 'e' || text[at] == 'E')) {
-            ++at;
-            if (at < text.size() && (text[at] == '+' || text[at] == '-'))
-                ++at;
-            if (!digit())
-                fail();
-            while (digit())
-                ++at;
-        }
-        double n = 0;
-        const auto parsed = std::from_chars(text.data() + start, text.data() + at, n);
-        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + at || !std::isfinite(n))
-            fail();
-        return n;
-    }
-    void object(const std::string &prefix, int depth)
-    {
-        if (depth > 3)
-            fail();
-        take('{');
-        if (next() != '}')
-            for (;;) {
-                const auto key = string();
-                if (key.empty() || key.find('.') != std::string::npos)
-                    fail();
-                const auto name = prefix + key;
-                if (!keys.insert(name).second)
-                    fail();
-                take(':');
-                if (next() == '{') {
-                    if ((depth == 0 && key != "characters") ||
-                        (depth == 1 && std::none_of(portrait_names.begin(), portrait_names.end(),
-                                                    [&](const char *name) { return key == name; })) ||
-                        (depth == 2 && key != "player" && key != "party") || depth == 3)
-                        fail();
-                    object(name + '.', depth + 1);
-                } else {
-                    if ((depth == 0 && key != "version") || (depth != 0 && depth != 3))
-                        fail();
-                    values.emplace(name, scalar());
-                }
-                if (next() != ',')
-                    break;
-                ++at;
-            }
-        take('}');
-    }
-
-public:
-    explicit Reader(std::string input) : text(std::move(input)) {}
-    Object read()
-    {
-        object("", 0);
-        if (next() != '\0' || at != text.size())
-            fail();
-        return values;
-    }
-};
+using json::Object;
+constexpr const char *kWhat = "portrait";
+// characters.<portrait>.player|party.<leaf>, and the version
+const json::Rules kRules{
+    3,
+    [](const std::string &, const std::string &key, int depth) {
+        return (depth == 0 && key == "characters") ||
+               (depth == 1 && std::any_of(portrait_names.begin(), portrait_names.end(),
+                                          [&](const char *name) { return key == name; })) ||
+               (depth == 2 && (key == "player" || key == "party"));
+    },
+    [](const std::string &key, int depth) { return (depth == 0 && key == "version") || depth == 3; }};
 template <class T> T get(Object &o, const std::string &key, T fallback)
 {
-    const auto it = o.find(key);
-    if (it == o.end())
-        return fallback;
-    const auto *v = std::get_if<T>(&it->second);
-    if (!v)
-        throw std::runtime_error("portrait JSON: wrong type for " + key);
-    T result = *v;
-    o.erase(it);
-    return result;
+    return json::get(o, key, fallback, kWhat);
 }
 double number(Object &o, const std::string &key, double fallback, double lo, double hi, bool integer = false)
 {
-    const double n = get(o, key, fallback);
-    if (n < lo || n > hi || (integer && n != std::floor(n)))
-        throw std::runtime_error("portrait JSON: out of range " + key);
-    return n;
+    return json::number(o, key, fallback, lo, hi, integer, kWhat);
 }
 void filename(const std::string &name)
 {
@@ -225,14 +41,7 @@ void filename(const std::string &name)
 
 PortraitConfigs load_portrait_config(const std::filesystem::path &path)
 {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file || file.tellg() < 0 || file.tellg() > 262144)
-        throw std::runtime_error("portrait JSON: cannot read " + path.string());
-    std::string text(static_cast<std::size_t>(file.tellg()), '\0');
-    file.seekg(0);
-    if (!file.read(text.data(), std::streamsize(text.size())))
-        throw std::runtime_error("portrait JSON: incomplete file");
-    auto o = Reader(std::move(text)).read();
+    auto o = json::read_file(path, kWhat, kRules);
     number(o, "version", 1, 1, 1, true);
     PortraitConfigs result;
     for (std::size_t icon = 0; icon < result.size(); ++icon)
