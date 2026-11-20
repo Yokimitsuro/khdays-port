@@ -601,7 +601,7 @@ enemigos"); what is built is under "Played" at the end of this section.
 - **Reaction commands, how they play**: `rc_avoid` plays Cerberus's motion 222 and starts a routine of its script on
   the player (`1:112`, its code word 7435: a thread the research tool lists since it follows `1:112` and `2:20`). The
   routine puts the player at Cerberus's place and facing (`1:147`, `1:148`, `1:201`, `1:1`), hooks Cerberus onto the
-  player (`1:18`: `FUN_1403d9fe0`, + 0x6a0 its carrier, bone 0x4002, its class 3), then plays three steps: each makes
+  player (`1:18`: `FUN_1403d9fe0`, + 0x6a0 its carrier, 0x4002 -- no bone: the player's drawn matrix --, its class 3), then plays three steps: each makes
   the player play a motion of Cerberus's set made for KH2's player (`1:29`: slots 252-257, entries of type 0x14 whose
   '0010' variant is the player's body, '0011' his keyblade; entries marked as repeats point at the body's data) and
   waits until its work's + 0 is set -- its trigger 11, a message 38, 39 or 41 -- or the player's motion ends or changes
@@ -1158,7 +1158,7 @@ nm07 where nm07's spawn puts it and the player (KH2's (-810.4, 4.7, 894.4) and (
 - **Its reaction command** 603 ("Tiro muelle" in Spanish; its zone on the body): trigger 11 gives the player a jump
   at it (1:55 on him, above: "His jump"), plays its 252 on him (AP50) and starts a thread of its script on him
   (1:112, code word 408): his touch of its bone 2 is its catch -- 253 on him (AP51), `rc_flick_shot_catch`, the player
-  put on its bone 0x4002 (1:18) till 253 reaches its loop -- then `rc_flick_shot_shoot`: 254 (AP52) on him, which
+  put on it (1:18 at 0x4002: no bone, its drawn matrix) till 253 reaches its loop -- then `rc_flick_shot_shoot`: 254 (AP52) on him, which
   throws him at one of its parts (`rc_flick_shot_trap`), and his own control back as 254 blends to his idle.
 - **What it needed**: 1:38 and the teams; Days's finishing hits as KH2's (without them it stood at 70% for good,
   every hit after taking nothing); 1:55, 1:63 and 1:161 on a held player.
@@ -1167,6 +1167,42 @@ nm07 where nm07's spawn puts it and the player (KH2's (-810.4, 4.7, 894.4) and (
   traps (1488) and its arms' blows (1486) striking its body (128, 96), four or five flick shots taken -- the jump,
   the catch (1.0 s), the throw, the player given back --, defeated at 193 s and 252 s, the mission cleared and its
   results shown. Not exercised: a Days blow on a part while it is of the player's team (he is carried then).
+
+### Twilight Thorn (2026-11-20)
+
+The Station of Awakening's Twilight Thorn (`B_EX100`, a large enemy, kind 0xc; tt34's battle `b_40`, mission
+`TT34_MS304`) and `B_EX200` (entry 865), which its reaction commands make. It is bound to no room; the test mission
+puts it in a room made from tt34 where tt34's spawn puts it and the player (KH2's (0, 0, 800) and (0, 0, -860), facing
+each other).
+
+- **Its script** (40 states): its grab (`atk_thorn`), `atk_brush`, `atk_ground`, `atk_final`, `idle_thorn`,
+  `move_side`, `move_side_thorn`, `footwork`, its modes by its health (`btl_normal`, `btl_hard`, `btl_super_hard`),
+  and its reaction commands' (`rc_thorn_wait`, `rc_thorn_1`, `_1_s`, `rc_thorn_2`, `_2_b`, `_2_s`, `rc_thorn_3`,
+  `rc_thorn_finish`). Trigger 11 takes 297 to 299, 345, 426, 432, 666 and 667; the player plays its 255 to 260 in its
+  hands (1:29), put on it (1:18 at 0x4002: "Numbers past the bones", above). 257 and 258 are its fall down the
+  tower's side and his climb back: their root runs 28 m below the platform and back (KH2's y down: 257's -495 to 2825,
+  258's from 2560 -- 3301 at most -- to 0, ending 2.4 m from it), the bones putting him there while he stands at its place.
+- **`B_EX200`**: bones alone (one, no collision shape, no script), made by `rc_thorn_3` (routine 0x2170: 1:0, then
+  1:133 hiding it, 1:126 tying its motions to Twilight Thorn's, 1:18 putting it on Twilight Thorn at 0x4002). Its set
+  holds only 151 to 161 (an idle) and 208 and 209 (57A, 58A), whose frame 0 starts its effect's element 0 and 1 -- the
+  darkness of Twilight Thorn's 208 and 209, which follow at once (`YS::MOTION::start_num`, below). Routine 0x1fee lets
+  it go (1:236, then 1:28) on the trigger 1:151 asks for. An enemy's entry with no script and nothing to be struck:
+  the port makes it an object of the battle (`World::appear`), no Days enemy -- KH2's hits never reach it.
+- **Motions tied together** (1:126, 1:236: `YS::trap_obj_motion_sync`, `unsync`; the PS3 build's, read): the first
+  object's YS::MOTION keeps a list of others (+ 0x94 its first, + 0x98 its last, each one's next at + 0x9c), and
+  `start_num` -- every start of a motion, by number or by id, its queue's too (`start_id`, `add_time`'s) -- starts the
+  same number with the same blend and frame on each of them once its own start took; one whose set has no such motion
+  plays on (`start_motion` of none starts nothing). `unsync` takes one off the list. The port's `Actor::synced`.
+- **What it needed**: 1:126 and 1:236; `B_EX200` made with no Days enemy; four of its sounds in bank 688, which no
+  object carries (an area's: `original/se/se688.win32.scd`, which the mod tool now reads as it does the objects'
+  banks -- Luxord's card's three in bank 358 and the Anti-Sora's one in 999 come with it); a player carried by his
+  enemy no longer pushes it ("A player in an enemy's hands"); a thrown stand-in's floor ("Days's side": "Its height is
+  KH2's").
+- **Played** (2026-11-20, window runs, level 30, the installed HD PACK, a test mod made by the tool with `--only` and a
+  room made from tt34; `chase_ax.input`): its grab and both of its reaction commands' rounds -- "Contrallave" in its
+  hand, the fall down the tower and the climb, `B_EX200`'s darkness and sounds, "Golpe final" -- the player back on the
+  platform each time, its ground attack in `btl_hard`, its grab again in `btl_super_hard`; defeated at 270 s, 220 s and
+  194 s, the mission cleared and its results shown.
 
 ### The scope, the pictures and the screen's shake
 
@@ -1358,7 +1394,11 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   its carrier gone or its + 0x18c bit 15 clear -- the carrier's motion's range 13 -- so Scar comes off the player he
   pins as he throws him (his 254), and his catch, waiting on `1:161`, goes on; `1:74` nothing (its class is Days's);
   `1:213` 1. Carried, his + 0x6a0 names what carries him (YS::OBJ's Attach), which `1:161` reads: the Experiment's
-  catch (`rc_flick_shot_catch`) holds him while it does. `1:63` on him asks whether the motion an enemy plays on him
+  catch (`rc_flick_shot_catch`) holds him while it does. Put on it, he stands where it does and pushes it not: KH2
+  places an attached object by its carrier alone (its Pos in its carrier's frame), so Days's collision between the
+  two is left out (`khdays_kh2_enemies` takes the enemy's place it gave, not Days's, while it carries a held player).
+  Before, Days pushed Twilight Thorn's stand-in off the player it carried, he followed it, and the two drifted 130 m
+  off its platform, out of reach for good. `1:63` on him asks whether the motion an enemy plays on him
   has reached its loop, its blend run out (one that does not loop: its end) -- before, it read the running enemy's
   own motion and the Experiment's catch ended in the tick it began.
 - **His jump** (2026-11-20, the Experiment's reaction command 603, its trigger 11): `1:55` / `1:168` on him give him
@@ -1367,8 +1407,8 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   along kept 0.9 a tick and the rest the steering's (`1:111`), 0.95 kept unsteered, `1:57` and `1:60` saying he is
   in the air. Past its top, he lands on the ground under him and is let go -- KH2's class 1 lands in a motion of his
   own (+ 0x11c). Carried meanwhile (`1:18`), his jump is over. The Experiment throws him about 3 m up at itself so (a
-  thread of its script, code word 408, runs on him: its catch is his keyblade's tip, bone 0x4001 -- the port's his
-  middle, `World::aim_point` -- up to 1.5 m above and 2.3 m along from its bone 2); he lands 1.4 s later when he
+  thread of its script, code word 408, runs on him: its catch is his 0x4001 -- no bone: the middle of his first collision
+  shape of type 1 that is on, else his place (`YS::OBJ::get_bone_matrix`); the port's his middle, `World::aim_point` -- up to 1.5 m above and 2.3 m along from its bone 2); he lands 1.4 s later when he
   misses.
 - **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and KH2's mark on
   the player in the enemy's hands (below, "The reaction command's mark"); the pad's top button (KH2's triangle, the DS
@@ -1405,7 +1445,8 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
 Some bosses fight with KH2 objects that are no enemies of the player: the Hydra's Megara, Phil and Pegasus (their
 object entries' kind, `00objentry.bin` + 4, is 9, a friend in battle) and the urn Phil hands the player (0x17, a
 gimmick). An enemy is an entry of kind 3 (a boss), 4 (an enemy) or 0xc (a large enemy: the Hydra and its heads); every
-kind the mod held before is one of those.
+kind the mod held before is one of those. One of those with no script and no collision shape is made as such an object too: nothing of
+KH2's strikes it (Twilight Thorn's `B_EX200`, bones that play its darkness).
 
 - **Where they come from**: a script makes one (1:0: the Hydra makes Megara once its heads are reborn, its work's
   + 0x11e8 3), or KH2's area places it with its boss. An area (`ard/us/<area>.ard`, OpenKH's ARD page) holds spawn
@@ -1915,6 +1956,16 @@ first (+ 0x5a8, `CollisionFlagScript`, 1:52 to 1:54: a word of groups on, the ne
 then the shapes' default -- the header's + 4, a bit a group (1, the body's group 0, in every one read). The record's other bytes (+ 1, + 3,
 + 18) are **not known**.
 
+**Numbers past the bones** (`YS::OBJ::get_bone_matrix`, the PS3 build, read): a bone number of 0x4000 and up names
+no bone -- 0x4000 the object itself (its axes, its place: + 0x540, or its attachment's), 0x4001 the middle of its
+first collision shape of type 1 that is on (`YS::COLLISION_DATA::next_elem(1)`), else its place, 0x4002 its drawn
+matrix (its draw list's, + 0x670 + 0x40: its place and facing as drawn), 0x4003 / 0x4004 a point along its first or
+second weapon (`get_bone_matrix_weapon`: its length along), 0x4005 / 0x4006 that weapon's own matrix, 0x4007 /
+0x4008 a point along it scaled, 0x4009 the middle of its first shape of type 9 that is on. Scripts carry on 0x4002
+(1:18: Cerberus on the player, the Experiment's catch, Twilight Thorn's B_EX200 on itself): the port puts what it
+carries at the carrier's place, facing its way (`put_on_carrier`); 0x4001 on a player is his middle
+(`World::aim_point`).
+
 ## Effects
 
 An object's effects are its `.a.us`'s PAX (its BAR entry 0x12; docs/FORMATS.md, "KH2's effects"). Its 0x82
@@ -2248,7 +2299,11 @@ shell's life:
   given; not Days's pull, `Ov107_AiState_IntegrateVelocity`, whose + 0x60 0x40 made no difference). KH2 carries it up
   and down itself, so the height given is kept when Days lowers it. Before, the Neoshadow's leap (203: up 1.8 m by its
   motion alone) came down by frame 33, before its dive's attack (frame 40). Days lifting it is kept only out of the
-  ground: up to the ground under the place given (+ 0x13c below 0: sunk), no higher. Roxas's blows throw a Days enemy
+  ground: up to the ground under the place given (+ 0x13c below 0: sunk), no higher. Its floor is + 0x13c under the
+  higher of the place given and Days's: a blow's throw comes before Days measures it (Twilight Thorn, thrown by the
+  final blow of its reaction commands: Days's place 1.51 up, its ground 1.66 under that -- the platform), its lowering
+  after. From the place given alone the floor of a thrown stand-in came out that much lower, and Twilight Thorn sank
+  3.4 m into its platform with the player it carried, who fell out of the room when let go. Roxas's blows throw a Days enemy
   up, and a KH2 enemy flying (class 5, 1:58: no fall of its own) stayed where they had thrown it -- Vexen hung 4 m up
   against the coliseum's wall (its ring's edge, 8.8 m out) until his script changed class.
 - **A KH2 room's floors and walls** (its `ID_` COCT, what the studio's KH2 rooms are made from): each face's

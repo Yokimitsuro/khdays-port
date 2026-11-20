@@ -2527,6 +2527,54 @@ void test_experiment()
     CHECK(call(rig, body, 1, 63, {adr(player.address())}).bits == 1);
 }
 
+// Twilight Thorn's B_EX200: a set of motions 0 and 7 alone (as B_EX200's holds 208 and 209 of Twilight Thorn's)
+struct FollowerMotions final : kh::Motions {
+    bool has(int id) const override
+    {
+        return id == 0 || id == 7;
+    }
+    float length(int) const override
+    {
+        return 30.0F;
+    }
+    float loop_from(int) const override
+    {
+        return 30.0F;
+    }
+    kh::Vec3 root(int, float) const override
+    {
+        return {};
+    }
+};
+
+// 1:126 / 1:236: the second object's motions follow the first's (its starts, with their blend and frame) till unsynced;
+// one its set lacks leaves the follower's own playing
+void test_twilight_thorn()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "1:126 2 0\n1:236 2 0\n");
+    MadeUpMotions own;
+    FollowerMotions its;
+    kh::Actor thorn(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "twilight thorn");
+    kh::Actor darkness(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "its darkness");
+    thorn.motions = &own;
+    darkness.motions = &its;
+    const auto adr = ai::Value::of_address;
+    call(rig, thorn, 1, 126, {adr(thorn.address()), adr(darkness.address())});
+    call(rig, thorn, 1, 126, {adr(thorn.address()), adr(darkness.address())});
+    CHECK(thorn.synced.size() == 1);
+    CHECK(thorn.play(7, 8.0F, 5.0F));
+    CHECK(darkness.motion.id == 7 && darkness.motion.time == 5.0F);
+    CHECK(thorn.play(44, 0.0F, 0.0F) && thorn.motion.id == 44);
+    CHECK(darkness.motion.id == 7); // (its set has no 44)
+    // a start that leaves the motion playing (1:12's) starts none of the follower's
+    darkness.play(0, 0.0F, 0.0F);
+    CHECK(thorn.play(44, 0.0F, 0.0F, false) && darkness.motion.id == 0);
+    call(rig, thorn, 1, 236, {adr(thorn.address()), adr(darkness.address())});
+    CHECK(thorn.synced.empty());
+    CHECK(thorn.play(7, 0.0F, 0.0F) && darkness.motion.id == 0);
+}
+
 void test_xigbar()
 {
     Rig rig;
@@ -2636,6 +2684,7 @@ int main()
     test_zexion();
     test_xigbar();
     test_experiment();
+    test_twilight_thorn();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

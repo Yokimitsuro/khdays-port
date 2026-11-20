@@ -98,12 +98,15 @@ std::uint32_t Field::appear(Actor &by, std::uint32_t entry)
 {
     const auto maker = by_actor.find(&by);
     const std::string name = entry_name(entry);
-    // (an object with no script of its own and no enemy, moved by its maker's threads -- Final Xemnas's Sora,
-    // P_EX100_LAST -- is read as a form is: its empty script)
+    // (an object with no script of its own, moved by its maker's threads -- Final Xemnas's Sora, P_EX100_LAST -- or
+    // carried and played by them -- Twilight Thorn's B_EX200 --, is read as a form is: its empty script)
     const Kind *kind = name.empty() ? nullptr : find_kind(mod().kinds, name);
-    const bool puppet = kind != nullptr && kind->calls == 0 && !enemy_entry(name);
-    KindFiles *k = name.empty() || maker == by_actor.end() ? nullptr : files_of(name, puppet);
-    if (k != nullptr && !enemy_entry(name)) { // no enemy: an ally of its maker's battle, where its maker stands
+    const bool scriptless = kind != nullptr && kind->calls == 0;
+    KindFiles *k = name.empty() || maker == by_actor.end() ? nullptr : files_of(name, scriptless);
+    // no enemy (its entry's kind), or an enemy's entry with no script and nothing of its own to be struck (no
+    // collision shapes: KH2's hits never reach B_EX200, an ENEMYBASE of kind 0xc): an ally of its maker's battle, where
+    // its maker stands -- no Days enemy stands in for it
+    if (k != nullptr && (!enemy_entry(name) || (scriptless && k->shapes.empty()))) {
         Enemy *e = start_ally(*k, by.place(), by.yaw(), shell_of(*maker->second), true);
         if (tracing())
             khdays_log("kh2 enemies: %08x (%s) makes %08x, a %s (entry %u)", maker->second->days, by.kind().c_str(),

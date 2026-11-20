@@ -883,6 +883,11 @@ public:
     World *world = nullptr;
     const Motions *motions = nullptr;
     Playing motion;
+    // the objects whose motions follow this one's (1:126, YS::MOTION::sync: its list at + 0x94, each one's next at
+    // + 0x9c; 1:236 takes one off): each motion this one starts, they start too -- the same number, blend and frame
+    // (YS::MOTION::start_num, once its own start took). Twilight Thorn's B_EX200, carried on it, plays its own 208
+    // and 209 (their effects) as Twilight Thorn plays its
+    std::vector<std::uint32_t> synced;
     Jump jump;
     // a jump waiting for its motion's take-off (1:55, 1:168, 1:156 keep their class in + 0x648, which a motion's
     // trigger 0 gives the actor: FUN_14040dd70's event 0): on the ground until then, the motion's root moving it
@@ -983,6 +988,7 @@ public:
 private:
     std::unique_ptr<ai::Machine> machine_;
     StateMachine states_;
+    bool syncing_ = false; // its followers being started (play): one that follows it back is not started again
 };
 
 // The name a script address holds (a state's id): up to its NUL, as far as the memory there reaches.

@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 0cac7a18d860d549698dd3d61284e25578c85168733a103b3c653d4a7e17b18b
+# tools 7af963399f33d8015869ff504834f190aaac7e8774c858889e6e6f00f46aa985
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -128,6 +128,7 @@ kh2_fifth msn/us/NM03_MS103.bar
 kh2_fifth msn/us/NM07_MS204.bar
 kh2_fifth msn/us/TT20_MS603.bar
 kh2_fifth msn/us/TT20_MS603_RE.bar
+kh2_fifth msn/us/TT34_MS304.bar
 kh2_fifth obj/B_AL100_FIRE.a.us
 kh2_fifth obj/B_AL100_FIRE.mdlx
 kh2_fifth obj/B_AL100_FIRE.mset
@@ -164,6 +165,9 @@ kh2_fifth obj/B_CA040.mdlx
 kh2_fifth obj/B_CA040.mset
 kh2_fifth obj/B_CA060.a.us
 kh2_fifth obj/B_CA060.mdlx
+kh2_fifth obj/B_EX100.a.us
+kh2_fifth obj/B_EX100.mdlx
+kh2_fifth obj/B_EX100.mset
 kh2_fifth obj/B_EX110.a.us
 kh2_fifth obj/B_EX110.mdlx
 kh2_fifth obj/B_EX110.mset
@@ -198,6 +202,9 @@ kh2_fifth obj/B_EX170_LAST_LV99.a.us
 kh2_fifth obj/B_EX170_LAST_LV99.mdlx
 kh2_fifth obj/B_EX170_LV99.a.us
 kh2_fifth obj/B_EX170_LV99.mdlx
+kh2_fifth obj/B_EX200.a.us
+kh2_fifth obj/B_EX200.mdlx
+kh2_fifth obj/B_EX200.mset
 kh2_fifth obj/B_EX210.a.us
 kh2_fifth obj/B_EX210.mdlx
 kh2_fifth obj/B_EX210.mset
@@ -422,6 +429,8 @@ kh2_first obj/PRIZE_BOX_YELLOW.mdlx
 kh2_first obj/W_EX010.a.us
 kh2_first obj/W_EX010.mdlx
 kh2_first se/se000.win32.scd
+kh2_first se/se688.win32.scd
+kh2_first se/se999.win32.scd
 kh2_fourth ard/us/al00.ard
 kh2_fourth ard/us/al01.ard
 kh2_fourth ard/us/al02.ard
@@ -687,6 +696,9 @@ kh2_sixth obj/W_EX010_ROXAS_LIGHT.mdlx
 kh2_sixth obj/W_EX010_ROXAS_LIGHT.mset
 kh2_sixth se/se000.win32.scd
 kh2_sixth se/se2984.win32.scd
+kh2_sixth se/se358.win32.scd
+kh2_sixth se/se688.win32.scd
+kh2_sixth se/se999.win32.scd
 kh2_sixth voice/us/battle/barbossa.win32.scd
 kh2_sixth voice/us/battle/barrel_boss.win32.scd
 kh2_sixth voice/us/battle/ed.win32.scd

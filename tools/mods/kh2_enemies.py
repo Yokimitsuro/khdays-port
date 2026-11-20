@@ -16,7 +16,8 @@ original/00objentry.bin names: Hades of the Coliseum's cups moves by B_HE030.mse
 original/voice/us/battle/<bank>.win32.scd (its sounds to mods/<mod>/kh2/voice/<name>/<number>.wav), the HD pages
 remastered/obj/<name>.mdlx/-N.dds (its model's) and remastered/obj/<name>.a.us/-N.dds (its effects'), and KH2's
 resident effect pictures original/effect/texcommon.dpd with remastered/effect/texcommon.dpd/-N.dds; the sounds' banks
-are each kind's own (remastered/obj/<name>.a.us/se/obj/se<bank>) and KH2's common one (original/se/se000.win32.scd).
+are each kind's own (remastered/obj/<name>.a.us/se/obj/se<bank>), KH2's common one (original/se/se000.win32.scd) and
+those its areas load (original/se/se<bank>.win32.scd).
 --exe gives the calls the port answers (khdays-native --kh2-ai-calls); without it no kind is covered. Writes
 mods/<mod>/kh2_enemies.txt, mods/<mod>/kh2/calls.txt, mods/<mod>/kh2/obj/ (each model's HD pages in kh2/obj/<name>/,
 where the port's model reader looks), mods/<mod>/kh2/effect/texcommon.dpd, the effects' HD pages in
@@ -129,6 +130,10 @@ KINDS = {
     "B_NM110_HEAD": "The Experiment's head",
     "B_NM110_L_ARM": "The Experiment's left arm",
     "B_NM110_R_ARM": "The Experiment's right arm",
+    # the Station of Awakening's Twilight Thorn (tt34) and what its reaction commands make (1:0): B_EX200, bones alone
+    # with no script, carried on it, its motions following Twilight Thorn's (1:126) to play their effects
+    "B_EX100": "Twilight Thorn",
+    "B_EX200": "Twilight Thorn's darkness",
     # FINAL MIX's data battles (their Limit Cut objects, _LV99)
     "B_EX110_LV99": "Axel (Data)",
     "B_EX130_LV99": "Xaldin (Data)",
@@ -788,7 +793,9 @@ def script_sounds(bar: bytes) -> set[int]:
 def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
     """Each sound in `ids` into to/<id>.wav, its first track's recording at the sound's volume, from its bank: bank 0
     KH2's common one, the others the kind's own (its .a.us's remastered se/obj/se<bank>), else another object's that
-    carries it (the Sorcerer's cubes play bank 272, which the Sorcerer's .a.us carries); what was left out."""
+    carries it (the Sorcerer's cubes play bank 272, which the Sorcerer's .a.us carries), else KH2's own of that number
+    (original/se/se<bank>.win32.scd, a bank an area loads: Twilight Thorn's motions play bank 688's); what was left
+    out."""
     left_out = []
     banks: dict[int, tuple[list, list] | str] = {}
     for sound_id in sorted(ids):
@@ -800,6 +807,8 @@ def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
         )
         if bank != 0 and not path.is_file():
             path = next(iter(sorted((kh2 / "remastered" / "obj").glob(f"*.a.us/se/obj/se{bank}"))), path)
+        if bank != 0 and not path.is_file() and (kh2 / "original" / "se" / f"se{bank}.win32.scd").is_file():
+            path = kh2 / "original" / "se" / f"se{bank}.win32.scd"
         if bank not in banks:
             try:
                 data = path.read_bytes()

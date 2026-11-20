@@ -439,6 +439,14 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         khdays_log("kh2 enemies: the field's step is %d", delta);
     }
     const int ticks = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
+    // a player in its hands put on it (1:18 on him) stands where it does, and KH2's attached object is placed by its
+    // carrier alone (its Pos its carrier's frame's): Days's collision between the two moves neither. Before, Days
+    // pushed its stand-in off the player it carried, he followed it, and the two drifted tens of metres -- Twilight
+    // Thorn's grab ended 130 m off its platform, out of reach for good
+    if (e->placed && std::any_of(held.begin(), held.end(), [days](const auto &h) { return h.second.carried_by == days; })) {
+        s.place[0] = e->place[0];
+        s.place[2] = e->place[2];
+    }
     // run into a wall: Days's collision moved it off the place it was given (by 1 cm or more). KH2 stops its
     // steering then (FUN_140421450: its wall's push at + 0xa78, + 0x1c 0): a lunge runs until a wall stops it.
     // The push a tick along the ground is its + 0xa78 (KH2's actor's update writes it, FUN_1403b9420; 6:24 reads it), and
@@ -489,8 +497,14 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         const float kept[3] = {s.place[0], height, s.place[2]};
         place[1] = to_kh2(kept)[1];
     }
-    if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it) -- from the place it was given
-        e->floor = (e->placed ? to_kh2(e->place)[1] : place[1]) + s.above * kKh2PerDays;
+    // (-1: no ground under it; below 0: sunk into it) -- measured (Ov107_AiState_ResolveContacts) from the place it was
+    // given, which Days lowers after by 0.148 a frame when it is off the ground, or from where a blow threw it up
+    // before: the higher of the two. From the place given alone, a thrown stand-in's floor came out that much lower --
+    // Twilight Thorn, struck by the final blow of its reaction commands, sank 3.4 m into its platform with the player
+    // it carried (let go there, he fell out of the room)
+    if (s.above != -1.0F) {
+        const float measured[3] = {s.place[0], e->placed ? std::max(s.place[1], e->place[1]) : s.place[1], s.place[2]};
+        e->floor = (e->placed ? to_kh2(measured)[1] : place[1]) + s.above * kKh2PerDays;
         e->floor_known = true;
     }
     // set going by a wave: on its floor, as KH2's area spawns put their objects on their points on the floor --

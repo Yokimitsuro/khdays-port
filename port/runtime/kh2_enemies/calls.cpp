@@ -882,6 +882,24 @@ void add_actor_fields(ai::Calls &calls)
         else if (Actor *x = o != nullptr ? o->actor() : nullptr)
             x->hidden = false;
     });
+    // 1:126 / 1:236 the second object's motion made to follow the first's, and no more (YS::trap_obj_motion_sync,
+    // trap_obj_motion_unsync: the first's YS::MOTION -- the PS3 build's + 0x140 -- syncs or unsyncs the second's, a
+    // list it starts its motions on: Actor::synced). Twilight Thorn's rc_thorn_3 makes B_EX200 (1:0), hides it,
+    // has it follow and carries it on itself (1:18 at 0x4002); its routine 0x1fee lets it go (1:236, 1:28)
+    calls.set(1, 126, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Object *o = object_of(m, a[1]);
+        Actor *y = o != nullptr ? o->actor() : nullptr;
+        if (x != nullptr && y != nullptr && y != x &&
+            std::find(x->synced.begin(), x->synced.end(), y->address()) == x->synced.end())
+            x->synced.push_back(y->address());
+    });
+    calls.set(1, 236, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Object *o = object_of(m, a[1]);
+        if (x != nullptr && o != nullptr)
+            std::erase(x->synced, o->address());
+    });
     // 1:201 its facing as a direction (FUN_1403b56e0)
     calls.set(1, 201, [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v;

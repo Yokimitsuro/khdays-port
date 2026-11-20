@@ -6307,6 +6307,19 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   missed, and when he touched its catch was 0 ticks long (1:63 on him read the Experiment's own motion, in its loop)
   until 1:63 and 1:161 were his own: 1.0 s, the parts' 1:38 with 1 from its first tick (822 calls in it, 20,754 with
   2), then the throw.
+- **Twilight Thorn** (2026-11-20, window runs, tt34 made a room, level 30; docs/KH2_ENEMIES.md, "Twilight Thorn"):
+  its reaction commands' round as the first run played it -- `rc_thorn_1` 99.9 s, `_2` 106.6 s, `_3` 126.9 s (`B_EX200`
+  made, its darkness's elements 0 and 1 at 129.0 s and 137.8 s, as Twilight Thorn's 208 and 209 began), `finish`
+  137.8 s, the player let go 150.0 s -- but Twilight Thorn's own motions there (204 to 211) move it not (their roots
+  stand, but 208's and 211's 8.6 m back), yet it went 130 m off: Days's collision pushed its stand-in off the player it
+  carried (1:18 on him), he followed it each tick, and the two drifted ("pushed ... off its place"); its 1:148 to the
+  world's middle in `rc_thorn_finish` was then stopped at the platform's wall, swept from the player out there. With
+  the carry left out of Days's collision, it stays at the middle; the final blow (a KH2 player's attack, atkp 1307,
+  1652 KH2 damage, 940 Days's) threw its stand-in 1.5 m up, Days's ground 1.66 under that (the platform), while its
+  floor taken under the place given (-0.83) came out 2.5 m down, and it sank to 3.4 m under the platform, the player let
+  go there (his HP 0 as he fell, given back 3 s later). With the floor under the higher of the two places, the player
+  is let go at 14.8 cm (the platform) each round, defeated at 194 s (220 s with Days's place alone), the mission over,
+  its results shown.
 ## 38. Days's commands on KH2's reaction command bar
 
 Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)

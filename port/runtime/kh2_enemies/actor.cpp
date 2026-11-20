@@ -462,6 +462,14 @@ bool Actor::play(int id, float blend, float start, bool restart)
     set_bits(field::kStatus, bit::kMotionEnded, false);
     set_u32(field::kMotion, std::uint32_t(id));
     set_u32(field::kMotionNow, std::uint32_t(id));
+    // its followers start the same (start_num on each, which goes on to theirs); one whose set lacks it plays on
+    if (!synced.empty() && !syncing_) {
+        syncing_ = true;
+        for (const std::uint32_t other : std::vector<std::uint32_t>(synced))
+            if (Object *o = Object::at(memory(), other); o != nullptr && o->actor() != nullptr && o->actor() != this)
+                o->actor()->play(id, blend, start, true);
+        syncing_ = false;
+    }
     return true;
 }
 
