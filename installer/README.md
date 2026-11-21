@@ -211,6 +211,12 @@ HEARTS II FINAL MIX's `Axa::PackageFile`), nothing taken from other tools:
   own, taken from the player's KINGDOM HEARTS II FINAL MIX executable (never kept); an asset uses its
   entry's header.
 
+The Xbox app (the Microsoft Store's copy) lets nothing but the game read its executables: the archives are
+all found and `KINGDOM HEARTS II FINAL MIX.exe` is said missing. For such a copy the environment variable
+`KHDAYS_COLLECTION_TABLE` names a file of the player's own that holds the table's 256 bytes (checked by the
+same digest); the helper reads it when the executable gives none. KH2 Enemies reads the executable's own
+code and is not made from such a copy.
+
 `python collection_archive.py <archive without .hed/.pkg> <out folder> <kh2 exe> <path> [<path> ...]`
 writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`; a path the
 archive does not hold is named and left out (exit status 3 when it holds none of them).
