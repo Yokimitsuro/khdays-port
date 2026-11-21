@@ -567,6 +567,16 @@ class CollectionCheck(unittest.TestCase):
             (movies / videos["movies"][0]).unlink()
             self.assertTrue(s.check_folder("1.5+2.5", folder, ("videos",)))
 
+    def test_the_xbox_apps_copy_asks_for_kh2_to_be_started(self):
+        """All its files there and KH2's executable read only by the running game: start it, not "files missing"."""
+        with self.assertRaises(s.Refusal) as refused:
+            s.refuse_missing([s.KH2_NOT_RUNNING])
+        self.assertEqual(refused.exception.key, "hd-start-kh2")
+        with self.assertRaises(s.Refusal) as refused:
+            s.refuse_missing(["Image/dt/kh2_first.hed/.pkg", s.KH2_NOT_RUNNING])
+        self.assertEqual(refused.exception.key, "hd-missing")
+        s.refuse_missing([])
+
     def test_the_xbox_apps_game_folder_is_taken_as_its_content(self):
         """A player who chooses the Xbox app's game folder (C:\\XboxGames\\<game>) gets its Content, where its
         archives and videos are (its videos under MSSTORE): the setup's page and build-hd see the same."""

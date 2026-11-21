@@ -761,6 +761,7 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
 # them in <library>/<game>/Content, its videos under MSSTORE (xbox_library.py); the
 # videos are found where the collection has them.
 KH2_EXE = "KINGDOM HEARTS II FINAL MIX.exe"
+KH2_NOT_RUNNING = KH2_EXE + " (not running)"  # the Xbox app's copy: read only from the running game
 COLLECTION_ARCHIVES = {
     "1.5+2.5": {
         "Mare": "Image/Mare",
@@ -830,6 +831,18 @@ MESSAGES.update(
             "fr": "Il manque à ce dossier des fichiers dont les éléments HD ont besoin : {missing}",
             "de": "In diesem Ordner fehlen Dateien, die die HD-Teile brauchen: {missing}",
             "it": "In questa cartella mancano file che servono ai pezzi HD: {missing}",
+        },
+        "hd-start-kh2": {
+            "en": "Microsoft Store (Xbox app) version detected. To make the HD pieces, start KINGDOM HEARTS II "
+            "FINAL MIX, leave it open until the installation ends, then click Next.",
+            "es": "Versión de Microsoft Store (aplicación Xbox) detectada. Para hacer las piezas HD, inicia KINGDOM "
+            "HEARTS II FINAL MIX, déjalo abierto hasta que termine la instalación y pulsa Siguiente.",
+            "fr": "Version du Microsoft Store (application Xbox) détectée. Pour créer les éléments HD, lancez KINGDOM "
+            "HEARTS II FINAL MIX, laissez-le ouvert jusqu'à la fin de l'installation, puis cliquez sur Suivant.",
+            "de": "Microsoft-Store-Version (Xbox-App) erkannt. Für die HD-Teile starte KINGDOM HEARTS II FINAL MIX, "
+            "lass es bis zum Ende der Installation geöffnet und klicke dann auf Weiter.",
+            "it": "Rilevata la versione del Microsoft Store (app Xbox). Per creare i pezzi HD, avvia KINGDOM HEARTS II "
+            "FINAL MIX, lascialo aperto fino alla fine dell'installazione, poi fai clic su Avanti.",
         },
         "hd-needs-both": {
             "en": "The HD menus and HUD need both collections.",
@@ -931,9 +944,20 @@ def check_folder(kind: str, folder: Path, pieces: tuple[str, ...] = PIECES) -> l
     if kind == "1.5+2.5" and "menus" in pieces:
         try:
             collection_archive.load_table(folder / KH2_EXE)
+        except collection_archive.UnreadExecutable:
+            missing.append(KH2_NOT_RUNNING)
         except (OSError, collection_archive.ArchiveError):
             missing.append(KH2_EXE)
     return missing
+
+
+def refuse_missing(missing: list[str]) -> None:
+    """The refusal for what check_folder found missing (none: nothing): the Xbox app's copy with all its files
+    asks for KH2 to be started (its table is read from the running game), anything else names what is absent."""
+    if missing == [KH2_NOT_RUNNING]:
+        raise Refusal("hd-start-kh2")
+    if missing:
+        raise Refusal("hd-missing", missing="; ".join(missing))
 
 
 def pieces_of(text: str) -> tuple[str, ...]:
@@ -1001,9 +1025,7 @@ def find_collections(args: argparse.Namespace) -> dict[str, Any]:
     ),
 )
 def check_collection(args: argparse.Namespace) -> dict[str, Any]:
-    missing = check_folder(args.kind, args.folder, args.pieces)
-    if missing:
-        raise Refusal("hd-missing", missing="; ".join(missing))
+    refuse_missing(check_folder(args.kind, args.folder, args.pieces))
     return {"valid": True, "missing": []}
 
 
@@ -1063,9 +1085,7 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     for kind, folder in (("1.5+2.5", args.c1525), ("2.8", args.c28)):
         pieces_here = chosen if kind == "1.5+2.5" else tuple(p for p in chosen if p == "menus")
         if folder is not None and pieces_here:
-            missing = check_folder(kind, folder, pieces_here)
-            if missing:
-                raise Refusal("hd-missing", missing="; ".join(missing))
+            refuse_missing(check_folder(kind, folder, pieces_here))
     if menus:
         unmerge_port_mods(install)  # the menus kept are copied as their tools made them (build-mods puts them in again)
     data = data_folder(install)
@@ -1445,7 +1465,10 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         places = mod_places(install, work / "src", c1525=args.c1525)
         if set(COLLECTION_MODS) & set(wanted):
             # the collections' entries the tools read, extracted as the HD pieces' are
-            cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+            try:
+                cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+            except collection_archive.UnreadExecutable:
+                raise Refusal("hd-start-kh2") from None
             for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
                 with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
                     collection_archive.materialise(a, paths, work / "src" / f"{MOD_SOURCES[archive]}.hed_out")
