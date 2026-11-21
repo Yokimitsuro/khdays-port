@@ -15,6 +15,7 @@ from pathlib import Path
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import theater_title as tt  # noqa: E402
 from save_screen import p2_entry  # noqa: E402
 
 NAMES = [
@@ -197,12 +198,16 @@ def alpha(data, material, frame, default):
     return value / 31
 
 
+FIELD_BASE = 0x0204CAC0  # where the European game loads ov002: this file's table addresses are that game's
+FIELD_BASES = (FIELD_BASE, 0x0204CAA0)  # the American game loads the same overlay 0x20 lower, its tables alike
+
+
 def overlay(data):
-    """The supported ROM's ov002: derive its table address and file id from the overlay table."""
+    """A supported ROM's ov002 and the address its tables are counted from: its file id from the overlay table."""
     root = data.parent if data.name == "nitrofs" else data
     record = (root / "system/arm9_overlay_table.bin").read_bytes()[64:96]
     index, address, size, _, _, _, file_id, flags = struct.unpack("<8I", record)
-    if index != 2 or address != 0x0204CAC0:
+    if index != 2 or address not in FIELD_BASES:
         raise ValueError("unsupported Days field overlay for heart-counter conversion")
     manifest = json.loads((root / "manifest.json").read_text())
     path = next(f["path"] for f in manifest["files"] if f["file_id"] == file_id)
@@ -232,7 +237,7 @@ def overlay(data):
         b = bytes(out)
     if len(b) < size:
         raise ValueError("truncated Days field overlay")
-    return b, address
+    return b, FIELD_BASE
 
 
 def material_uv(raw, material, width, height):
@@ -907,7 +912,7 @@ def main():
     make(
         a.data,
         a.output or Path(__file__).resolve().parents[2] / "mods" / a.mod / "layouts/gauge",
-        a.lang,
+        tt.skip_missing_languages(a.data.parent if a.data.name == "nitrofs" else a.data, a.lang),
         a.native,
         a.settings,
     )

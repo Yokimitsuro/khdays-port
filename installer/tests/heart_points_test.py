@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import struct
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +118,21 @@ class HeartPointsTest(unittest.TestCase):
         first = layout.rows[3][0]
         self.assertTrue(struct.unpack_from("<I", first)[0] & (1 << 15))
         self.assertEqual(struct.unpack_from("<4i", first, 8), (0, 1, 0, 8))
+
+    def test_the_field_overlay_of_either_game_counts_its_tables_from_one_address(self):
+        def game(root: Path, address: int) -> Path:
+            (root / "system").mkdir(parents=True)
+            record = struct.pack("<8I", 2, address, 8, 0, 0, 0, 7, 0)
+            (root / "system/arm9_overlay_table.bin").write_bytes(bytes(64) + record)
+            (root / "manifest.json").write_text(json.dumps({"files": [{"file_id": 7, "path": "ov2.bin"}]}))
+            (root / "ov2.bin").write_bytes(b"overlay!")
+            return root
+
+        with tempfile.TemporaryDirectory() as folder:
+            for name, address in (("eu", 0x0204CAC0), ("us", 0x0204CAA0)):
+                self.assertEqual(hearts.overlay(game(Path(folder) / name, address)), (b"overlay!", 0x0204CAC0))
+            with self.assertRaises(ValueError):
+                hearts.overlay(game(Path(folder) / "other", 0x0204CA00))
 
     def test_pack_schema_and_installer_include_all_clips(self):
         config = json.loads((ROOT / "docs/examples/kh2-gauge.json").read_text())["heart_points"]
