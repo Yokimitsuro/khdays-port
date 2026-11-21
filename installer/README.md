@@ -215,7 +215,7 @@ The Xbox app (the Microsoft Store's copy) lets nothing but the game read its exe
 running game's memory is read as any program's of the player: for such a copy the helper takes the table from
 the running `KINGDOM HEARTS II FINAL MIX.exe` (`game_memory.py`, read only, nothing of it written), and when
 it does not run the check says so: the installer's HD page asks the player to start it, leave it open until
-the installation ends and click Next. The environment variable `KHDAYS_COLLECTION_TABLE` can name a file of
+the installation ends and try again (a box with Retry). The environment variable `KHDAYS_COLLECTION_TABLE` can name a file of
 the player's own that holds the table's 256 bytes instead (checked by the same digest). KH2 Enemies reads the
 executable's own code and is not made from such a copy.
 

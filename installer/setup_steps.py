@@ -834,15 +834,15 @@ MESSAGES.update(
         },
         "hd-start-kh2": {
             "en": "Microsoft Store (Xbox app) version detected. To make the HD pieces, start KINGDOM HEARTS II "
-            "FINAL MIX, leave it open until the installation ends, then click Next.",
+            "FINAL MIX, leave it open until the installation ends, then try again.",
             "es": "Versión de Microsoft Store (aplicación Xbox) detectada. Para hacer las piezas HD, inicia KINGDOM "
-            "HEARTS II FINAL MIX, déjalo abierto hasta que termine la instalación y pulsa Siguiente.",
+            "HEARTS II FINAL MIX, déjalo abierto hasta que termine la instalación y vuelve a intentarlo.",
             "fr": "Version du Microsoft Store (application Xbox) détectée. Pour créer les éléments HD, lancez KINGDOM "
-            "HEARTS II FINAL MIX, laissez-le ouvert jusqu'à la fin de l'installation, puis cliquez sur Suivant.",
+            "HEARTS II FINAL MIX, laissez-le ouvert jusqu'à la fin de l'installation, puis réessayez.",
             "de": "Microsoft-Store-Version (Xbox-App) erkannt. Für die HD-Teile starte KINGDOM HEARTS II FINAL MIX, "
-            "lass es bis zum Ende der Installation geöffnet und klicke dann auf Weiter.",
+            "lass es bis zum Ende der Installation geöffnet und versuche es dann erneut.",
             "it": "Rilevata la versione del Microsoft Store (app Xbox). Per creare i pezzi HD, avvia KINGDOM HEARTS II "
-            "FINAL MIX, lascialo aperto fino alla fine dell'installazione, poi fai clic su Avanti.",
+            "FINAL MIX, lascialo aperto fino alla fine dell'installazione, poi riprova.",
         },
         "hd-needs-both": {
             "en": "The HD menus and HUD need both collections.",
