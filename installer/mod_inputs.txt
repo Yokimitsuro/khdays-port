@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools fce482b61d2517eff9d48435bcf54488ff335c84d1612b2bc5d259ee2f722a4c
+# tools 4ace48dc31de27e36ef5be0daa2e3fe0db85226c8ecd008a0c039965d071b2aa
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -124,6 +124,7 @@ kh2_fifth msn/us/HE17_MS105.bar
 kh2_fifth msn/us/HE18_MS108.bar
 kh2_fifth msn/us/LK02_MS102.bar
 kh2_fifth msn/us/LK14_MS103.bar
+kh2_fifth msn/us/MU09_MS108.bar
 kh2_fifth msn/us/NM03_MS103.bar
 kh2_fifth msn/us/NM07_MS204.bar
 kh2_fifth msn/us/TT20_MS603.bar
@@ -289,6 +290,8 @@ kh2_fifth obj/F_EX040_TT.mset
 kh2_fifth obj/F_HE030_L.a.us
 kh2_fifth obj/F_HE030_L.mdlx
 kh2_fifth obj/F_HE030_L.mset
+kh2_fifth obj/F_MU030.a.us
+kh2_fifth obj/F_MU030.mdlx
 kh2_fifth obj/M_AL020_FIRE.a.us
 kh2_fifth obj/M_AL020_FIRE.mdlx
 kh2_fifth obj/M_AL020_FIRE.mset
@@ -682,6 +685,7 @@ kh2_sixth obj/N_NM070_BTL_2.a.us
 kh2_sixth obj/N_NM070_BTL_2.mdlx
 kh2_sixth obj/N_NM070_BTL_2.mset
 kh2_sixth obj/PRIZE_HE.mdlx
+kh2_sixth obj/PRIZE_MU.mdlx
 kh2_sixth obj/P_EH000_LAST.a.us
 kh2_sixth obj/P_EH000_LAST.mdlx
 kh2_sixth obj/P_EH000_LAST.mset

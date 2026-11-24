@@ -518,6 +518,7 @@ struct Enemy final {
         float fade = 1.0F, fade_step = 0.0F;
         bool paused = false; // held where it is (0:66, ryj::EFFECT::stop(true)): drawn as it stands, not run
         int dome = 0; // one of the laser dome's (LaserDome): 1 its lasers', 2 hits', 3 bounces', 4 bursts' -- 0 none
+        bool prizes = false; // the prizes' (prizes.cpp): they are its points
         // its two points when last drawn (a swing trail's base and tip): the ticks between two draws take theirs
         // between those and the new ones, as KH2's bones give a new pair each tick
         std::vector<kh2::EffectPoint> points_before;
@@ -543,7 +544,9 @@ struct Enemy final {
     // Days's first hit gave its health
     std::int64_t record_most = 0;
     double start_share = 1.0;
-    int battle_level = 0;       // its battle entry's level (enmp + 2: YS::LEVELPARAM's for its attacks), 0 none known
+    int battle_number = 0;      // its battle entry (2:9), 0 none known
+    int battle_level = 0;       // its level (enmp + 2: YS::LEVELPARAM's for its attacks), 0 the area's (battle_level)
+    int hurt_motion = -1;       // a battle NPC's damage motion (npc_hurt), -1 none
     bool held_at_least = false; // the last Days hit's damage kept off by its least health (1:231): a hit all the same
     // what the last hit's damage was kept to (khdays_kh2_enemies_damage) and the frame it was, for its class's own
     // working out of it (khdays_kh2_enemies_dealt); -1 none
@@ -645,6 +648,7 @@ struct Kh2Mission final {
     bool locked = false; // 4:54 / 4:55
     bool over = false;   // completed, failed, its boss dead or left (4:3, 4:11, 4:16, 4:22)
     bool others_go = false; // ended by its boss's end (4:16): its battle's others to be sent away (battle_over)
+    bool lost = false;      // failed (4:11): Days's mission to be ended (KH2's game over)
     std::string end;
 };
 inline std::unique_ptr<Kh2Mission> kh2_mission;
@@ -1077,6 +1081,19 @@ template <typename F> void each_member(F &&f)
     }
 }
 
+int object_team(const Object &o);
+bool strikes_team(int team, int target);
+// The battle NPCs an attack of `team` may strike (shell/npc.cpp): the allies with a sheet of their own (2:9), no party
+// members, not kept from hits (YS::OBJ::is_hit_attack)
+template <typename F> void each_npc(int team, F &&f)
+{
+    for (auto &[id, npc] : allies)
+        if (npc && !npc->released && npc->started && npc->actor && friends.count(id) == 0 &&
+            npc->actor->u32(0x5c0) != 0 && strikes_team(team, object_team(*npc->actor)) &&
+            (npc->actor->u32(field::kFlags) & bit::kNoHitAttack) == 0)
+            f(*npc);
+}
+
 // KH2's object pictures (1:285: YS::STDOBJ::show_picture, a dk::Layout of its archive's first entry of type 0x2e) by
 // handle: the object, its kind (the archive: kh2/obj/<name>.a.us, its pictures' HD pages after its effects'), the
 // layout shown, the count of its changes (Tz::Layout::setNum: the layout started again), how far it is moved (KH2's
@@ -1115,6 +1132,10 @@ inline int reference_blow = 0;
 // no such entry
 struct BattleRow final {
     int health = 0, level = 0;
+    // the most and the least of its health a hit takes before its power's rates (+ 0x44, + 0x46, per 10000:
+    // YS::SHEET::set), and its rates by element, the seventh every hit's (+ 0x48, percent)
+    int most = 10000, least = 0;
+    std::array<int, 7> rates{100, 100, 100, 100, 100, 100, 100};
 };
 
 // KH2's level parameters (00battle.bin's lvpm, YS::LEVELPARAM: 12 bytes a level from 1 -- + 0 its health's
@@ -1160,6 +1181,7 @@ struct AttackParam final {
     int add_drive = 0;    // + 0x29 (the PS3 build's ATTACKPARAM::AddDrive): what a landed one takes off a form's time
     int revenge = 0;      // + 0x2a (RevengeDamage): the karma a landed one adds (YS::ENEMY::_OVR_exec_damage)
     int kind = 0;         // + 4 (Type): 5 and 6 a cure's (YS::SHEET::calc_damage, BTLOBJ::add_damage), else damage
+    bool magic = false;   // + 5: its strength its owner's magic, which an enemy's sheet has none of (SHEET::set)
     int element = 0;      // + 9: 0 physical, 1 fire, 2 blizzard, 3 thunder ...
     int blow_along = 0;   // + 0xe, a short: a blow's speed along (YS::DAMAGE::get_blow; + 0xc then its speed up)
     // its reflection's (the PS3 build's ATTACKPARAM): what it does itself once reflected (+ 0x13, RefactSelf) and what
@@ -1221,6 +1243,8 @@ public:
     void health(Actor &a) override;
 
     void battle_entry(Actor &a, int entry) override;
+    void damage_reaction(Actor &a, std::uint32_t hit) override;
+    void scatter_orbs(Object &o, float value) override;
 
     void set_health(Actor &a, int hp) override;
 
@@ -1396,6 +1420,7 @@ std::string kh2_mod_of(const std::string &rel, const std::string &first = {});
 std::vector<Shape> read_shapes(const std::vector<std::uint8_t> &mdlx, std::uint32_t *default_groups = nullptr);
 int trigger_sound(const kh2::MotionAttributes::Trigger &t);
 const KindFiles &system_effects();
+KindFiles *prize_files(const std::string &name, const std::set<int> &sounds);
 Mod &mod();
 KindFiles *files_of(const std::string &name, bool form = false);
 std::uint32_t entry_record(const std::string &name);
@@ -1411,9 +1436,7 @@ int attack_key(const Actor &a, int atkp);
 int attack_power(int atkp);
 int attack_team(int atkp);
 int entry_team(const std::string &name);
-int object_team(const Object &o);
 int made_team(int atkp, const Object *owner);
-bool strikes_team(int team, int target);
 bool attack_reacts(int atkp);
 const std::vector<DamagePattern> &damage_patterns();
 
@@ -1431,7 +1454,7 @@ Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, b
 std::vector<kh2::Mat4> pose_at(kh2::MotionPlayer &player, const kh2::Motion &motion, float ticks);
 void pose(Enemy &e);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
-void sound(const Enemy &e, int id);
+void sound(const Enemy &e, int id, const KindFiles *files = nullptr);
 unsigned motion_of(const Enemy &e, unsigned player);
 std::uint32_t cast(Enemy &e, int number, unsigned player = 0, bool on_weapon = false, const KindFiles *files = nullptr);
 void weapon_trail(Enemy &e, unsigned object, Held &h, bool swing);
@@ -1497,6 +1520,18 @@ void draw_weapon(const Friend &f, const float view[16], const float projection[1
 void friend_blows(Friend &f, Enemy &e, const KhdaysKh2Shell &s);
 bool member_reached(const Enemy &m, const Vec3 &centre, float radius, float up, int type);
 void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp);
+int hit_reaction(Enemy &m, const Vec3 &way, int reaction, const AttackParam &ap);
+Vec3 hit_way(const Actor &by, const Actor &to);
+int battle_level(const Enemy &e);
+void strike_npcs(Enemy &e, const KhdaysKh2Shell &s, std::size_t range, int group, int atkp, int team);
+void npc_hurt(Enemy &by, Enemy &npc, int atkp);
+void npc_tick(Enemy &npc);
+void scatter_gauge_prizes(const Vec3 &at, float value);
+void prizes_tick();
+void give_prizes(const Enemy &e, Enemy::Running &r);
+void take_prizes(Enemy::Running &r);
+void drop_prizes(unsigned holder);
+Vec3 to_effect_space(const Enemy &e, const Vec3 &k, bool way);
 
 // laser_dome.cpp -- Final Xemnas's laser dome.
 void laser_tick();
@@ -1522,7 +1557,7 @@ float apart(const float a[3], const float b[3]);
 void ghosts_close();
 
 // mission.cpp -- KH2's missions: their pieces, counts, gauges and timers.
-void mission_damage(std::uint32_t object, std::int64_t damage);
+void mission_damage(std::uint32_t object, std::int64_t damage, std::uint32_t attacker, int kind = 0);
 void battle_over(const std::string &mission);
 MissionPiece *mission_piece(Kh2Mission &m, int kind, int index);
 void start_mission(const std::string &name);

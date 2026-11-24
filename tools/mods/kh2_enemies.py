@@ -134,9 +134,11 @@ KINDS = {
     # with no script, carried on it, its motions following Twilight Thorn's (1:126) to play their effects
     "B_EX100": "Twilight Thorn",
     "B_EX200": "Twilight Thorn's darkness",
-    # the Land of Dragons' summit's Shan-Yu (mu09) and his falcon, both placed by the battle's own spawn
+    # the Land of Dragons' Shan-Yu (mu09) and his falcon, both placed by the battle's own spawn, and the palace's gates
+    # it places with them, a battle NPC of the player's team his mission's gauge is kept by
     "B_MU100": "Shan-Yu",
     "B_MU110": "Shan-Yu's falcon",
+    "F_MU030": "Palace gates (with Shan-Yu)",
     # FINAL MIX's data battles (their Limit Cut objects, _LV99)
     "B_EX110_LV99": "Axel (Data)",
     "B_EX130_LV99": "Xaldin (Data)",
@@ -227,6 +229,9 @@ WEAPONS = {"P_EH000_LAST": ("W_EH000", "W_EH000_LAST")}
 # The sounds KH2's own code plays for a kind, which none of its files names (bank x 1000 + number): Final Xemnas's laser
 # dome (ryj::LAST_XEMNUS_LASER: its hum, a laser's hit, its bounce off a player and off his partner)
 ENGINE_SOUNDS = {"B_EX170_LAST_LV99": {374040, 374047, 374065, 374066}}
+# The prizes a script's call scatters (YS::PRIZEOBJ: an object of effects alone) and their sounds, landing and taken, in
+# KH2's own code (PRIZEEFFECT::PARAM): the Land of Dragons' morale orbs (1:226, trap_obj_scatter_prize_mu)
+PRIZES = {(1, 226): ("PRIZE_MU", {41, 42})}
 # KH2's party AI's parameters (kn::friend_param_data: each member's follow and battle ranges, his actions' ranges and
 # motions, his hops; the PS3 build reads a debug file over them, dbg/friend_param.bin), as KINGDOM HEARTS II FINAL
 # MIX.exe holds them: its first 19 words the members' records' offsets, the whole 0x62d0 bytes (friend_params)
@@ -237,6 +242,7 @@ FRIEND_PARAMS_HEAD = bytes.fromhex("50000000" "50050000" "f0090000")
 # init: flag 14, faded out at once, its collision off) and commands it (Ts::XEMNAS::Get, 6:59)
 PRIMARY = {"B_EX170_LAST_LV99": 1}
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
+SYSTEM_EFFECTS = "00effect.bar"
 # KH2's files the reaction commands read (under original/), each with what it is for
 SHARED = (
     ("obj/P_EX100.mdlx", "the player's skeleton, which the enemies' motions for the player are made for"),
@@ -245,7 +251,7 @@ SHARED = (
     ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows; the weapons' bones"),
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
     ("00objentry.bin", "KH2's objects' entries: the numbers scripts find objects by (1:114, 1:222)"),
-    ("00effect.bar", "KH2's system effects (YS::SystemPax): a party member's knock-out stars"),
+    (SYSTEM_EFFECTS, "KH2's system effects (YS::SystemPax): a party member's knock-out stars, a reflection's spark"),
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/: sys.bar the commands' names, jm.bar the enemies'
 JOURNAL = "jiminy.bar"  # menu/us/: KH2's journal, its characters' titles by object (the enemies' names: jm.bar's)
@@ -495,12 +501,16 @@ def companions(
     the Volcanic Lord's Blizzard Lord) and those the mod has no kind of -- save the boss's own others (PRIMARY: Final
     Xemnas's hidden one); each as (name, x, y, z, yaw, its first argument, UnitArg[1]) in its own frame: from it,
     turned so that the way from it to the player is + z (the port turns them to where its player stands). The first
-    such spawn of the areas as given; none when none holds it, or for an enemy."""
+    such spawn of the areas as given; none when none holds it, for an enemy, or for a boss the spawn places after
+    another the mod has (Shan-Yu's falcon: his gates come once, with him)."""
     arguments: dict[tuple[int, float, float, float, float], int] = {}
     found = battle_of(ards, entries, name, arguments=arguments)
     if found is None:
         return []
     placed, _, me, turn = found
+    bosses = [entries.get(o[0], ("", -1)) for _, objects in placed for o in objects]
+    if next((n for n, kind in bosses if kind in BOSSES and n in kinds), name) != name:
+        return []
     c, s = math.cos(turn), math.sin(turn)
     out = []
     for _, objects in placed:
@@ -990,6 +1000,7 @@ def make(
             needs |= {c[0] for c in companions(areas, numbered, name, set(KINDS))}
             for other in sorted(needs - set(making)):
                 left_out.append(f"{name} makes or brings {other}, not asked for (--only): its script finds none")
+    scattered: set[tuple[int, int]] = set()  # the calls that scatter prizes (PRIZES)
     for name, title in making.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         sources[1] = sources[1].with_name(motion_set_of(entries, name))
@@ -1030,6 +1041,7 @@ def make(
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
+        scattered |= set(PRIZES) & set(calls)
         with_it = companions(areas, numbered, name, set(KINDS))
         mission = mission_of(areas, numbered, name)
         if mission is not None:
@@ -1037,6 +1049,7 @@ def make(
             if source.is_file():
                 (mod / "kh2" / "msn").mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, mod / "kh2" / "msn" / source.name)
+                scattered |= set(PRIZES) & set(calls_in(source.read_bytes()))
                 # its pieces' HD pictures, one for each of its IMGDs in their order (US_<name>_bar0.png ...): KH2 PC
                 # draws the pieces' sequences with them, its PS2 pictures laid out otherwise
                 copy_pages(kh2 / "remastered" / MISSIONS / source.name, mod / "kh2" / "msn" / mission, "*_bar*.png")
@@ -1052,6 +1065,18 @@ def make(
         )
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
+    for call in sorted(scattered):
+        prize, prize_sounds = PRIZES[call]
+        source = kh2 / "original" / "obj" / f"{prize}.mdlx"
+        if not source.is_file():
+            left_out.append(f"{prize} (the prizes a mission scatters): KH2's {source.name} not there; none appear")
+            continue
+        shutil.copy2(source, obj / source.name)
+        copy_pages(kh2 / "remastered" / "obj" / source.name, obj / prize)
+        left_out += make_sounds(kh2, prize, prize_sounds, mod / "kh2" / "se")
+    system = kh2 / "original" / SYSTEM_EFFECTS
+    if system.is_file():  # its elements' sounds (a reflected attack's spark's 107)
+        left_out += make_sounds(kh2, SYSTEM_EFFECTS, effect_sounds(system.read_bytes()), mod / "kh2" / "se")
     for part, what in SHARED:
         source = kh2 / "original" / part
         if source.is_file():

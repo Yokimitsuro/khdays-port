@@ -350,6 +350,8 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 0:39, 0:40, 0:67, 0:49 | an effect's size, its turn and its colour set (`trap_effect_set_scale`, `_rot`, `_color`: + 0x20, + 0x10 and + 0x30 of its transform, 1 each as it is); whether it is still alive (`trap_effect_is_alive`: its + 0xe bit 0 clear; 0:50 asks whether its instance is there) | its element's size the one given, its draws' colours times the colour (the Blizzard Lord's ice spikes at random sizes and turns, Dark Thorn's fading by its alpha); 0:49 whether it still plays, as 0:50 |
 | 1:262 | a line of its voice (`trap_obj_voice` -> the object's virtual + 0xa0, `YS::STDOBJ::_OVR_voice` -> `YS::VOICE::request`): the sound of that number in its voice bank, one at a time, a new one taking the place of one asked with no higher a priority (`exec`: the one before ended) | the mod's `kh2/voice/<kind>/<number>.wav` (below, "Voices"), heard where the enemy was last drawn; Hades's 13 |
 | 2:3, 2:87 | a hit's slide (`trap_enemy_exec_damage_hitback`, `FUN_1403d4960`): unless the actor stands firm, the hit's way made one long (turned back for a speed below 0) at a tenth of the speed given (its health record's + 0x1c8 added) a tick, 0.9 of itself each tick after, over below 1 or on a wall (`FUN_1403d4570`, `FUN_1403b9420`); a large hit (`trap_enemy_exec_damage_large`, `FUN_1403d4140`): from the front it faces the hit and plays 23, from behind it turns its back to it and plays 24, its idle asked after (`FUN_1403c8310`'s queue), then the slide | as KH2, its standing firm only + 0x120 bit 7 (the PC's `FUN_1403ba190` reads two flags of the native class's more); the health record's + 0x1c8 is none in Days's field. The bosses read slide by none: the Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's (2:87, 0) |
+| 2:0 | a hit's reaction carried out at once, as the object's class does (`trap_enemy_exec_damage`: `exec_damage_reaction`), and its `Flag`'s bit 0 set | a battle NPC's (`BTLOBJ::_OVR_exec_damage_reaction`); a Days enemy's was played before its trigger 6 |
+| 1:226 | morale orbs worth so much of the mission's gauge scattered from an object (`trap_obj_scatter_prize_mu`) | as KH2 ("KH2's prizes") |
 | 2:64, 2:91, 2:85 | a hit's first reaction (`trap_damage_orig_reaction`, + 0x27); a reaction kind's kind (`trap_damage_get_reaction_type`, `FUN_1403ce980` of the value given: 1 and 12 are 1, 3 6 8 10 13 16 18 are 3, 4 7 9 11 15 17 are 4, the others themselves); its element (`trap_damage_element`: its attack's record, + 0x20, its byte + 9 -- atkp's element, 0 physical, 1 fire, 2 blizzard, 3 thunder) | as KH2 on the Days hit: its element from the hit's kinds (Days's packet's high flags: Fire, Blizzard, Thunder), below ("The second bosses") |
 | 1:311 | its rate for an element (`trap_sheet_set_element_rate`, `FUN_1403c2650`: its sheet's + 0x1a8 + element, the weakness times the rate, in percent, rounded up) | the share of Days's damage of that element it takes (`khdays_kh2_enemies_damage`): the Volcanic Lord takes no fire |
 | 1:227 | a jump at once (`trap_obj_jump_direct`: its class's virtual + 0x18, the PS3 build's `YS::ACTION::jump` -- `YS::OBJ::prepare_jump` with the vector as 1:55's, then `change_action(1)`) | as KH2: class 1 on the spot, its motion as it is, no take-off waited for |
@@ -1227,11 +1229,15 @@ puts them and the player (KH2's (0, 0, 1300) and (-200, -400, 1100); (0, 0, 2250
   -- in mu09 alone (world 8, area 9) while the area's spawn cost left is over 30 (1:197 `trap_area_cost_rest`), and
   disables it (1:202 `trap_unit_disable`): KH2's units are not Days's, so they do not come; a mission's author may
   place them as a wave.
-- **The gates are not there yet**: `b_40` places the palace's gates too (`F_MU030`, entry 733, kind 9: a battle NPC of
-  the player's team, at (0, 0, 2715), behind the player). The mission's trigger 6 takes from its gauge ("GATES": 50 of
-  100 at the start, 50 a minute back on its own) the damage an enemy does them over their health times 50, twice that
-  for Shan-Yu's own (`1:213`, 5012), fails at 0 (signal 136) and scatters morale orbs worth half of it from them
-  (1:226, `PRIZE_MU`). Without them the gauge only rises.
+- **The palace's gates** (`F_MU030`, entry 733, kind 9: a battle NPC of the player's team): `b_40` places them at (0,
+  0, 2715), behind the player; no model, seven cylinders of 4 m (TYPE_HIT, 1 m round) across 8 m of the doors, their
+  puff (1:87) as the battle's 410th tick goes. They come with Shan-Yu ("placed with it"; once -- his falcon, a boss of
+  the same spawn, brings none). An enemy's attack that reaches them ("Battle NPCs struck", below) takes its damage off
+  their health, 2 to 4 of 67 at level 30, and never the last (1:231, 1; pattern 1: no reaction); their trigger 6 is
+  `2:0` alone. The mission's trigger 6 takes that share of 50 off its gauge ("GATES": 50 of 100 at the start, 50 a
+  minute back on its own), twice as much for Shan-Yu's own blows (1:213, 5012: the hit's attacker, + 0x10), while its
+  player is Sora (1:213 of 1:3: a mission's script has no field of its own; the port answered none), scatters morale
+  orbs worth half of it (1:226, below), and fails at 0 (signal 136).
 - **His shock waves** (`atk_hadou`, 207's elements 10 and 11): element 11 loops and is linked to its motion (below,
   "Effects linked to a motion"), which fades it out over 50 frames as it ends. The port linked none: one more stood at
   each of his fifteen, the floor white for the rest of the fight.
@@ -1244,7 +1250,45 @@ puts them and the player (KH2's (0, 0, 1300) and (-200, -400, 1100); (0, 0, 2250
   the floor, his blows and the falcon's, the clash of swords through all three commands (pushed on, 10 a tick),
   `power_up`, `btl_hard` and `btl_super_hard`, his shock waves gone in 2.2 s at most (ten of them); defeated at 522 s,
   552 s and 607 s by the command's last blow, the falcon gone with him and the mission's results shown (the last run;
-  before its fixes the mission never ended).
+  before its fixes the mission never ended). With the gates (2026-11-24): the clash 4 m from the wall the player stood
+  at, the gates' gauge down 3 to 6 a blow and up with the orbs taken, defeated at 168 s, 184 s and 193 s with the
+  results; left to fall (the gauge at 0, at 131 s and 166 s), and with a gauge started at 4 (90 s), Days's game over
+  and the results, cancelled.
+
+### Battle NPCs struck (2026-11-24)
+
+KH2's battle NPCs (`YS::BTLNPC`, entries of kind 9) with a battle sheet of their own (`2:9`) are struck by its enemies'
+attacks as its party is: the Land of Dragons' gates, the Hydra's Megara (entry 30). The port's are its allies
+(`shell/npc.cpp`): an enemy's motion's attack and its attacks of its own strike those of the teams they strike
+(`YS::ATTACK::is_strike`) whose collision's TYPE_HIT shapes they reach, once each, through `PIERROT::_OVR_exec_damage`:
+the damage (`SHEET::calc_damage`: the attacker's level's strength -- none for an attack of magic, `atkp`'s + 5 -- less
+their own level's defence, between the larger of the two leasts and the smaller of the two mosts -- the level's, and
+their entry's + 0x46 and + 0x44 of their health, per 10000 --, x power x their element's rate x their seventh, over a
+million, rounded up) off their health, kept to their least (1:231); the reaction their patterns leave, their state's
+routine for a hit, trigger 6, the reaction carried out (`BTLOBJ`'s, as a party member's) unless their script did
+(`2:0`), and their mission told (`UNITSCRIPT::DamageCallback`). Their health is KH2's own: the entry's times its level's
+(`SHEET::set`). A level of 0 (most entries) is the area's in KH2 (`LEVELPARAM::GetCurrent`); the port takes the
+mission's (`Ov002_GetMissionLevel`), its author's, 1 to 99 (`battle_level`).
+
+### KH2's prizes (2026-11-24)
+
+What a script scatters (`YS::PRIZEOBJ`, `YS::PRIZEEFFECT`, read in the PS3 build): the Land of Dragons' morale orbs
+(`PRIZE_MU`) first; `PRIZE_TR` and `PRIZE_CA` are the same class. `runtime/kh2_enemies/shell/prizes.cpp`.
+
+- **How many** (1:226 `trap_obj_scatter_prize_mu` -> `PRIZE_MU::AppearGauge`): from the object's target point, for each
+  of its three sizes, worth 2, 0.5 and 0.1 of the mission's gauge, as many as make 0.9, 0.9 and all of what is left.
+- **How they fly** (`PRIZE::appear`, `_phase_move`): thrown 20 to 40 up and up to 20 each way a tick, pulled down 3 a
+  tick (50 at most), their way along the ground 0.95 of itself a tick and turned back on the axis a wall stopped it on
+  (a sphere of 55); on the ground -- their height under their place: 40.3, 27.9, 18.6 -- they bounce at 0.8 of their
+  fall (sound 41, twice at most) till it is 5, then lie; every 30 ticks the ground is asked for again. 900 ticks,
+  shrinking over the last 12.
+- **Taken** (`PRIZE::CanGet`, `get`, `phase_get`): once falling, by a player within 120 along the ground and 30 up or
+  down; sound 42, the gauge's addition at once (`MISSION::AddGauge`), then 40 ticks round his middle, nearer and smaller.
+- **Drawn** (`YS::MASSEFFECT`): one effect of the prizes' file (its one element, in the `.mdlx`'s PAX), its layer
+  `pppRyjMegaBirthPrize` a sprite at each of the game's points: their places, kinds (their size's number), alphas (0x80),
+  sizes and frames. The port gives the effect's points each draw and takes the frames back.
+
+The tool brings a prize's file and sounds with a kind or a mission whose script makes its call (`PRIZES`).
 
 ### Calls made on the player (2026-11-24)
 
@@ -1590,8 +1634,10 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   (`FUN_140433750`: `PO01_MS501`, `TT12_WORK_BOX`, `HB32_FM_VEX`; `TR07_MS203` rising, `TR04_MS104` falling; then
   `EH15_MS104`'s of -5 and above), and so does the port. Drawn as `dk::MISSION_GAUGE` builds it (the PS3 build's
   `create` and `updateGauge`, read): its base (3, then 4), its second (9, then 10: Saïx's claymore), its full part
-  (12) scaled across by its level over its most, its empty part (13) by the rest, its tip (14) moved that share of the
-  bar's length (14's `ex`) along; its column's clip 16, 17 or 15 by its side. Its bar's parts scroll their picture
+  (12) scaled across by its level over its most, its empty part (13) by the rest -- at the base's parameters' place
+  (clip 3's x and y: the bar's far end, 127; its picture lies back from there; until 2026-11-24 the port put it at the
+  bar's start, out of the bar) --, its tip (14) moved that share of the bar's length (14's `ex`) along; its column's clip
+  16, 17 or 15 by its side. Its bar's parts scroll their picture
   (a SEQD part's scroll: `YI::SPRITE::_Draw` moves its UVs by the scroll times the sprite's time -- the frames since it
   was made -- times the image's size, in 16ths of a pixel, the picture repeating within the part's own rectangle, the
   GS's `REGION_REPEAT`); the port's CPU drawing does the same. Its top standing is its second's last frame's (Saïx's
@@ -1615,7 +1661,10 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
 - **The port's mission**: its script's main thread (trigger 3) runs at KH2's 60 ticks a second, its timer counts
   while its bar is up, its count as `MISSION_COUNT::set` keeps it; its bar is up from its start (as KH2's after its
   start camera; whether trigger 2 is its start or its end is not known: the port runs it as it ends), its cameras and
-  event sequences are not played, and its end changes nothing of Days's mission (a failure does not fail it).
+  event sequences are not played. Failed (4:11: `YS::MISSION::Failed`, its failure's sound and camera, then
+  `GAMEOVER::MissionFailed`) it ends Days's mission as the pause's Give Up does (`khdays_link_leave_mission`): Days's
+  game over, then its results, cancelled -- until 2026-11-24 it changed nothing of Days's mission. Its other ends change
+  nothing of it: Days's wave ends with its enemies.
 - **Its pieces on the screen** (`ui/kh2_mission_2d.cpp`), as KH2's `dk::TIMER` and `dk::COUNTER` build them (the PS3
   build's, read): sprites of the sequence's clips, each playing its clip and at its end the next or gone (`dk::Sprite`)
   -- the base (3 coming, then 4; 5 leaving; 0 and 1 the warning, below), its second (the clock,

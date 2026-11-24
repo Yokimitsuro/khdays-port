@@ -2681,6 +2681,20 @@ struct ShanYuWorld final : kh::World {
         way = w;
         speed = s;
     }
+    const kh::Object *scattered = nullptr;
+    float orbs = 0.0F;
+    void scatter_orbs(kh::Object &o, float value) override
+    {
+        scattered = &o;
+        orbs = value;
+    }
+    const kh::Actor *struck = nullptr;
+    std::uint32_t hit = 0;
+    void damage_reaction(kh::Actor &a, std::uint32_t h) override
+    {
+        struck = &a;
+        hit = h;
+    }
 };
 
 // 1:146 an object's push back (YS::BTLOBJ::set_hitback): the way made one long, turned back below 0, a tenth of the
@@ -2688,7 +2702,7 @@ struct ShanYuWorld final : kh::World {
 void test_shan_yu()
 {
     Rig rig;
-    kh::read_shapes(rig.calls, "1:146 3 0\n6:66 1 0\n1:197 0 1\n1:202 1 0\n");
+    kh::read_shapes(rig.calls, "1:146 3 0\n6:66 1 0\n1:197 0 1\n1:202 1 0\n2:0 2 0\n1:226 2 0\n");
     ShanYuWorld world;
     kh::Actor shan_yu(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "shan-yu");
     kh::Actor falcon(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "his falcon");
@@ -2729,6 +2743,14 @@ void test_shan_yu()
     // KH2's area cost and units: none in Days's field
     CHECK(call(rig, shan_yu, 1, 197, {}).bits == 0);
     call(rig, shan_yu, 1, 202, {i(148)});
+    // the gates' trigger 6: a hit's reaction as their class carries it out (2:0); his mission's orbs
+    call(rig, falcon, 2, 0, {adr(falcon.address()), adr(vec)});
+    CHECK(world.struck == nullptr); // (a world of its own: none)
+    falcon.world = &world;
+    call(rig, falcon, 2, 0, {adr(falcon.address()), adr(vec)});
+    CHECK(world.struck == &falcon && world.hit == vec);
+    call(rig, shan_yu, 1, 226, {adr(falcon.address()), f(2.5F)});
+    CHECK(world.scattered == &falcon && world.orbs == 2.5F);
 }
 
 void test_xigbar()

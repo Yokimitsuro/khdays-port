@@ -735,6 +735,8 @@ add_executable(khdays-native
     runtime/kh2_enemies/shell/commands.cpp    # ... reaction commands and command menus
     runtime/kh2_enemies/shell/events.cpp      # ... events, cameras, the screen
     runtime/kh2_enemies/shell/party.cpp       # ... a party member (KH2's party AI)
+    runtime/kh2_enemies/shell/npc.cpp         # ... battle NPCs struck by its enemies
+    runtime/kh2_enemies/shell/prizes.cpp      # ... KH2's prizes
     runtime/kh2_enemies/shell/laser_dome.cpp  # ... Final Xemnas's laser dome
     runtime/kh2_enemies/shell/capture.cpp     # ... a player turned into a KH2 object
     runtime/kh2_enemies/shell/draw.cpp        # ... models and effects drawn

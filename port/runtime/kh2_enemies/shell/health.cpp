@@ -39,7 +39,11 @@ const BattleRow &battle_row(int entry)
                 std::memcpy(&count, file.data() + e.offset + 4, 4);
                 for (std::uint32_t i = 0; i < count && 8 + 92 * std::size_t(i + 1) <= e.size; ++i) {
                     const std::uint8_t *r = file.data() + e.offset + 8 + 92 * std::size_t(i);
-                    rows.emplace(int(r[0] | (r[1] << 8)), BattleRow{int(r[4] | (r[5] << 8)), int(r[2] | (r[3] << 8))});
+                    const auto u16 = [r](int o) { return int(r[o] | (r[o + 1] << 8)); };
+                    BattleRow row{u16(4), u16(2), u16(0x44), u16(0x46), {}};
+                    for (int k = 0; k < 7; ++k)
+                        row.rates[std::size_t(k)] = u16(0x48 + 2 * k);
+                    rows.emplace(u16(0), row);
                 }
             }
         } catch (const std::exception &) {
@@ -132,7 +136,8 @@ int shown_health(const Enemy &e)
 
 void show_health(const Enemy &e)
 {
-    khdays_kh2_shell_set_health(e.days, shown_health(e), e.shown_most);
+    if (allies.count(e.days) == 0) // (no Days enemy stands in for an ally)
+        khdays_kh2_shell_set_health(e.days, shown_health(e), e.shown_most);
 }
 } // namespace khdays::kh2_enemies::shell
 
@@ -180,7 +185,9 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     if (!blow && damage > 0)
         e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     Actor &a = *e->actor;
-    mission_damage(a.address(), damage); // its mission told (its last blow too)
+    // the last to hit it (2:88): the party member whose blow it is, else the nearest player
+    Object *striker = party != nullptr ? party : the_field().player(a);
+    mission_damage(a.address(), damage, striker != nullptr ? striker->address() : 0u); // (its last blow too)
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
         e->dying = true;
         // counted defeated (+ 0x9b8 bit 2, FUN_1403d4a40 as its death tells its group): what 1:272 reads -- Zexion
@@ -211,8 +218,6 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
             khdays_log("kh2 enemies: %08x defeated%s", days, e->released ? " (no \"dead\" state)" : "");
         return;
     }
-    // the last to hit it (2:88): the party member whose blow it is, else the nearest player
-    Object *striker = party != nullptr ? party : the_field().player(a);
     if (striker != nullptr)
         a.set_u32(field::kAttacker, striker->address());
     // the reaction: a small one, from the front or the back as the striker stands (KH2's motions 10 and 12,

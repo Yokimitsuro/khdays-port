@@ -162,11 +162,36 @@ int trigger_sound(const kh2::MotionAttributes::Trigger &t)
 }
 namespace {
 
-// The kind's sounds (its motions' triggers 8 -- those it makes the player play too, his body's and his weapon's: the
-// keyblade's bank 500 -- and its elements'), each the mod's kh2/se/<id>.wav, decoded once
-void read_sounds(KindFiles &k, const std::string &folder)
+// KH2's sounds `ids`, each the mod's kh2/se/<id>.wav, decoded once
+void add_sounds(KindFiles &k, const std::set<int> &ids, const std::string &folder)
+{
+    for (const int id : ids) {
+        const fs::path wav = kh2_file("se/" + std::to_string(id) + ".wav", folder);
+        if (wav.empty())
+            continue;
+        const std::u8string p8 = wav.u8string();
+        const int file = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
+        if (file >= 0)
+            k.sounds[id] = file;
+    }
+    khdays_log("kh2 enemies: %s's sounds: %zu of %zu (kh2/se/<id>.wav)", k.name.c_str(), k.sounds.size(), ids.size());
+}
+
+// The sounds its effects' elements play
+std::set<int> element_sounds(const KindFiles &k)
 {
     std::set<int> ids;
+    for (const auto &[number, el] : k.fx_elements)
+        if (el.sound > 0)
+            ids.insert(el.sound);
+    return ids;
+}
+
+// The kind's sounds (its motions' triggers 8 -- those it makes the player play too, his body's and his weapon's: the
+// keyblade's bank 500 -- and its elements')
+void read_sounds(KindFiles &k, const std::string &folder)
+{
+    std::set<int> ids = element_sounds(k);
     const auto add = [&ids](const kh2::MotionAttributes *attr) {
         if (attr != nullptr)
             for (const auto &t : attr->triggers)
@@ -178,19 +203,7 @@ void read_sounds(KindFiles &k, const std::string &folder)
         for (const auto &v : k.set->variants(slot))
             add(v.attributes.get());
     }
-    for (const auto &[number, el] : k.fx_elements)
-        if (el.sound > 0)
-            ids.insert(el.sound);
-    for (const int id : ids) {
-        const fs::path wav = kh2_file("se/" + std::to_string(id) + ".wav", folder);
-        if (wav.empty())
-            continue;
-        const std::u8string p8 = wav.u8string();
-        const int file = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
-        if (file >= 0)
-            k.sounds[id] = file;
-    }
-    khdays_log("kh2 enemies: %s's sounds: %zu of %zu (kh2/se/<id>.wav)", k.name.c_str(), k.sounds.size(), ids.size());
+    add_sounds(k, ids, folder);
 }
 
 // The BAR entry of `type` in `bar` (its bytes), none: empty
@@ -279,6 +292,7 @@ const KindFiles &system_effects()
         }
         khdays_log("kh2 enemies: KH2's system effects read (%zu effects, %zu elements)", k.fx.size(),
                    k.fx_elements.size());
+        add_sounds(k, element_sounds(k), "");
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: KH2's system effects cannot be played (%s)", x.what());
         k.fx.clear();
@@ -289,36 +303,38 @@ const KindFiles &system_effects()
 }
 namespace {
 
-// Its model's own effects (the .mdlx's PAX: BAR entry 0x12, Hades's "hade", his hair's flame) read as its .a.us's,
+// A model file's own effects (the .mdlx's PAX: BAR entry 0x12, Hades's "hade", his hair's flame) read as an .a.us's,
 // their HD pictures in the model's own folder after its textures' (a model file's pictures run through its entries
-// in BAR order: its texture container's, then its PAX's)
-void read_model_effects(KindFiles &k, const std::string &folder)
+// in BAR order: its texture container's, then its PAX's); none when it has none, or they cannot be read
+std::unique_ptr<KindFiles> model_effects(const std::string &name, const std::string &folder,
+                                         const kh2::EffectBlock &common)
 {
-    const std::vector<std::uint8_t> mdlx = read_file(kh2_file("obj/" + k.name + ".mdlx", folder));
+    const std::vector<std::uint8_t> mdlx = read_file(kh2_file("obj/" + name + ".mdlx", folder));
     const std::vector<std::uint8_t> pax = bar_entry(mdlx, 0x12);
     if (pax.empty())
-        return;
+        return nullptr;
     auto own = std::make_unique<KindFiles>();
-    own->name = k.name;
+    own->name = name;
     try {
         int first = kh2::mdlx_texture_pictures(mdlx.data(), mdlx.size());
         for (auto &b : kh2::read_effect(pax.data(), pax.size()))
             own->fx.push_back(std::make_shared<const kh2::EffectBlock>(std::move(b)));
         own->fx_elements = pax_elements(pax);
-        own->common = k.common;
+        own->common = common;
         for (std::size_t b = 0; b < own->fx.size(); ++b) {
-            auto pages = std::make_unique<khdays::kh2_fx::Pages>("kh2/obj/" + k.name + ".mdlx#" + std::to_string(b));
-            first += pages->add({own->fx[b].get()}, "kh2/obj/" + k.name, first);
+            auto pages = std::make_unique<khdays::kh2_fx::Pages>("kh2/obj/" + name + ".mdlx#" + std::to_string(b));
+            first += pages->add({own->fx[b].get()}, "kh2/obj/" + name, first);
             pages->add({&own->common}, "kh2/fx/texcommon");
             pages->tracing = tracing();
             own->fx_pages.push_back(std::move(pages));
         }
-        khdays_log("kh2 enemies: %s's model's own effects read (%zu effects, %zu elements)", k.name.c_str(),
+        khdays_log("kh2 enemies: %s's model's own effects read (%zu effects, %zu elements)", name.c_str(),
                    own->fx.size(), own->fx_elements.size());
-        k.model_fx = std::move(own);
+        return own;
     } catch (const std::exception &e) {
-        khdays_log("kh2 enemies: %s's model's own effects cannot be played (%s)", k.name.c_str(), e.what());
+        khdays_log("kh2 enemies: %s's model's own effects cannot be played (%s)", name.c_str(), e.what());
     }
+    return nullptr;
 }
 
 // Its event sequences: every entry of type 0x16 in its .a.us, keyed by its name (docs/KH2_ENEMIES.md, "Event
@@ -438,7 +454,7 @@ KindFiles *files_of(const std::string &name, bool form)
             k->shapes = read_shapes(mdlx, &k->default_groups);
             k->plays_player = kind->plays_player;
             read_effects(*k, kind->folder);
-            read_model_effects(*k, kind->folder);
+            k->model_fx = model_effects(k->name, kind->folder, k->common);
             read_events(*k, kind->folder);
             read_sounds(*k, kind->folder);
             khdays_log("kh2 enemies: %s read (%zu motions' slots, %zu bones, %zu shapes)", name.c_str(),
@@ -449,6 +465,29 @@ KindFiles *files_of(const std::string &name, bool form)
         }
     }
     return m.files.emplace(name, std::move(k)).first->second.get();
+}
+
+// KH2's prizes of a file (YS::PRIZEOBJ: PRIZE_MU's morale orbs): its effects alone, each element a prize of the file's,
+// and its prizes' sounds; null when the mod has not the file
+KindFiles *prize_files(const std::string &name, const std::set<int> &sounds)
+{
+    static std::map<std::string, std::unique_ptr<KindFiles>> files;
+    const auto it = files.find(name);
+    if (it != files.end())
+        return it->second.get();
+    kh2::EffectBlock common;
+    if (const auto block = read_file(kh2_file("effect/texcommon.dpd")); !block.empty())
+        common = kh2::read_effect_block(block.data(), block.size(), 0);
+    std::unique_ptr<KindFiles> k = model_effects(name, "", common);
+    if (k != nullptr) {
+        k->script = std::make_shared<const ai::Script>();
+        k->set = std::make_shared<const kh2::MotionSet>();
+        k->skeleton = std::make_shared<const kh2::MotionSkeleton>();
+        add_sounds(*k, sounds, "");
+    } else {
+        khdays_log("kh2 enemies: no %s prizes (the mod's kh2/obj/%s.mdlx): none appear", name.c_str(), name.c_str());
+    }
+    return files.emplace(name, std::move(k)).first->second.get();
 }
 
 namespace {
@@ -739,6 +778,7 @@ const AttackParam &attack_param(int atkp)
                         p.add_drive = r[0x29];
                         p.revenge = r[0x2a];
                         p.kind = r[4];
+                        p.magic = r[5] == 1;
                         p.element = r[9];
                         p.blow_along = along;
                         p.refact_self = r[0x13];

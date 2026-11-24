@@ -112,6 +112,8 @@ int khdays_kh2_shell_player_most_hp(unsigned actor);
 /* Its level: its member record's (gPartyMembers + 0x104 x its nId, + 0x9: + 2, the level less 1), 0 when not known (the
  * record not made: its + 6 0) -- what KH2's player's sheet gives a script (1:361, YS::SHEET::get_level). */
 int khdays_kh2_shell_player_level(unsigned actor);
+/* The mission's level (Ov002_GetMissionLevel, the field root's + 0x8bae: what Days's enemies are made at). */
+int khdays_kh2_shell_mission_level(void);
 /* Its HP made `hp` (Ov022_ActorSetHp: kept to its most, its knock-out at 0), on the host alone -- KH2's script adding
  * to its player's health (1:155: Sephiroth's Heartless Angel leaves him 1). */
 void khdays_kh2_shell_player_set_hp(unsigned actor, int hp);

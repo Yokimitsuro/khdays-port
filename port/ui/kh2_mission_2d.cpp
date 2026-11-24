@@ -317,8 +317,9 @@ void open_counter(Piece &p)
                     .x);
 }
 
-// dk::MISSION_GAUGE::create: its base (3, then 4), its second (9, then 10), its full part (12), its empty part (13)
-// and its tip (14), placed in its column (16, 17, 15 by its side)
+// dk::MISSION_GAUGE::create: its base (3, then 4), its second (9, then 10), its full part (12), its empty part (13) at
+// the base's parameters' place -- the bar's far end: it grows back from there, its picture made so -- and its tip (14),
+// placed in its column (16, 17, 15 by its side)
 void open_gauge(Piece &p)
 {
     const Pictures &pc = *p.pictures;
@@ -330,6 +331,9 @@ void open_gauge(Piece &p)
     p.sprites[1].next = 10;
     for (const int clip : {12, 13, 14})
         p.digits.push_back(int(make(p, clip, 0, 0, 0)));
+    Sprite &empty = p.sprites[std::size_t(p.digits[1])];
+    empty.ox = float(pc.sequence.clips.at(3).parameters[0]);
+    empty.oy = float(pc.sequence.clips.at(3).parameters[1]);
     p.shown_level = -1.0F;
     p.x = float(seq::evaluate_sequence(pc.sequence, kGaugeColumns[column_of(p.kh2)], 0)
                     .active.value_or(seq::SequenceActive{})

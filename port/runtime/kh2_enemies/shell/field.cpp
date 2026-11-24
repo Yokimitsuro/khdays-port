@@ -246,15 +246,52 @@ void Field::battle_entry(Actor &a, int entry)
     if (it == by_actor.end() || it->second->health_share > 0.0)
         return;
     Enemy &e = *it->second;
+    e.battle_number = entry;
     e.battle_level = battle_row(entry).level;
     const int own = battle_health(entry), soldier = battle_health(kSoldierEntry);
     if (own <= 0 || soldier <= 0)
         return;
     e.health_share = double(own) / double(soldier);
     e.record_most = own;
+    if (allies.count(e.days) != 0) { // a battle NPC, which no Days hit measures: KH2's own (SHEET::set)
+        const std::optional<LevelParam> level = level_param(battle_level(e));
+        e.record_most = (std::int64_t(own) * (level ? level->health : 100) + 99) / 100;
+        e.health = e.health_most = e.record_most;
+    }
     if (tracing())
         khdays_log("kh2 enemies: %08x's battle entry %d: %d health, %.2f KH2 Soldiers", e.days, entry, own,
                    e.health_share);
+}
+
+// 1:226 (trap_obj_scatter_prize_mu -> YS::PRIZE_MU::AppearGauge): morale orbs worth `value` of the mission's gauge from
+// its target point (OBJ::get_target_pos)
+void Field::scatter_orbs(Object &o, float value)
+{
+    Vec3 at{};
+    if (!aim_point(o, at))
+        at = o.place();
+    scatter_gauge_prizes(at, value);
+}
+
+// 2:0 a hit's reaction carried out, its Flag's bit 0 set: once. A Days enemy's was played before its trigger 6 told
+// the script (khdays_kh2_enemies_hit); a battle NPC's is BTLOBJ's own
+void Field::damage_reaction(Actor &a, std::uint32_t hit)
+{
+    const auto it = by_actor.find(&a);
+    if (it == by_actor.end() || hit == 0 || (mod().memory.u32(hit + 0x18) & 1u) != 0)
+        return;
+    mod().memory.set_u32(hit + 0x18, mod().memory.u32(hit + 0x18) | 1u);
+    Enemy &e = *it->second;
+    if (allies.count(e.days) == 0)
+        return;
+    float way[4] = {};
+    std::uint8_t reaction = 0;
+    mod().memory.read(hit, way, sizeof way);
+    mod().memory.read(hit + 0x26, &reaction, 1);
+    const std::uint32_t attack = mod().memory.u32(hit + 0x1c);
+    const int atkp = attack != 0 ? int(mod().memory.u32(attack + 0x18) & 0xffffu) : 0;
+    if (const int motion = hit_reaction(e, {way[0], way[1], way[2]}, reaction, attack_param(atkp)); motion >= 0)
+        e.hurt_motion = motion;
 }
 
 void Field::set_health(Actor &a, int hp)
@@ -1321,7 +1358,7 @@ void Field::set_gauge(Kh2Mission &m, int index, float level)
 
 float Field::mission_gauge(unsigned number, int index, float value)
 {
-    if (!kh2_mission)
+    if (!kh2_mission || kh2_mission->over) // (over, KH2's is gone: YS::MISSION::end)
         return 0.0F;
     Kh2Mission &m = *kh2_mission;
     const MissionPiece *g = mission_piece(m, 6, index);
@@ -1435,7 +1472,10 @@ int Field::mission(unsigned number, int first, int second)
     };
     switch (number) {
     case 3: end("completed"); break;
-    case 11: end("failed"); break;
+    case 11: // YS::MISSION::Failed -> GAMEOVER::MissionFailed: Days's mission ends too (at the next tick)
+        m.lost = !m.over;
+        end("failed");
+        break;
     case 16: // its battle's others go (battle_over, at the next tick: this is its script's)
         m.others_go = !m.over;
         end("over: its boss defeated");
@@ -1526,11 +1566,13 @@ bool Field::on_screen(Actor &a)
 Object *Field::player(Actor &a)
 {
     const auto it = by_actor.find(&a);
-    if (it == by_actor.end())
+    const Enemy *e = it != by_actor.end() ? it->second : nullptr;
+    if (e == nullptr && kh2_mission && kh2_mission->actor.get() == &a && !enemies.empty())
+        e = enemies.begin()->second.get(); // a mission's script, in the field its enemies are in
+    if (e == nullptr)
         return nullptr;
-    std::vector<KhdaysKh2Player> list(
-        std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(*it->second), nullptr, 0))));
-    const int n = khdays_kh2_shell_players(shell_of(*it->second), list.data(), int(list.size()));
+    std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(*e), nullptr, 0))));
+    const int n = khdays_kh2_shell_players(shell_of(*e), list.data(), int(list.size()));
     const Vec3 at = a.place();
     Object *best = nullptr;
     float best_d = 0.0F;

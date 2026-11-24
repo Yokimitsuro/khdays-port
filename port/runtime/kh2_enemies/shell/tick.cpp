@@ -108,6 +108,7 @@ void allies_close()
                 mod().memory.remove(record);
         by_actor.erase(e.actor.get());
         friends.erase(e.days);
+        drop_prizes(e.days);
         it = allies.erase(it);
     }
     float camera[16];
@@ -148,6 +149,7 @@ void allies_close()
             if (partner != friends.end())
                 friend_tick(partner->second, e, place); // a party member: KH2's party AI moves it
             one_tick(e, s, place);
+            npc_tick(e);
             if (turned != nullptr) {
                 keep_off_enemies(e, place); // the player's form: out of the enemies' bodies
                 e.actor->set_place(place);
@@ -229,6 +231,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     enemies.clear();
     ghosts.clear();
     allies.clear();
+    drop_prizes(0);
     allies_made = 0;
     accompanied.clear();
     for (const std::uint32_t v : vacuums)
@@ -382,6 +385,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                 send_shouts();
             lights.tick();
             player_fades_tick();
+            prizes_tick();
             screen_shake_tick();
             screen_white_tick();
             laser_tick();
@@ -391,6 +395,12 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                 if (m.others_go) {
                     m.others_go = false;
                     battle_over(m.name);
+                }
+                // as the pause's Give Up ends it -- Days's game over, then its results, cancelled; asked again while
+                // the game holds the field (a pause, a talk)
+                if (m.lost && khdays_link_leave_mission() == nullptr) {
+                    m.lost = false;
+                    khdays_log("kh2 enemies: mission %s failed: Days's ended", m.name.c_str());
                 }
                 if (!m.over) {
                     m.actor->machine().tick();

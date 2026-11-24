@@ -5,8 +5,9 @@ namespace khdays::kh2_enemies::shell {
 
 // KH2's damage told to its mission (YS::UNITSCRIPT::DamageCallback, the PS3 build's: its trigger 6, given the object
 // struck and the hit -- Luxord's time gauges drain there): the hit as YS::DAMAGE, its damage (+ 0x28, 2:46) in KH2's
-// measure and its attack's record (+ 0x20) of type 0 (+ 4: no cure, 2:72)
-void mission_damage(std::uint32_t object, std::int64_t damage)
+// measure, its attacker (+ 0x10, 0 none known: Shan-Yu's mission takes twice his gates' damage by him) and its attack's
+// record (+ 0x20) of type `kind` (+ 4: 5 and 6 a cure, 2:72)
+void mission_damage(std::uint32_t object, std::int64_t damage, std::uint32_t attacker, int kind)
 {
     if (!kh2_mission || !kh2_mission->actor || kh2_mission->over || object == 0 || damage <= 0)
         return;
@@ -16,6 +17,10 @@ void mission_damage(std::uint32_t object, std::int64_t damage)
         hit = std::make_unique<Object>(mod().memory, "a hit as a mission reads it");
     if (params == 0)
         params = mod().memory.add(48, "a hit's attack as a mission reads it");
+    const std::uint8_t type = std::uint8_t(kind);
+    mod().memory.write(params + 4, &type, 1);
+    hit->set_u32(0x10, attacker);
+    hit->set_u32(0x14, object);
     hit->set_u32(0x20, params);
     hit->set_u32(0x28, std::uint32_t(std::min<std::int64_t>(damage, 0x7fffffff)));
     const ai::Value values[2] = {ai::Value::of_address(object), ai::Value::of_address(hit->address())};

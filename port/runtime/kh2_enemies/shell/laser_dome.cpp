@@ -327,19 +327,18 @@ void laser_tick()
     d.time += 1.0F;
     d.total += 1.0F;
 }
-namespace {
 
-// The dome's lists given to one of its effects in the caster's effects' space (KH2's world from the caster, turned
-// back by its turn, its y KH2's -- down -- as an effect's place in the world is given, Running::in_world) before it
-// runs, and what it wrote back taken after
+// A place of KH2's world, or a way, in an enemy's effects' space (KH2's world from the enemy, turned back by its turn,
+// its y KH2's -- down -- as an effect's place in the world is given, Running::in_world)
 Vec3 to_effect_space(const Enemy &e, const Vec3 &w, bool way)
 {
     const Vec3 from = e.actor->place();
     const Vec3 v = way ? w : Vec3{w[0] - from[0], w[1] - from[1], w[2] - from[2]};
     return turned(legacy(v), -days_turn(e.actor->yaw()));
 }
-} // namespace
 
+// The dome's lists given to one of its effects in the caster's effects' space before it runs, and what it wrote back
+// taken after
 void give_dome(const Enemy &e, Enemy::Running &r)
 {
     if (!laser_dome)

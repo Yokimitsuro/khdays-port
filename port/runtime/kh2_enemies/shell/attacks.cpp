@@ -84,6 +84,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
         // the Experiment's head and arms while its body catches them, 1:38) strikes the enemies and not him
         const int atkp = std::int16_t(range.params[0]), team = made_team(atkp, &a);
         strike_enemies(e, s, r, group, atkp, team);
+        strike_npcs(e, s, r, group, atkp, team);
         if (!strikes_team(team, 1))
             continue;
         float nearest = -1.0F, reach = 0.0F, centre[3] = {}, toward = 0.0F;
@@ -668,7 +669,10 @@ void attack_objects(Enemy &e)
         const bool on_enemies = !o.players && std::any_of(enemies.begin(), enemies.end(), [&](const auto &x) {
                                     return struck_enemy(x.first, *x.second);
                                 });
-        if (o.placed && step > 0.0F && (on_players || on_enemies)) {
+        bool on_npcs = false;
+        if (!o.players)
+            each_npc(o.team, [&](const Enemy &) { on_npcs = true; });
+        if (o.placed && step > 0.0F && (on_players || on_enemies || on_npcs)) {
             if (list.empty()) {
                 list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
                 list.resize(
@@ -726,15 +730,27 @@ void attack_objects(Enemy &e)
                         strike(o, *who);
                     }
                 }
-                // the party members (their bodies against its sphere, or its cylinder from its place up)
+                // the party members (their bodies against its sphere, or its cylinder from its place up), the battle
+                // NPCs
                 const Vec3 centre = to_kh2(c);
+                const float tall = radius == height ? 0.0F : height;
                 each_member([&](Enemy &m, Friend &f) {
                     if (!on_players || o.struck.count(m.days) != 0 ||
-                        !member_reached(m, centre, radius, radius == height ? 0.0F : height, kTypeHit))
+                        !member_reached(m, centre, radius, tall, kTypeHit))
                         return;
                     o.struck.insert(m.days);
                     member_hurt(e, m, f, o.atkp);
                 });
+                if (on_npcs)
+                    each_npc(o.team, [&](Enemy &npc) {
+                        if (npc.actor->address() == o.owner || o.struck.count(npc.days) != 0 ||
+                            !member_reached(npc, centre, radius, tall, kTypeHit))
+                            return;
+                        o.struck.insert(npc.days);
+                        o.landed = true;
+                        o.hit = npc.actor->address();
+                        npc_hurt(e, npc, o.atkp);
+                    });
             }
         }
         o.before = o.at;

@@ -1207,6 +1207,13 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(2, 15, [](ai::Machine &m, std::span<ai::Value> a) {
         m.memory().set_u32(a[0].bits + 0x18, m.memory().u32(a[0].bits + 0x18) | 1u);
     });
+    // 2:0 a hit's reaction carried out at once (trap_enemy_exec_damage: its class's exec_damage_reaction, BTLOBJ's,
+    // which does nothing on a hit whose Flag's bit 0 is set and sets it): the palace's gates' (F_MU030) trigger 6 is
+    // this alone
+    calls.set(2, 0, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]); x != nullptr && x->world != nullptr)
+            x->world->damage_reaction(*x, a[1].bits);
+    });
     // 2:92 whether a hit is a finishing one: its first reaction kind (OrigReaction, + 0x27) 6, 7, 10 or 11
     // (FUN_1404321f0 -> FUN_1403cedc0). A Days hit names none: no
     calls.set(2, 92, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -2945,6 +2952,13 @@ void add_world(ai::Calls &calls)
         carried->set_u32(field::kCarrier, 0);
         if (carried->world != nullptr)
             carried->world->uncarry(*carried);
+    });
+    // 1:226 the Land of Dragons' morale orbs (trap_obj_scatter_prize_mu): so much of the mission's gauge scattered from
+    // an object -- Shan-Yu's mission, half of what his gates lose
+    calls.set(1, 226, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (World *w = running(m)->world; w != nullptr && o != nullptr)
+            w->scatter_orbs(*o, a[1].f());
     });
     // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
     // **likely its prizes** -- Days gives its stand-in's own

@@ -491,6 +491,13 @@ int khdays_kh2_shell_player_most_hp(unsigned actor)
     return actor != 0 && khdays_game_ram(actor + PLAYER_HP_MOST) ? (int)checked_rd16(actor + PLAYER_HP_MOST) : -1;
 }
 
+extern int Ov002_GetMissionLevel(void);
+
+int khdays_kh2_shell_mission_level(void)
+{
+    return Ov002_GetMissionLevel();
+}
+
 int khdays_kh2_shell_player_level(unsigned actor)
 {
     if (actor == 0 || !khdays_game_ram(actor + PLAYER_MEMBER)) {

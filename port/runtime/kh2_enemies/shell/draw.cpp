@@ -576,6 +576,8 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
         }
         if (r.dome != 0 && ticks > 0)
             give_dome(e, r);
+        if (r.prizes && ticks > 0)
+            give_prizes(e, r);
         for (unsigned t = 0; t < (r.paused ? 0u : ticks); ++t) {
             const bool last = t + 1 == ticks;
             if (!points.empty())
@@ -585,13 +587,15 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             if (!r.sounded && r.age >= r.element->start) {
                 r.sounded = true;
                 if (r.element->sound > 0)
-                    sound(e, r.element->sound);
+                    sound(e, r.element->sound, r.files);
             }
             r.fx->tick(placed, last ? &r.draws : nullptr);
             r.age += 1.0F;
         }
         if (r.dome != 0 && ticks > 0)
             take_dome(r);
+        if (r.prizes && ticks > 0)
+            take_prizes(r);
         if (r.coloured && ticks > 0) // its script's colour (0:67): each corner's times it, once a tick's draws
             for (kh2::EffectDraw &d : r.draws)
                 for (kh2::EffectVertex &v : d.triangles) {

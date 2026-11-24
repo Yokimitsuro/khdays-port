@@ -147,6 +147,31 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual(len(left), 3 + len(others))
             self.assertTrue(all(any(line.startswith(n) and "not there" in line for line in left) for n in others))
 
+    def test_prizes(self):
+        # a kind whose script scatters a prize (1:226, the morale orbs) brings the prize's file and HD pages, and its
+        # sounds; without the file it is said
+        shapes = [(1, 226, 2, False)]
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=shapes):
+            kh2 = Path(d) / "kh2.hed_out"
+            self.collection(kh2, "M_EX010", with_pages=True)
+            obj = kh2 / "original" / "obj"
+            script_bar = bar([(4, b"mdl", b"model"), (3, b"m_ex", script(syscall(1, 226) + [0x0049]))])
+            (obj / "M_EX010.mdlx").write_bytes(script_bar)
+            (kh2 / "original" / "00objentry.bin").write_bytes(b"entries")
+            (Path(d) / "kh2.exe").write_bytes(b"MZ")
+            mod = Path(d) / "mods" / "made up"
+            left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, None, only={"M_EX010"})
+            self.assertTrue(any(line.startswith("PRIZE_MU") and "none appear" in line for line in left), left)
+            (obj / "PRIZE_MU.mdlx").write_bytes(b"orbs")
+            pages = kh2 / "remastered" / "obj" / "PRIZE_MU.mdlx"
+            pages.mkdir(parents=True)
+            (pages / "-0.dds").write_bytes(b"orbs' page 0")
+            left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, None, only={"M_EX010"})
+            self.assertEqual((mod / "kh2" / "obj" / "PRIZE_MU.mdlx").read_bytes(), b"orbs")
+            self.assertEqual((mod / "kh2" / "obj" / "PRIZE_MU" / "-0.dds").read_bytes(), b"orbs' page 0")
+            told = [line for line in left if line.startswith("PRIZE_MU's sound")]
+            self.assertEqual([line.split(":")[0] for line in told], ["PRIZE_MU's sound 41", "PRIZE_MU's sound 42"])
+
     def test_the_sounds(self):
         # a motion whose trigger 8 plays (200, 21), an effect's element playing 105 (bank 0), another none (-1)
         attributes = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 30, 8, 4, 200, 21, 0, 0)
@@ -436,6 +461,21 @@ class Kh2EnemiesTest(unittest.TestCase):
         # an enemy brings none; nor a boss the mod has no companion kind for
         self.assertEqual(kh2_enemies.companions([ard], entries, "M_EX010", kinds), [])
         self.assertEqual(kh2_enemies.companions([ard], entries, "B_HE100", {"B_HE100"}), [])
+        # nor a boss the spawn places after another the mod has: they come once, with the first (Shan-Yu's gates, not
+        # with his falcon too)
+        both = kh2_enemies.entry_kinds(
+            struct.pack("<II", 3, len(records) + 1)
+            + b"".join(r.ljust(96, b"\0") for r in [*records, entry(922, 0xC, b"B_HE110")])
+        )
+        pair = descriptor(2, 4, 0, 0) + placed(352, 0, 0, 0, 0) + placed(922, 0, 0, 100, 0)
+        pair += placed(566, 0, 0, -1000, 3.14) + placed(364, 100, -500, 300, 0.5)
+        pair_ard = bar([(0x0D, b"btl\0", bytes(4)), (0x0C, b"b_40", struct.pack("<II", 2, 1) + pair)])
+        more = kinds | {"B_HE110"}
+        self.assertEqual([c[0] for c in kh2_enemies.companions([pair_ard], both, "B_HE100", more)], ["N_HE020_BTL"])
+        self.assertEqual(kh2_enemies.companions([pair_ard], both, "B_HE110", more), [])
+        self.assertEqual(
+            [c[0] for c in kh2_enemies.companions([pair_ard], both, "B_HE110", kinds - {"B_HE100"})], ["N_HE020_BTL"]
+        )
         # the mission the area's battle program runs with that spawn (operation 0x15: the id, the msn's name)
         program = struct.pack("<hh", 0, 1) + b"b_40" + struct.pack("<hh", 0x15, 9) + struct.pack("<I", 75)
         program += b"HE17_MS105".ljust(32, b"\0")

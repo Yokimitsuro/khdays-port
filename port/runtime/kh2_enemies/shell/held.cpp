@@ -630,7 +630,7 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
                     break;
                 }
             mission_damage(player_object(object).address(),
-                           std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)));
+                           std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)), 0);
         }
         last_hp[object] = hp;
     }

@@ -706,6 +706,10 @@ public:
     virtual void battle_entry(Actor &, int /*entry*/) {}
     // Its health made `hp` by its script (1:233, kept within its record's least and most)
     virtual void set_health(Actor &, int /*hp*/) {}
+    // 1:226: morale orbs worth `value` of the mission's gauge scattered from an object
+    virtual void scatter_orbs(Object &, float /*value*/) {}
+    // 2:0: the reaction of the hit at `hit` (YS::DAMAGE) on it carried out, as its class does
+    virtual void damage_reaction(Actor &, std::uint32_t /*hit*/) {}
 
     // One of Days's players in a script's hands (KH2's player is an actor as its enemies are; Days's are the shell's):
     // what the calls do to one goes to the world. 1:29: `player` plays motion `slot` of `by`'s set from its first frame

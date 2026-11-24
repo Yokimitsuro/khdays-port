@@ -380,11 +380,12 @@ void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &a
 
 // A KH2 tick of the enemy: its script (not while a reaction plays), its motion and travel; KH2's gravity off the ground
 // (the room's collision puts it back on it), a jump's landing
-// KH2's sound `id` of the enemy's kind heard where the enemy was last drawn
-void sound(const Enemy &e, int id)
+// KH2's sound `id` of the enemy's kind (of `files`, an effect of other files') heard where the enemy was last drawn
+void sound(const Enemy &e, int id, const KindFiles *files)
 {
-    const auto it = e.kind->sounds.find(id);
-    const bool heard = it != e.kind->sounds.end() && khdays_sound_shot_start(it->second, 1.0F, e.pan) != 0;
+    const auto &sounds = files != nullptr ? files->sounds : e.kind->sounds;
+    const auto it = sounds.find(id);
+    const bool heard = it != sounds.end() && khdays_sound_shot_start(it->second, 1.0F, e.pan) != 0;
     if (tracing())
         khdays_log("kh2 enemies: %08x's sound %d%s", e.days, id,
                    heard ? "" : " (not heard: the mod has no kh2/se file)");

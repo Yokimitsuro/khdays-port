@@ -580,14 +580,15 @@ namespace {
 // false when it has none (its groups on)
 bool member_shape(const Enemy &m, int type, Vec3 &at, const Shape **shape = nullptr, std::size_t nth = 0)
 {
-    if (!m.actor || m.pose.empty())
+    if (!m.actor)
         return false;
     KhdaysKh2Shell s{};
     std::copy(m.place, m.place + 3, s.place);
     const std::set<int> on = groups_on(m);
     std::size_t n = 0;
     for (const Shape &sh : m.kind->shapes) {
-        if ((sh.kind & 0xff) != type || on.count(sh.group) == 0 || sh.radius <= 0.0F || n++ != nth)
+        if ((sh.kind & 0xff) != type || on.count(sh.group) == 0 || sh.radius <= 0.0F ||
+            (sh.bone != kNoBone && m.pose.empty()) || n++ != nth)
             continue;
         float d[3];
         days_point(m, s, sh.bone, sh.at, d);
@@ -628,14 +629,16 @@ namespace {
 // ability of his, no combo of the attacker's, the debug configuration's rates 1
 int member_damage(const Enemy &by, const Friend &f, const AttackParam &ap)
 {
-    const std::optional<LevelParam> lv = level_param(by.battle_level);
+    const int level = battle_level(by);
+    const std::optional<LevelParam> lv = level_param(level);
     if (!lv)
         return 0;
+    const int strength = ap.magic ? 0 : lv->strength;
     if (ap.kind == 5)
-        return int((std::int64_t(f.hp_most) * lv->strength * ap.power + 9999) / 10000);
+        return int((std::int64_t(f.hp_most) * strength * ap.power + 9999) / 10000);
     if (ap.kind == 6)
-        return int((std::int64_t(lv->strength) * ap.power + 99) / 100);
-    int v = lv->strength - character_defence(f.character, by.battle_level);
+        return int((std::int64_t(strength) * ap.power + 99) / 100);
+    int v = strength - character_defence(f.character, level);
     v = std::min(v, std::min(lv->most, 99999));
     v = std::max(v, std::max(lv->least, 1));
     std::int64_t damage = (std::int64_t(v) * ap.power * 100 * 100 + 999999) / 1000000;
@@ -732,16 +735,29 @@ bool member_hurting(Friend &f, Enemy &e)
     return false;
 }
 
-// BTLOBJ::_OVR_exec_damage_reaction on a party member, by the reaction's kind (DAMAGE::GetReactionType): 1 a slide,
+} // namespace
+
+// A hit's way (DAMAGE::set_dir): from the attacker to what it struck along the ground, one long
+Vec3 hit_way(const Actor &by, const Actor &struck)
+{
+    const Vec3 to = struck.place(), from = by.place();
+    const Vec3 way = {to[0] - from[0], 0.0F, to[2] - from[2]};
+    const float flat = std::sqrt(way[0] * way[0] + way[2] * way[2]);
+    return flat > 0.0F ? Vec3{way[0] / flat, 0.0F, way[2] / flat} : facing_of(by.yaw());
+}
+
+// BTLOBJ::_OVR_exec_damage_reaction on a party member or a battle NPC, by the reaction's kind
+// (DAMAGE::GetReactionType): 1 a slide,
 // 2 a small hit on the spot (10 from the front, 12 from behind, unturned), 3 a small one (the same and its slide; in
 // the air 14 and 15, turned), 4 a blow (16 from the front facing it, 18 from behind turned away; thrown up by the
 // attack's + 0xc and along by its + 0xe -- sstm + 0x28 and + 0x24 when both are 0 --, landing in the motion after),
 // 14 a large one (23 from the front facing it, 24 from behind, its slide); the slides as far as the attack's hitback
 // (+ 0xc; at 0x7fff sstm + 0x30, + 0x34 for a small one; half for reactions 12 and 13), a tenth of it a tick. Kind 5
-// (a tornado) is not played. Its idle after each motion
-void member_reaction(Enemy &by, Enemy &m, Friend &f, int reaction, const AttackParam &ap)
+// (a tornado) is not played. Its idle after each motion; the motion it started, -1 none
+int hit_reaction(Enemy &m, const Vec3 &way, int reaction, const AttackParam &ap)
 {
     Actor &a = *m.actor;
+    int started = -1;
     int kind = reaction;
     if (reaction == 1 || reaction == 12)
         kind = 1;
@@ -751,15 +767,7 @@ void member_reaction(Enemy &by, Enemy &m, Friend &f, int reaction, const AttackP
     else if (reaction == 4 || reaction == 7 || reaction == 9 || reaction == 11 || reaction == 15 || reaction == 17)
         kind = 4;
     if (kind <= 0 || kind == 5)
-        return;
-    // the hit's way (DAMAGE::set_dir): from the attacker to it along the ground
-    const Vec3 to = a.place(), from = by.actor->place();
-    Vec3 way = {to[0] - from[0], 0.0F, to[2] - from[2]};
-    const float flat = std::sqrt(way[0] * way[0] + way[2] * way[2]);
-    if (flat > 0.0F)
-        way = {way[0] / flat, 0.0F, way[2] / flat};
-    else
-        way = facing_of(by.actor->yaw());
+        return -1;
     const Vec3 face = facing_of(a.yaw());
     const bool back = way[0] * face[0] + way[2] * face[2] >= 0.0F; // its facing along the hit's: struck from behind
     const auto turn = [&] { a.set_yaw(back ? std::atan2(way[0], way[2]) : std::atan2(-way[0], -way[2])); };
@@ -769,7 +777,7 @@ void member_reaction(Enemy &by, Enemy &m, Friend &f, int reaction, const AttackP
             return;
         a.motion.queued.clear();
         a.motion.queued.push_back({0, 0.0F});
-        f.hurt_motion = motion;
+        started = motion;
         a.damage_motion = true;
     };
     const auto slide = [&] {
@@ -805,13 +813,13 @@ void member_reaction(Enemy &by, Enemy &m, Friend &f, int reaction, const AttackP
         start(back ? 24 : 23);
         slide();
     }
+    return started;
 }
-} // namespace
 
 // An enemy's attack (its atkp) on a party member (kn::Friend::_OVR_exec_damage -> YS::FRIEND -> YS::PARTY ->
 // BTLOBJ::add_damage, _OVR_exec_damage_reaction): none while it lies knocked out (but a cure's), its damage
 // (member_damage) off its health -- a cure's on it --, its pinch told to its script on reaching a quarter (signal 9:
-// trigger 10), its target the attacker; its reaction (member_reaction, after its damage patterns) unless a script
+// trigger 10), its target the attacker; its reaction (hit_reaction, after its damage patterns) unless a script
 // holds it; at no health it is knocked out (FRIEND::_OVR__dead: its script told, signal 2; its time the spec's stun
 // time, PREF_PARTY + 0x18, x its ability's 1)
 void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp)
@@ -839,11 +847,12 @@ void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp)
     const int first = ap.reaction == 255 ? 0 : ap.reaction;
     const int reaction = hit_pattern_reaction(a, first, true);
     if (!a.hooked() && m.motions->capture_id() < 0)
-        member_reaction(by, m, f, reaction, ap);
+        if (const int motion = hit_reaction(m, hit_way(*by.actor, a), reaction, ap); motion >= 0)
+            f.hurt_motion = motion;
     if (tracing())
         khdays_log("kh2 enemies: %08x's attack (atkp %d, power %d, level %d) hits %08x (partner): %d damage, %d of %d "
                    "health, reaction %d",
-                   by.days, atkp, ap.power, by.battle_level, m.days, damage, f.hp, f.hp_most, reaction);
+                   by.days, atkp, ap.power, battle_level(by), m.days, damage, f.hp, f.hp_most, reaction);
     if (f.hp == 0) {
         f.knocked = true;
         f.knocked_for = f.spec.stun_time;

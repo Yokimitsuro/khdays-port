@@ -6344,6 +6344,15 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   mission over, the falcon's Days enemy defeated, mission clear at 608.0 s, the results at frame 36676. The shock waves'
   element 11 was cast fifteen times and never over in the first fights; linked to its motion, ten of ten faded out,
   2.2 s at most.
+- **Shan-Yu's gates and orbs** (2026-11-24, five window runs, the same mission with the gates): the clash pushed the
+  player 3.99 m from the wall he stood at (1:220's 500: at (-162.9, 7569.2), KH2's cm), then 270, 270, 271 and
+  `rush_break`; the gates (67 health at level 30) took 2 (atkp 389, 390: power 50), 3 (1735: 75) and 4 (the falcon's
+  397: 120) a blow; their target's point half a metre before them, 2 of the orbs worth 0.5 and 4 worth 0.1 for a blow
+  of 2 (Shan-Yu's: 2.98 off the gauge, 1.49 given back), one worth 2 and two worth 0.1 for one of 3; taken by the
+  player walking over them. The gauge at 0 (131.0 s: signal 136, the mission failed), Days's mission went on; ended as
+  the pause's Give Up (`Ov002_PauseMissionScene`, field 0x20ef), ov027 came up 0.9 s after ("PULSA A"), then scene 6,
+  the mission cancelled. The orbs' file has one element and one emitter (`pppRyjMegaBirthPrize`): cast as an element a
+  size, the two smaller were never drawn.
 - **A player's own model faded** (2026-11-24, read and seen in a window run of Data Luxord's fight): Days's camera
   fades the player it comes near with his node's model's alpha (`Ov002_TickCameraTransition`: the node's model at
   +0x7c, `NNS_G3dMdlSetMdlAlphaAll`, 0 to 31), each frame he is near; told every frame by the port too, it fades the
