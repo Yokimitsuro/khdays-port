@@ -1,9 +1,9 @@
 /* The rooms the mods add (runtime/rooms/added.cpp) and the rooms' slots (runtime/rooms/slots.c): a synthetic world
  * archive of one room, a mod adding one, the archive as served read back -- its room table one room longer, the new
- * record (an id none of the world's, no exits, its collision and model members), its collision LZ-packed as the
- * game's, room 0's model copied -- the added room's index and model; its map's picture after the game's map pictures
- * and its entry in its world's chain; a world the mod adds (its Mission Mode slot, the game world it is played in, its
- * names); and the slots past 24 rooms. */
+ * record (an id none of the world's, no exits, its collision and model members, its heights its own floors'), its
+ * collision LZ-packed as the game's, room 0's model copied -- the added room's index and model; its map's picture
+ * after the game's map pictures and its entry in its world's chain; a world the mod adds (its Mission Mode slot, the
+ * game world it is played in, its names); and the slots past 24 rooms. */
 extern "C" {
 #include "../runtime/missions/worlds.h"
 }
@@ -167,11 +167,56 @@ static void a_mods_room_added_to_a_world(void)
     const std::size_t added = le32(rooms, 8);
     CHECK(rooms[added] == 1 && rooms[added + 1] == 0 && rooms[added + 2] == 1 && rooms[added + 3] == 4);
     CHECK(le32(rooms, added + 0x14) == 0x1234);
+    CHECK(le32(rooms, added + 8) == 0 && le32(rooms, added + 0x10) == 0); // a collision not read: room 0's heights
     CHECK(rooms[added + le32(rooms, added + 0x20)] == 0x80 && rooms[added + le32(rooms, added + 0x20) + 1] == 5);
     // its collision packed, room 0's model copied
     const auto c = entry(out, 4, &desc);
     CHECK((desc & 0x80000000u) != 0 && c == collision);
     CHECK(entry(out, 5, &desc) == model);
+    // its heights its own grounds' (a floor at 5 m, one at -3 and 12 m): the fall's 30 m under the lowest corner, the
+    // camera's top 30 m over the highest, the player's 100
+    std::vector<unsigned char> floors(0xb0 + 2 * 0x88, 0);
+    put16(floors, 0x7c, 2);
+    put32(floors, 0xa0, 0xb0);
+    for (unsigned g = 0; g < 2; ++g) {
+        put16(floors, 0xb0 + 0x88 * g + 0x12, 3);
+        for (unsigned k = 0; k < 4; ++k) // (a triangle's fourth corner is not one of its own)
+            put32(floors, 0xb0 + 0x88 * g + 0x50 + 12 * k + 4,
+                  static_cast<unsigned>(g == 0 ? (k == 3 ? 500 : 5) * 4096 : (k == 0 ? -3 : 12) * 4096));
+    }
+    std::ofstream(mod / "rooms" / "eh" / "plaza" / "collision.bin", std::ios::binary)
+        .write(reinterpret_cast<const char *>(floors.data()), static_cast<std::streamsize>(floors.size()));
+    CHECK(khdays_rooms_merge("mi/wd/wd_eh", world, out));
+    const auto heights = entry(out, 0, &desc);
+    CHECK(static_cast<int>(le32(heights, added + 4)) == -3 * 4096);
+    CHECK(static_cast<int>(le32(heights, added + 8)) == -33 * 4096);
+    CHECK(static_cast<int>(le32(heights, added + 0xc)) == 42 * 4096);
+    CHECK(static_cast<int>(le32(heights, added + 0x10)) == 112 * 4096);
+
+    // a world a mod replaces: the room whose collision is the mod's and whose floors (to 12 m) stand above its tops is
+    // given its own; one whose heights hold them, or the game's own room, is left as it is
+    const auto world_of = [&](const std::vector<unsigned char> &floor, int fall, int camera, int player) {
+        std::vector<unsigned char> t = table;
+        put32(t, 8 + 8, static_cast<unsigned>(fall * 4096));
+        put32(t, 8 + 0xc, static_cast<unsigned>(camera * 4096));
+        put32(t, 8 + 0x10, static_cast<unsigned>(player * 4096));
+        return p2({{t, static_cast<unsigned>(t.size())},
+                   {{}, 0},
+                   {floor, static_cast<unsigned>(floor.size())},
+                   {model, static_cast<unsigned>(model.size())}});
+    };
+    const std::vector<unsigned char> game_floor(0x123, 0x5a);
+    auto replaced = world_of(floors, -30, 5, 5);
+    CHECK(khdays_rooms_own_heights(world_of(game_floor, -30, 5, 5), replaced));
+    const auto raised = entry(replaced, 0, &desc);
+    CHECK(static_cast<int>(le32(raised, 8 + 8)) == -33 * 4096 && static_cast<int>(le32(raised, 8 + 0xc)) == 42 * 4096 &&
+          static_cast<int>(le32(raised, 8 + 0x10)) == 112 * 4096);
+    CHECK(entry(replaced, 2, &desc) == floors);
+    auto held = world_of(floors, -30, 20, 20); // (its heights hold its floors)
+    const auto held_before = held;
+    CHECK(!khdays_rooms_own_heights(world_of(game_floor, -30, 20, 20), held) && held == held_before);
+    auto same = world_of(floors, -30, 5, 5); // (the game's own collision)
+    CHECK(!khdays_rooms_own_heights(world_of(floors, -30, 5, 5), same));
     CHECK(khdays_rooms_index(mod_path.c_str(), "plaza", "eh") == 1);
     CHECK(khdays_rooms_index(mod_path.c_str(), "plaza", "tt") == -1);
     char path[512];

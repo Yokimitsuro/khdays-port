@@ -4386,7 +4386,8 @@ movement rows in the game (the native build, `KHDAYS_TRACE_PLAYER`).
 - **A world** is a P2 archive: entry 0 the room table, entry 1 the gate models, then each room's
   collision and its KAPH models. A room (`Ov002_LoadPeerIntoSlot`, `Ov002PeerRecord`): +0 its id
   (what missions search; ids repeat within a world -- a room is its place in the table), +1 its
-  link rows, +2 its objects, +3 the archive entry of its collision (empty in 8 rooms), +0x14 and
+  link rows, +2 its objects, +3 the archive entry of its collision (empty in 8 rooms), +4 to +0x10
+  its heights (section 34), +0x14 and
   +0x18 two budgets (the second five times the first), +0x1c the link rows (8 bytes: key, target
   slot, pad, gate state, flags, radius), +0x20 the objects (u32: flags, archive entry -- the KAPH
   models it draws; 196 of 209 point at a KAPH, 13 at empty entries). 8 collision entries and 14
@@ -5949,9 +5950,22 @@ and the `missions_waves` mission played in one, 2026-11-02. The port puts the ro
 
 - **The room table** (`Ov002_LoadWorldLinkResources`): entry 0 of `mi/wd/wd_<code>` (LZ-packed in the game's), u8 the
   rooms' count, then each room's offset (u32, from the table). A room: s8 id, u8 exits, u8 objects, u8 its collision's
-  member (`Ov002_LoadPeerIntoSlot`), words not read (+0x14 one the studio calls a budget), its exits' offset at +0x1c
-  and its objects' at +0x20 (from the record; relocated at load), an object u8 flags, u8 its model's member. Members
-  and rooms are bytes; the P2's count is 9 bits.
+  member (`Ov002_LoadPeerIntoSlot`), its heights (+4 to +0x10, below), two words (+0x14, +0x18: the studio's budgets),
+  its exits' offset at +0x1c and its objects' at +0x20 (from the record; relocated at load), an object u8 flags, u8 its
+  model's member. Members and rooms are bytes; the P2's count is 9 bits.
+- **A room's heights** (20.12; 2026-11-23). +8 the fall's (`Ov002_GetSlotFloor`): `Ov022_SelectForcedState` counts the
+  time a player is under it and takes his HP to 0 at 3.0. +0xc the camera's top (`Ov002_GetPeerRecordValue`):
+  `Ov002_ResolveCameraAgainstCollision` (and KH2's camera's hook) puts an eye above it down to it. +0x10 the player's
+  (`Ov002_GetSlotGround`): `Ov022_ActorUpdate`, after the move, puts a player at or above it less 2.0 down to that --
+  whatever is under him: on a floor higher than it he is under the floor at once, and falls. +4 is read by nothing
+  found; it is +8 and 30 m (50 in al, 100 in eh) more. The game's rooms under an open sky have 30 m at +0xc and 100 at
+  +0x10, a closed one its own ceiling's (tt's room 0: 4.5 and 4.5, its faces ending at 4.70). An added room had room
+  0's: in tt its player was kept under 2.5 m and its camera under 4.5. Seen with a room made from KH2's mu09, its floor
+  at 5 m: the player set at (6.02, 5.00, -71.30) was at 2.50 sixteen frames later and fell through to -30.5, his HP 0,
+  again and again (`KHDAYS_WATCH` on his height: `Ov022_ActorUpdate`); up a ramp he stopped at exactly 2.50. The
+  collision was right all along: the enemies stood on it. Now each added room has its own floors' heights
+  (`ground_heights`, `runtime/rooms/added.cpp`): the fall's 30 m under its lowest ground, the camera's top 30 m over
+  its highest and the player's 100.
 - **A mission's room is the room's index** in that table, not its id: `room = 5` loads the sixth record (eh's index 5
   is a room with an empty collision, which `Coll_ResolveModelBlobPointers` cannot read). The ids repeat (eh has four
   id 0s).

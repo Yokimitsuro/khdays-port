@@ -31,6 +31,12 @@ bool khdays_rooms_serves(const std::string &game_path);
 bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned char> &source,
                         std::vector<unsigned char> &out, const KhdaysGameFiles &game = {});
 
+/* A world's archive a mod replaces (`archive`, the studio's --replace-room's) beside the game's own (`game`): each room
+ * whose collision is not the game's and whose floors its record's heights do not hold (a floor above the player's or
+ * the camera's top, or under the fall's: docs/RUNTIME_MAP.md, "A room's heights") is given its own floors'. Whether
+ * `archive` was changed. */
+bool khdays_rooms_own_heights(const std::vector<unsigned char> &game, std::vector<unsigned char> &archive);
+
 extern "C" {
 #endif
 

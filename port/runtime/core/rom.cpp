@@ -273,13 +273,20 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 } // namespace
 
-// A world's archive, the map pictures or a language's map chains with what the rooms the mods add put in them
-// (runtime/rooms/added.h) into `out`; false when they add nothing.
+// A world's archive, the map pictures or a language's map chains with what the rooms the mods add put in them and a
+// replaced world's rooms' own heights (runtime/rooms/added.h) into `out`; false when they change nothing.
 static bool added_rooms(const std::string &game_path, const fs::path &source, std::vector<u8> &out)
 {
     khdays_rooms_load();
     std::ifstream in(source, std::ios::binary);
-    const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    // a world's archive a mod replaces: its rooms' heights their own floors', where the game's do not hold them
+    bool raised = false;
+    if (game_path.rfind("mi/wd/wd_", 0) == 0 && khdays::vfs::find_in_mods(fs::path("files") / utf8_path(game_path))) {
+        std::ifstream own(khdays::vfs::data_root() / "nitrofs" / utf8_path(game_path), std::ios::binary);
+        const std::vector<u8> game_bytes((std::istreambuf_iterator<char>(own)), std::istreambuf_iterator<char>());
+        raised = khdays_rooms_own_heights(game_bytes, bytes);
+    }
     KhdaysGameFiles game;
     game.read = [](const std::string &other) {
         std::vector<u8> b;
@@ -289,7 +296,11 @@ static bool added_rooms(const std::string &game_path, const fs::path &source, st
         }
         return b;
     };
-    return khdays_rooms_merge(game_path, bytes, out, game);
+    if (khdays_rooms_merge(game_path, bytes, out, game))
+        return true;
+    if (raised)
+        out = std::move(bytes);
+    return raised;
 }
 
 // The VFS reads the mods on as the game started, in the list's order (runtime/mods/list.h).
