@@ -390,6 +390,17 @@ void sound(const Enemy &e, int id)
                    heard ? "" : " (not heard: the mod has no kh2/se file)");
 }
 
+// The motion running on the object an effect is on, as a count of those it started: the player's in the enemy's hands
+// (0 let go), else the enemy's own
+unsigned motion_of(const Enemy &e, unsigned player)
+{
+    if (player != 0) {
+        const auto h = held.find(player);
+        return h != held.end() ? h->second.started : 0u;
+    }
+    return e.actor ? unsigned(e.actor->motion.started) : 0u;
+}
+
 // Element `number` of the kind's effects started on the enemy (`player`: cast by the motion of its set that player
 // plays in its hands, whose bones -- KH2's player's, his weapon's when `on_weapon` -- its element's are; `files` the
 // effects it is of, null the kind's); its handle, 0 none
@@ -405,6 +416,7 @@ std::uint32_t cast(Enemy &e, int number, unsigned player, bool on_weapon, const 
         r.fx = std::make_unique<kh2::EffectInstance>(k.fx[it->second.effect], it->second.emitter, e.fx_seed++);
         r.element = &it->second;
         r.player = player;
+        r.motion = motion_of(e, player);
         r.on_weapon = on_weapon;
         r.files = files;
         r.handle = ++next_handle != 0 ? next_handle : ++next_handle;
@@ -525,6 +537,10 @@ void cues(Enemy &e, bool again = false)
             // Frame's shockwave attaches its attack to its element 8)
             const int number = std::int16_t(t.params[0]);
             const std::uint32_t handle = cast(e, number);
+            // (the motion whose trigger it is: its script may have started another this tick, which ended it)
+            for (Enemy::Running &r : e.fx)
+                if (r.handle == handle)
+                    r.motion = m.started;
             const ai::Value told[3] = {ai::Value::of_address(a.address()), ai::Value::of_int(number),
                                        ai::Value::of_address(handle)};
             a.event(16, told);

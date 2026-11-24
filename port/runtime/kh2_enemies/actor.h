@@ -725,6 +725,10 @@ public:
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
+    // 1:146 on a player: his push back along a way (made one long) at a speed a tick, 0.9 of itself each tick till
+    // below 1 (YS::BTLOBJ::exec_hitback, as an actor's slide: Actor::step); 6:66 its speed 0, stopped -- Shan-Yu's
+    // reaction command 270 sends Sora on so
+    virtual void player_slide(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:63 on a player: whether the motion an enemy plays on him (1:29) has reached its loop, its blend run out (one
     // that does not loop: its end) -- the Experiment's catch of him (253) lasts till then; false when none does
     virtual bool player_in_loop(Object & /*player*/)

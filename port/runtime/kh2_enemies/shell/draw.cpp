@@ -488,6 +488,30 @@ void trace_slivers(const Enemy &e, const KindFiles &files, const Enemy::Running 
                "%d with corners behind the camera, of %d triangles",
                e.days, number, r.element->effect, double(r.age), slivers, double(longest), behind, all);
 }
+
+// PAX::MANAGER::exec's deletions of an effect on an object (none of one its script placed in the world or let go): the
+// motion running as it started over, as another starts (MOTION::end), for an element linked to it (0x20) -- Shan-Yu's
+// shock waves (his 207's, which loop till then: they stood one on another, the floor white for the rest of the
+// fight) -- or its object gone (a fallen enemy whose end is over) for one that goes with it (0x200; a linked one too,
+// its leaving ending its motion). Once, as system_delete does it: its loops closed (0x80), else faded out over its
+// element's frames (0x40), else it plays on
+void unlink(const Enemy &e, Enemy::Running &r)
+{
+    if (r.deleted || r.in_world || r.element == nullptr)
+        return;
+    const std::uint32_t flags = r.element->flags;
+    const bool over = (flags & 0x20u) != 0 && motion_of(e, r.player) != r.motion;
+    if (!over && !(e.released && (flags & 0x220u) != 0))
+        return;
+    r.deleted = true;
+    if ((flags & 0x80u) != 0) {
+        r.fx->stop();
+    } else if ((flags & 0x40u) != 0) {
+        if (r.element->fade <= 0)
+            r.fade = 0.0F; // (fadeout_kill of 0: killed)
+        r.fade_step = r.fade > 0.0F ? -r.fade / float(r.element->fade) : -1.0F;
+    }
+}
 } // namespace
 
 // Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
@@ -507,6 +531,7 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
     const kh2::EffectCamera cam = effect_camera(view, projection, units);
     kh2::EffectCamera placed = cam;
     for (Enemy::Running &r : e.fx) {
+        unlink(e, r);
         // its two points (a swing trail's base and tip), where its element has them: on its bones now
         std::vector<kh2::EffectPoint> points;
         if (r.player != 0) {
@@ -748,7 +773,7 @@ void ghosts_close()
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
         const unsigned alpha = unsigned(std::lround(drawn_fade(e) * 31.0F));
-        if (alpha == 0 || e.pose.empty())
+        if (alpha == 0 || e.pose.empty() || e.released) // (its end over: gone, its last effects alone left)
             continue;
         std::vector<float> bones(e.pose.size() * 16);
         for (std::size_t b = 0; b < e.pose.size(); ++b)

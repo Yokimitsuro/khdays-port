@@ -25,6 +25,29 @@ void mission_damage(std::uint32_t object, std::int64_t damage)
                    static_cast<long long>(damage));
 }
 
+// A KH2 mission ended by its boss's end (4:16 trap_mission_dead_boss): the battle is over, and what KH2's area holds of
+// it goes with the cutscene that follows. Days's wave still waits for each of them, so the other KH2 enemies of that
+// mission leave (their "leave", which fades them out) and count as defeated. Shan-Yu's falcon, kept at a tenth of its
+// health (it goes "out" and comes back, "in"), could never be beaten and kept the mission from ending
+void battle_over(const std::string &mission)
+{
+    std::vector<Enemy *> others;
+    for (auto &[days, e] : enemies) {
+        const Kind *kind = e->kind != nullptr ? find_kind(mod().kinds, e->kind->name) : nullptr;
+        if (kind != nullptr && kind->mission == mission && e->actor && !e->dying && !e->dead_marked && !e->released)
+            others.push_back(e.get());
+    }
+    for (Enemy *e : others) {
+        if (tracing())
+            khdays_log("kh2 enemies: %08x (%s) goes: its battle is over (%s)", e->days, e->kind->name.c_str(),
+                       mission.c_str());
+        Actor &a = *e->actor;
+        a.states().unlock();
+        a.states().enter(a, "leave");
+        the_field().dead_mark(a);
+    }
+}
+
 // The mission's piece of `kind` (4 a timer, 5 a counter) and number `index`, null when it has none
 MissionPiece *mission_piece(Kh2Mission &m, int kind, int index)
 {

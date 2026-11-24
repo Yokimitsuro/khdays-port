@@ -1410,7 +1410,10 @@ int Field::mission(unsigned number, int first, int second)
     switch (number) {
     case 3: end("completed"); break;
     case 11: end("failed"); break;
-    case 16: end("over: its boss defeated"); break;
+    case 16: // its battle's others go (battle_over, at the next tick: this is its script's)
+        m.others_go = !m.over;
+        end("over: its boss defeated");
+        break;
     case 22: end("left"); break;
     // (4:5 and 4:41 name the count first, then the counter: YS::MISSION::SetCount(n, index), AddCount(n, index))
     case 5: set_count(m, second, first); break;
@@ -1593,6 +1596,17 @@ void Field::player_steer(Object &o, const Vec3 &way, float speed)
 {
     if (const auto h = held.find(days_object(o)); h != held.end())
         h->second.steer = {way[0] * speed, way[1] * speed, way[2] * speed};
+}
+
+void Field::player_slide(Object &o, const Vec3 &way, float speed)
+{
+    if (const auto h = held.find(days_object(o)); h != held.end()) {
+        h->second.slide = way;
+        h->second.slide_speed = speed;
+        if (tracing())
+            khdays_log("kh2 enemies: player %08x pushed %.2f %.2f %.2f at %.1f a tick (1:146 / 6:66)", days_object(o),
+                       double(way[0]), double(way[1]), double(way[2]), double(speed));
+    }
 }
 
 void Field::player_jump(Object &o, const Jump &jump)

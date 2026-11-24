@@ -6334,6 +6334,17 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   go there (his HP 0 as he fell, given back 3 s later). With the floor under the higher of the two places, the player
   is let go at 14.8 cm (the platform) each round, defeated at 194 s (220 s with Days's place alone), the mission over,
   its results shown.
+- **Shan-Yu** (2026-11-23, window runs, mu09 made a room, level 30; docs/KH2_ENEMIES.md, "Shan-Yu and his falcon"): the
+  player set at (6.02, 5.00, -71.30) fell through the room's floor each time (a room's heights: section 34); the floor
+  right, the fight went to its end -- the clash of swords at 101.4 s (commands 270 at 102.8 and 103.8 s, 271 at 104.8 s,
+  the push 10 a tick at 102.9 and 103.9), `btl_hard` and `power_up` at 188.7 s, defeated at 522.2 s -- and the mission
+  did not: the falcon, kept at a tenth of its health, went `out` at 430.9 s and came back `in` at 451.6 s, and no signal
+  4 was sent for Shan-Yu. With the signal and his battle's others sent away, the falcon's defeat met its own attack
+  (551.9 s, reflected) and it came back 0.8 s later; with that hit meeting none, all ended: 606.6 s signal 4 (21), the
+  mission over, the falcon's Days enemy defeated, mission clear at 608.0 s, the results at frame 36676. The shock waves'
+  element 11 was cast fifteen times and never over in the first fights; linked to its motion, ten of ten faded out,
+  2.2 s at most.
+
 ## 38. Days's commands on KH2's reaction command bar
 
 Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)

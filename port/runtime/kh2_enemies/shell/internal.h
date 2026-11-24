@@ -215,7 +215,11 @@ struct Shape final {
 struct Element final {
     std::size_t effect = 0, emitter = 0; // in KindFiles::fx
     int bone = kNoBone;
+    // + 0x10: 0x20 linked to the motion of the object it is on (its MOTION's list, PAX::create -> MOTION::link_effect),
+    // 0x200 deleted as that object goes; deleted (PAX::MANAGER::system_delete): 0x80 its loops closed, else 0x40 faded
+    // out over `fade` frames (+ 5; 0 at once), else it plays on
     std::uint32_t flags = 0;
+    int fade = 0;
     float start = 0.0F;
     int sound = 0;
     std::array<float, 3> place{}, turn{}, size{1.0F, 1.0F, 1.0F};
@@ -490,6 +494,8 @@ struct Enemy final {
         float age = 0.0F;
         bool sounded = false;
         unsigned player = 0; // cast by the motion of its set a player it holds plays (his object): on his bones
+        unsigned motion = 0; // the motion running as it started (its owner's count: linked to it, Element::flags)
+        bool deleted = false; // deleted (PAX::MANAGER::system_delete runs once): ending, its way
         // on his weapon (the keyblade in his hand: its bones are its element's), and the files its element is of (none:
         // the enemy's kind's; KH2's keyblade's, W_EX010.a.us, for its swing's trail, YS::WEAPON::locus)
         bool on_weapon = false;
@@ -638,6 +644,7 @@ struct Kh2Mission final {
     bool shown = true;   // its pieces up (4:14 / 4:15; 4:21): up from its start, as KH2's after its start camera
     bool locked = false; // 4:54 / 4:55
     bool over = false;   // completed, failed, its boss dead or left (4:3, 4:11, 4:16, 4:22)
+    bool others_go = false; // ended by its boss's end (4:16): its battle's others to be sent away (battle_over)
     std::string end;
 };
 inline std::unique_ptr<Kh2Mission> kh2_mission;
@@ -688,6 +695,8 @@ struct Held final {
     bool idle = false;            // its motion blends back to the player's own idle (range 2): let go
     Vec3 move{};                  // a script's move of him this tick (1:89), KH2's cm
     Vec3 steer{};                 // a script's steering of him, each tick till another (1:111), KH2's cm
+    Vec3 slide{};                 // a script's push of him (1:146): its way, one long
+    float slide_speed = 0.0F;     // and its speed a tick (KH2's cm), 0.9 of itself each tick till below 1 (6:66: 0)
     bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
     int own_motion = 0;           // which (its number)
     // the blend 1:29 asked for (its fourth value: YS::MOTION::start_motion's blend, above 2 a blend), counted as an
@@ -1338,6 +1347,7 @@ public:
     void player_carry(Object &o, Object *by) override;
     void player_hide(Object &o, bool hidden) override;
     void player_steer(Object &o, const Vec3 &way, float speed) override;
+    void player_slide(Object &o, const Vec3 &way, float speed) override;
     void player_jump(Object &o, const Jump &jump) override;
     bool player_in_loop(Object &o) override;
     void player_yaw(Object &o, float yaw) override;
@@ -1404,6 +1414,7 @@ std::vector<kh2::Mat4> pose_at(kh2::MotionPlayer &player, const kh2::Motion &mot
 void pose(Enemy &e);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 void sound(const Enemy &e, int id);
+unsigned motion_of(const Enemy &e, unsigned player);
 std::uint32_t cast(Enemy &e, int number, unsigned player = 0, bool on_weapon = false, const KindFiles *files = nullptr);
 void weapon_trail(Enemy &e, unsigned object, Held &h, bool swing);
 bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out);
@@ -1493,6 +1504,7 @@ void ghosts_close();
 
 // mission.cpp -- KH2's missions: their pieces, counts, gauges and timers.
 void mission_damage(std::uint32_t object, std::int64_t damage);
+void battle_over(const std::string &mission);
 MissionPiece *mission_piece(Kh2Mission &m, int kind, int index);
 void start_mission(const std::string &name);
 

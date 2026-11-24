@@ -134,6 +134,9 @@ KINDS = {
     # with no script, carried on it, its motions following Twilight Thorn's (1:126) to play their effects
     "B_EX100": "Twilight Thorn",
     "B_EX200": "Twilight Thorn's darkness",
+    # the Land of Dragons' summit's Shan-Yu (mu09) and his falcon, both placed by the battle's own spawn
+    "B_MU100": "Shan-Yu",
+    "B_MU110": "Shan-Yu's falcon",
     # FINAL MIX's data battles (their Limit Cut objects, _LV99)
     "B_EX110_LV99": "Axel (Data)",
     "B_EX130_LV99": "Xaldin (Data)",

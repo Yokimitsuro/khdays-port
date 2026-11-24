@@ -188,8 +188,16 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         a.set_bits(field::kFade, bit::kDeadMark, true);
         // an enemy's (its entry's kind 4: the PS3 build's YS::ZAKO::_OVR__dead) tells the field: signal 75 with its
         // serial (the water clones' end counted by Demyx and his mission)
-        if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0 && (mod().memory.u32(entry + 4) & 0xffu) == 4u)
-            the_field().signal(75, int(e->days & 0x7fffffffu));
+        // a boss's (its entry's kind 3, or 0xc a large one's: YS::BOSS::_OVR__dead) signal 4 with its entry's number:
+        // its mission completes on it (Barbossa's asks for his, 1015) -- but not one sent away as its battle ends
+        // (battle_over), which in KH2 does not die
+        if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0) {
+            const unsigned kind = mod().memory.u32(entry + 4) & 0xffu;
+            if (kind == 4u)
+                the_field().signal(75, int(e->days & 0x7fffffffu));
+            else if ((kind == 3u || kind == 0xcu) && !e->dead_marked)
+                the_field().signal(4, int(mod().memory.u32(entry) & 0xffffu));
+        }
         e->reacting = false;
         e->paused = false;
         a.damage_motion = false;
@@ -338,8 +346,8 @@ extern "C" int khdays_kh2_enemies_reflected(void *actor, void *source, int flags
     Enemy *e = find(unsigned(KHDAYS_REF(actor)));
     if (e != nullptr) // (the hit's packet as Ov107_AiState_ApplyHit begins it: its kind for khdays_kh2_enemies_hit)
         e->days_full = source != nullptr && (flags & kDaysHitFull) != 0;
-    if (source == nullptr || e == nullptr || e->dying || e->blow_landing || !e->actor)
-        return 0;
+    if (source == nullptr || e == nullptr || e->dying || e->dead_marked || e->blow_landing || !e->actor)
+        return 0; // (dead_mark's hit, which counts it defeated, meets no attack of its)
     const unsigned from = unsigned(KHDAYS_REF(source));
     the_field().player(*e->actor); // the players' objects as they stand now
     const auto it = players.find(from);
@@ -394,6 +402,13 @@ int kept_damage(void *actor, int amount, int kinds)
     if (e == nullptr || e->dying || amount <= 0)
         return amount;
     e->hit_kinds = unsigned(kinds);
+    // the hit that counts it defeated (dead_mark): all of it, whatever its least, its withstanding or its elements
+    // keep -- Shan-Yu's falcon, which KH2 never lets fall, goes as his battle ends
+    if (KhdaysKh2Shell whole; e->dead_marked && khdays_kh2_shell_read(e->days, &whole)) {
+        e->health_taken = std::max<std::int64_t>(1, e->health);
+        e->health = e->health >= 0 ? 0 : e->health;
+        return std::max(1, whole.hp);
+    }
     // a KH2 player's blow (a reaction command's strike) on one with a health of its own: its power in the area's
     // measured blows -- before any Days hit measured one, kept for its health once it is measured
     if (e->blow_landing && e->health_share > 0.0) {

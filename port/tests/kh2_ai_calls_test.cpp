@@ -2575,6 +2575,70 @@ void test_twilight_thorn()
     CHECK(thorn.play(7, 0.0F, 0.0F) && darkness.motion.id == 0);
 }
 
+// Shan-Yu's reaction command 270 pushes Sora on (1:146 on the player); his blows that catch him stop it (6:66)
+struct ShanYuWorld final : kh::World {
+    kh::Object *standing = nullptr;
+    kh::Vec3 way{};
+    float speed = -1.0F;
+    kh::Object *player(kh::Actor &) override
+    {
+        return standing;
+    }
+    void player_slide(kh::Object &, const kh::Vec3 &w, float s) override
+    {
+        way = w;
+        speed = s;
+    }
+};
+
+// 1:146 an object's push back (YS::BTLOBJ::set_hitback): the way made one long, turned back below 0, a tenth of the
+// speed with its sheet's + 0x1c8 added, none while + 0x120 bit 7 holds it; on a player the world's; 6:66 stops it
+void test_shan_yu()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "1:146 3 0\n6:66 1 0\n1:197 0 1\n1:202 1 0\n");
+    ShanYuWorld world;
+    kh::Actor shan_yu(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "shan-yu");
+    kh::Actor falcon(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "his falcon");
+    shan_yu.world = &world;
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    world.standing = &player;
+    const auto i = ai::Value::of_int;
+    const auto f = ai::Value::of_float;
+    const auto adr = ai::Value::of_address;
+    const std::uint32_t vec = rig.memory.add(16, "a vector");
+    const float w[4] = {3.0F, 0.0F, 4.0F, 1.0F};
+    rig.memory.write(vec, w, sizeof w);
+    call(rig, shan_yu, 1, 146, {adr(falcon.address()), adr(vec), f(50.0F)});
+    CHECK(std::fabs(falcon.slide[0] - 0.6F) < 1e-5F && std::fabs(falcon.slide[2] - 0.8F) < 1e-5F);
+    CHECK(std::fabs(falcon.slide_speed - 5.0F) < 1e-5F);
+    call(rig, shan_yu, 1, 146, {adr(falcon.address()), adr(vec), f(-50.0F)});
+    CHECK(std::fabs(falcon.slide[0] + 0.6F) < 1e-5F && std::fabs(falcon.slide_speed - 5.0F) < 1e-5F);
+    // its sheet's hitback addition
+    const std::uint32_t sheet = rig.memory.add(0x200, "a sheet");
+    const float more = 30.0F;
+    rig.memory.write(sheet + 0x1c8, &more, 4);
+    falcon.set_u32(0x5c0, sheet);
+    call(rig, shan_yu, 1, 146, {adr(falcon.address()), adr(vec), f(50.0F)});
+    CHECK(std::fabs(falcon.slide_speed - 8.0F) < 1e-5F);
+    call(rig, shan_yu, 6, 66, {adr(falcon.address())});
+    CHECK(falcon.slide_speed == 0.0F);
+    // + 0x120 bit 7: held, not pushed
+    falcon.set_bits(kh::field::kFlags, 1u << 7, true);
+    call(rig, shan_yu, 1, 146, {adr(falcon.address()), adr(vec), f(50.0F)});
+    CHECK(falcon.slide_speed == 0.0F);
+    // the player: the world's, along his facing at 100 (reaction command 270's thread)
+    call(rig, shan_yu, 1, 146, {adr(player.address()), adr(vec), f(100.0F)});
+    CHECK(std::fabs(world.way[0] - 0.6F) < 1e-5F && std::fabs(world.way[2] - 0.8F) < 1e-5F);
+    CHECK(std::fabs(world.speed - 10.0F) < 1e-5F);
+    call(rig, shan_yu, 6, 66, {adr(player.address())});
+    CHECK(world.speed == 0.0F);
+    // KH2's area cost and units: none in Days's field
+    CHECK(call(rig, shan_yu, 1, 197, {}).bits == 0);
+    call(rig, shan_yu, 1, 202, {i(148)});
+}
+
 void test_xigbar()
 {
     Rig rig;
@@ -2685,6 +2749,7 @@ int main()
     test_xigbar();
     test_experiment();
     test_twilight_thorn();
+    test_shan_yu();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

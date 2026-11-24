@@ -676,6 +676,12 @@ void add_actor_fields(ai::Calls &calls)
     // 1:203 a spawn unit of KH2's room let go on (trap_unit_enable; FUN_140431000: its flags' bit 0 cleared): Days's
     // waves have no KH2 units -- nothing (the enemies a boss's unit would bring do not come)
     calls.set(1, 203, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:202 one held back (trap_unit_disable; YS::UNIT_GROUP::Disable: the bit set again) -- nothing so; 1:197 what
+    // is left of KH2's area's spawn cost (trap_area_cost_rest, YS::AREADATA::GetCostRest): Days's field keeps none, 0.
+    // Shan-Yu asks both only in KH2's own mu09 (1:23 8, 1:24 9: his Heartless call enables unit 148 there while the
+    // cost left is over 30, and disables it as it ends), which the port's field never is
+    calls.set(1, 202, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 197, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:64 this tick's travel (+ 0xa28), 1:62 the tick's before (+ 0xa38), each into the call's own vector
     // (FUN_14042f160, FUN_14042f060)
     const auto travel = [](std::uint32_t at, const char *call) {
@@ -1184,9 +1190,11 @@ void add_actor_fields(ai::Calls &calls)
         if (Object *x = object_of(m, a[0]))
             x->set_u32(field::kKarmaLimit, a[1].bits);
     });
-    // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:301 FUN_1403bbea0, 1:171 / 1:206
-    // DAT_142a11400's bits 2 / 7 -- KH2's field busy (a pause), which Days's field never is for its enemies: 0
-    // 1:24 DAT_140717009, the byte after 1:23's (the Wight Knight tests 9) -- the same
+    // 1:23 the world KH2's field is in, 1:24 its area (YS::trap_area_world, trap_area_area: DAT_140717008 and the byte
+    // after it -- 8 and 9 KH2's mu09, where Shan-Yu calls his Heartless; world 10 lk, the Wight Knight's area 9):
+    // Days's field is none of KH2's areas, 0 -- what the scripts do in their own areas alone they do not. 1:301 whether
+    // a tutorial is open (trap_tutorial_is_open, FUN_1403bbea0), 1:171 DAT_142a11400's bit 2 (trap_status_no_leave;
+    // its bit 7 1:206's, below): none, 0
     for (const unsigned n : {23u, 24u, 301u, 171u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:34 whether an event runs (YS::trap_event_is_exec -> YS::EVENT::IsExec: YS::Current set; DAT_142a11478,
@@ -1547,26 +1555,64 @@ void add_motions(ai::Calls &calls)
     // turns its back to it and plays 24 (DAMAGE_L_FRONT, DAMAGE_L_BACK), its idle asked after (FUN_1403c8310: the port's
     // actor takes it at the motion's end); then the slide. The Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's
     // (2:87, 0) slide by none.
-    const auto slide = [](Actor &x, ai::Machine &m, std::uint32_t hit, float speed) {
-        if ((x.u32(field::kFlags) & (1u << 7)) == 0) {
-            Vec way = read_vec(m, hit);
-            if (speed < 0.0F) {
-                speed = -speed;
-                for (float &f : way.v)
-                    f = -f;
-            }
-            const float n = std::sqrt(way.v[0] * way.v[0] + way.v[1] * way.v[1] + way.v[2] * way.v[2]);
-            x.slide = n > 0.0F ? Vec3{way.v[0] / n, way.v[1] / n, way.v[2] / n} : Vec3{};
-            if (const std::uint32_t sheet = x.u32(0x5c0); sheet != 0) { // its sheet's hitback addition (1:348)
-                const std::uint32_t bits = m.memory().u32(sheet + 0x1c8);
-                float more = 0.0F;
-                std::memcpy(&more, &bits, 4);
-                speed += more;
-            }
-            x.slide_speed = speed * 0.1F;
+    // YS::BTLOBJ::set_hitback (FUN_1403d4960) on an object whose flags and battle sheet are given: false when + 0x120
+    // bit 7 holds it (can_hitback), else the way made one long (turned back for a speed below 0) and the speed a tenth
+    // of the one given, its sheet's hitback addition (+ 0x1c8, 1:348) added first
+    const auto hitback = [](ai::Machine &m, std::uint32_t flags, std::uint32_t sheet, Vec way, float speed, Vec3 &unit,
+                            float &tick) {
+        if ((flags & (1u << 7)) != 0)
+            return false;
+        if (speed < 0.0F) {
+            speed = -speed;
+            for (float &f : way.v)
+                f = -f;
         }
+        const float n = std::sqrt(way.v[0] * way.v[0] + way.v[1] * way.v[1] + way.v[2] * way.v[2]);
+        unit = n > 0.0F ? Vec3{way.v[0] / n, way.v[1] / n, way.v[2] / n} : Vec3{};
+        if (sheet != 0) {
+            const std::uint32_t bits = m.memory().u32(sheet + 0x1c8);
+            float more = 0.0F;
+            std::memcpy(&more, &bits, 4);
+            speed += more;
+        }
+        tick = speed * 0.1F;
+        return true;
+    };
+    const auto slide = [hitback](Actor &x, ai::Machine &m, std::uint32_t hit, float speed) {
+        hitback(m, x.u32(field::kFlags), x.u32(0x5c0), read_vec(m, hit), speed, x.slide, x.slide_speed);
         m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
     };
+    // 1:146 an object pushed back along a way at a speed (trap_obj_hitback -> YS::BTLOBJ::set_hitback, as a hit's
+    // slide without the hit); 6:66 its push stopped (Ts::trap_obj_clear_hitback: + 0xad0 to + 0xadc, the PS3 build's,
+    // cleared). On a player the world's (World::player_slide): Shan-Yu's reaction command 270 sends Sora on along
+    // his own facing so (100), and his blows that catch him stop his push before they take him in hand
+    calls.set(1, 146, [hitback](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (o == nullptr)
+            return;
+        if (o->actor() != nullptr) {
+            Actor &x = *o->actor();
+            hitback(m, x.u32(field::kFlags), x.u32(0x5c0), read_vec(m, a[1].bits), a[2].f(), x.slide, x.slide_speed);
+            return;
+        }
+        World *world = running(m) != nullptr ? running(m)->world : nullptr;
+        Vec3 unit{};
+        float tick = 0.0F;
+        if (world != nullptr && is_player(o) &&
+            hitback(m, o->u32(field::kFlags), world->player_sheet(*o), read_vec(m, a[1].bits), a[2].f(), unit, tick))
+            world->player_slide(*o, unit, tick);
+    });
+    calls.set(6, 66, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (o == nullptr)
+            return;
+        if (Actor *x = o->actor(); x != nullptr) {
+            x->slide = {};
+            x->slide_speed = 0.0F;
+        } else if (is_player(o) && running(m) != nullptr && running(m)->world != nullptr) {
+            running(m)->world->player_slide(*o, {}, 0.0F);
+        }
+    });
     calls.set(2, 3, [slide](ai::Machine &m, std::span<ai::Value> a) {
         slide(*self_of(m, a[0]), m, a[1].bits, a[2].f());
     });

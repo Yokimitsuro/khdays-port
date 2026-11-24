@@ -1204,6 +1204,58 @@ each other).
   platform each time, its ground attack in `btl_hard`, its grab again in `btl_super_hard`; defeated at 270 s, 220 s and
   194 s, the mission cleared and its results shown.
 
+### Shan-Yu and his falcon (2026-11-23)
+
+The Land of Dragons' Shan-Yu (`B_MU100`) and his falcon (`B_MU110`), bosses both, in mu09's battle `b_40` (the square
+before the palace's gates), mission `MU09_MS108`. The test mission plays them in a room made from mu09, where `b_40`
+puts them and the player (KH2's (0, 0, 1300) and (-200, -400, 1100); (0, 0, 2250)).
+
+- **His script** (41 states): `atk_hayabusa`, `atk_kenmaku`, `atk_nagiharai`, `atk_hadou`, `atk_syouryu`,
+  `atk_counter`, `rush_guard_start` / `_failure` and `rush_break` (the clash of swords), `power_up`, `hawk_call` and the
+  falcon's blows he orders (`atk_howk_long`, `_short`, `_counter`), his modes by his health (`btl_normal`, `btl_hard`,
+  `btl_super_hard` and their `rvg_`). The falcon circles (`move_circle`), comes to him (`move_syan_yu`) and dives
+  (`atk_shitotsu`, `atk_eguri`, `atk_hayanie`).
+- **The clash**: his blows 389, 390, 391, 394, 1735 and 1736 on the player turn him to Shan-Yu, stop his push (6:66)
+  and give his thread 0x15b: his 252, then 253, while reaction command 270 is offered; taken (twice), thread 0x366
+  plays his 255 and pushes him on along his own facing (1:146, 100); the third, 271, his 256, Shan-Yu's guard broken.
+- **A push without a hit** (1:146 `trap_obj_hitback`, 6:66 `trap_obj_clear_hitback`): `YS::BTLOBJ::set_hitback`, what
+  a hit's slide (2:3, 2:87) calls too -- none while + 0x120 bit 7 holds it (`can_hitback`), the way made one long and
+  turned back for a power below 0, its sheet's addition (+ 0x1c8) to the power, a tenth of it a tick, 0.9 of itself
+  each tick and over below 1 (`exec_hitback`). On a held player along the ground (`World::player_slide`, `hold_tick`).
+- **His own area's**: 1:23 and 1:24 are the world and the area KH2's field is in (`trap_area_world`,
+  `trap_area_area`), which Days's field is none of: 0. `hless_call` enables the area's spawn unit 148 -- his Heartless
+  -- in mu09 alone (world 8, area 9) while the area's spawn cost left is over 30 (1:197 `trap_area_cost_rest`), and
+  disables it (1:202 `trap_unit_disable`): KH2's units are not Days's, so they do not come; a mission's author may
+  place them as a wave.
+- **The gates are not there yet**: `b_40` places the palace's gates too (`F_MU030`, entry 733, kind 9: a battle NPC of
+  the player's team, at (0, 0, 2715), behind the player). The mission's trigger 6 takes from its gauge ("GATES": 50 of
+  100 at the start, 50 a minute back on its own) the damage an enemy does them over their health times 50, twice that
+  for Shan-Yu's own (`1:213`, 5012), fails at 0 (signal 136) and scatters morale orbs worth half of it from them
+  (1:226, `PRIZE_MU`). Without them the gauge only rises.
+- **His shock waves** (`atk_hadou`, 207's elements 10 and 11): element 11 loops and is linked to its motion (below,
+  "Effects linked to a motion"), which fades it out over 50 frames as it ends. The port linked none: one more stood at
+  each of his fifteen, the floor white for the rest of the fight.
+- **The end**: his health out (the last blow from reaction command 271's thread, his event sequence `re_b_mu100-20`),
+  his end sends signal 4 and the mission ends by its boss's end. The falcon is never beaten: kept at a tenth of its
+  health (1:231) it flies off (`out`) and comes back (`in`), so it leaves with his battle ("KH2's missions and
+  signals") -- before, a wave with both never ended.
+- **Played** (2026-11-23, window runs, level 30, the installed HD PACK, a test mod made by the tool with `--only` and a
+  room made from mu09; `chase_ax.input`, then the same inputs repeated to its end): the player set at KH2's place on
+  the floor, his blows and the falcon's, the clash of swords through all three commands (pushed on, 10 a tick),
+  `power_up`, `btl_hard` and `btl_super_hard`, his shock waves gone in 2.2 s at most (ten of them); defeated at 522 s,
+  552 s and 607 s by the command's last blow, the falcon gone with him and the mission's results shown (the last run;
+  before its fixes the mission never ended).
+
+### Effects linked to a motion (2026-11-24)
+
+A PAX's element's flags (+ 0x10) say how its effect on an object ends (the PS3 build's `PAX::create`,
+`PAX::MANAGER::exec`, `system_delete`, read): 0x20 links it to the object's motion (`MOTION::link_effect`), and every
+start of another motion (`MOTION::start_motion` -> `MOTION::end`), as the object's leaving does, asks for its deletion;
+0x200 deletes it as its object goes. Deleted, once: with 0x80 its loops are closed (`loop_end_kill`), else with 0x40 it
+fades out over its + 5's frames (`fadeout_kill`; 0 kills it), else it plays on. One put in the world by its script (a
+place, or let go: 0:38) is none of these. The port's `unlink` (`shell/draw.cpp`), each effect keeping the motion that
+ran as it started -- the player's, in an enemy's hands.
+
 ### The scope, the pictures and the screen's shake
 
 Xigbar's sniping, read in his script and the PS3 build (2026-11-15):
@@ -1490,7 +1542,12 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   down to 0.
 - **Signals**: the PS3 build's `YS::SIGNAL::Call(id, argument)` queues one; every object's script (trigger 10,
   `YS::OBJ::_OVR_signal_callback`) and the mission's hear it. An enemy's end sends 75 with its serial
-  (`YS::ZAKO::_OVR__dead`: entries of kind 4); a counter reaching its most sends 123, reaching 0 14, with its index,
+  (`YS::ZAKO::_OVR__dead`: entries of kind 4), a boss's 4 with its entry's number (`YS::BOSS::_OVR__dead`: kinds 3 and
+  0xc, its effect 0 bound to it too; the port sent it only for those whose script does, Twilight Thorn's, until
+  2026-11-24): the missions lock themselves completed on it and end so (4:16) -- Barbossa's on his own alone (1015),
+  the hyenas' counting each, the Lords' on the second. What the battle had besides goes with KH2's cutscene; Days's
+  wave waits for each of its enemies, so the other KH2 enemies of that mission leave then (their "leave") and count as
+  defeated (`battle_over`). A counter reaching its most sends 123, reaching 0 14, with its index,
   while the pieces are up (`MISSION_COUNT::set`); the time up 74 (`dk::timerTask`). The counters' calls: 4:6, 4:20
   and 4:29 the counter's index; 4:5 `trap_mission_set_count` the count, then the index, and 4:41 how many, then the
   index (`YS::MISSION::SetCount(n, index)`, `AddCount(n, index)`, the PS3 build's; until 2026-11-19 the port read

@@ -386,6 +386,10 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             if (kh2_mission) { // its script, its timer (KH2's 60 ticks a second); its pieces' time
                 Kh2Mission &m = *kh2_mission;
                 ++m.ticks;
+                if (m.others_go) {
+                    m.others_go = false;
+                    battle_over(m.name);
+                }
                 if (!m.over) {
                     m.actor->machine().tick();
                     // dk::timerTask: down to 0, or up to its most, while its pieces are up; its end tells the field
