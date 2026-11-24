@@ -244,6 +244,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     player_jumps.clear();
     for (auto &[object, hidden] : hidden_players) // (shown again as the next area holds them)
         hidden = false;
+    player_fades_over();
     // what the area's enemies offered or played for its players: the next area's objects may stand at the same
     // addresses (a mission played again), so none of it may carry over -- the deck's rows drawn as Days's own
     script_offer = {};
@@ -380,6 +381,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             if (t == 0 && !shouts.empty())
                 send_shouts();
             lights.tick();
+            player_fades_tick();
             screen_shake_tick();
             screen_white_tick();
             laser_tick();

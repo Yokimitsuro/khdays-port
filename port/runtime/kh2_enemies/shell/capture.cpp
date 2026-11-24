@@ -29,6 +29,11 @@ void end_capture(unsigned object, const char *why)
         f->second->released = true;
     if (c->second.actor != 0 && c->second.hidden)
         khdays_kh2_shell_player_hidden(c->second.actor, 0);
+    hidden_told[object] = false;
+    if (const auto f = player_fades.find(object); f != player_fades.end()) { // himself again (faded out before he was
+        f->second.now = 1.0F;                                              // turned), drawn whole
+        f->second.step = 0.0F;
+    }
     if (tracing())
         khdays_log("kh2 enemies: player %08x turned back (%s)", object, why);
     captures.erase(c);
@@ -266,11 +271,11 @@ extern "C" int khdays_kh2_enemies_captured(void *actor)
 }
 
 // func_ov022_0209c9fc (prepare.py), before it draws the actor's two weapon slots: whether this player is turned into a
-// form, his model hidden -- his weapons too then (his node's undrawn flag keeps his body from being drawn, not the
-// slots, which follow his hand: his keyblade was left in the air beside the die)
+// form, his model hidden, or faded out -- his weapons too then (his node's undrawn flag keeps his body from being
+// drawn, not the slots, which follow his hand: his keyblade was left in the air beside the die)
 extern "C" int khdays_kh2_enemies_turned(void *actor)
 {
     const unsigned object = khdays_kh2_shell_player_object(unsigned(KHDAYS_REF(actor)), nullptr, nullptr);
     const auto c = object != 0 ? captures.find(object) : captures.end();
-    return c != captures.end() && c->second.hidden ? 1 : 0;
+    return (c != captures.end() && c->second.hidden) || player_gone(object) ? 1 : 0;
 }

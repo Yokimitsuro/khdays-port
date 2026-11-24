@@ -832,12 +832,11 @@ void test_batch_two()
 }
 
 // The first boss's calls (Cerberus): its health's record (2:9, read by 1:84, 1:228, 1:229), a record's + 0x18, + 0x2a8,
-// two objects told apart, put at a point, a step ahead
+// two objects told apart, put at a point
 void test_boss_calls()
 {
     Rig rig;
-    kh::read_shapes(rig.calls, "2:9 3 0\n1:84 1 1\n1:228 2 1\n1:229 2 1\n2:25 1 1\n1:107 2 0\n1:130 2 1\n1:148 2 0\n"
-                               "1:220 3 0\n");
+    kh::read_shapes(rig.calls, "2:9 3 0\n1:84 1 1\n1:228 2 1\n1:229 2 1\n2:25 1 1\n1:107 2 0\n1:130 2 1\n1:148 2 0\n");
     MadeUpWorld world;
     world.hp = 750;
     world.hp_max = 1000;
@@ -866,12 +865,9 @@ void test_boss_calls()
     rig.memory.set_u32(one + 4, 0x500);
     rig.memory.set_u32(two + 4, 0x480);
     CHECK(call(rig, actor, 1, 130, {adr(one), adr(two)}).i() == 0x80 && call(rig, actor, 1, 130, {adr(one), adr(0)}).i() == 0);
-    // 1:148: put at a point; 1:220: a step ahead (facing +z)
+    // 1:148: put at a point
     call(rig, actor, 1, 148, {self, adr(vec(rig.memory, 10.0F, -20.0F, 30.0F, 1.0F))});
     CHECK(actor.place()[0] == 10.0F && actor.place()[1] == -20.0F && actor.place()[2] == 30.0F);
-    actor.set_yaw(0.0F);
-    call(rig, actor, 1, 220, {self, f(100.0F), i(0)});
-    CHECK(std::fabs(actor.place()[2] - 130.0F) < 1e-3F && actor.place()[0] == 10.0F);
 }
 
 // What a reaction command's calls do to one of Days's players (Cerberus's on the player): an object stands for the
@@ -2211,6 +2207,19 @@ struct RoxasWorld final : kh::World {
         way = {way[0] * s, 0.0F, way[2] * s};
         return true;
     }
+    // the same wall, its ground at 0
+    bool move_to_space(kh::Actor &, kh::Vec3 &place, float length, bool air) override
+    {
+        if (!air && place[1] < 0.0F)
+            return false;
+        place[2] = std::min(place[2], 100.0F - length);
+        return true;
+    }
+    kh::Vec3 put{};
+    void player_place(kh::Object &, const kh::Vec3 &to) override
+    {
+        put = to;
+    }
     std::vector<kh::Actor *> actors() override
     {
         return all;
@@ -2303,15 +2312,29 @@ void test_data_roxas()
     call(rig, roxas, 0, 51, {adr(0x5c)});
     CHECK(world.loop_ended == std::vector<std::uint32_t>({0x5a, 0x5b}));
     CHECK(world.killed == std::vector<std::uint32_t>({0x5c}));
-    // 1:220: a step ahead stops half a metre short of the wall at z 100 (2.5 m asked: 0.5 m taken); one that meets
-    // none is taken whole
+    // 1:220: moved into space, 250 cm clear of the wall at z 100, whichever way it faces; off the ground (the third
+    // value 0) it stays; the same on the player, whom the world puts there, the boss left where it is
     roxas.set_yaw(0.0F);
     roxas.set_place({0.0F, 0.0F, 0.0F});
     call(rig, roxas, 1, 220, {self, f(250.0F), i(0)});
-    CHECK(std::fabs(roxas.place()[2] - 50.0F) < 1e-3F && std::fabs(roxas.place()[0]) < 1e-3F);
-    roxas.set_place({0.0F, 0.0F, -300.0F});
-    call(rig, roxas, 1, 220, {self, f(100.0F), i(0)});
-    CHECK(std::fabs(roxas.place()[2] + 200.0F) < 1e-3F);
+    CHECK(std::fabs(roxas.place()[2] + 150.0F) < 1e-3F && std::fabs(roxas.place()[0]) < 1e-3F);
+    call(rig, roxas, 1, 220, {self, f(250.0F), i(0)}); // clear of it already
+    CHECK(std::fabs(roxas.place()[2] + 150.0F) < 1e-3F);
+    roxas.set_place({0.0F, -40.0F, 0.0F});
+    call(rig, roxas, 1, 220, {self, f(250.0F), i(0)});
+    CHECK(roxas.place()[2] == 0.0F);
+    call(rig, roxas, 1, 220, {self, f(250.0F), i(1)});
+    CHECK(std::fabs(roxas.place()[2] + 150.0F) < 1e-3F);
+    kh::Object held(rig.memory, "a player");
+    held.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    held.set_place({7.0F, 0.0F, 60.0F});
+    call(rig, roxas, 1, 220, {adr(held.address()), f(250.0F), i(0)});
+    CHECK(std::fabs(held.place()[2] + 150.0F) < 1e-3F && held.place()[0] == 7.0F && world.put == held.place());
+    CHECK(std::fabs(roxas.place()[2] + 150.0F) < 1e-3F && roxas.place()[0] == 0.0F);
+    const std::uint32_t clear = call(rig, roxas, 1, 367, {self, f(400.0F), i(1)}).bits; // 1:367: where that would be
+    float at[4];
+    rig.memory.read(clear, at, sizeof at);
+    CHECK(std::fabs(at[2] + 300.0F) < 1e-3F && std::fabs(roxas.place()[2] + 150.0F) < 1e-3F);
     // 1:237: the player's four top commands, as his duel gives them ("The End" in the third row), each going to the
     // object of the target record given last (its + 4: the record his script builds for himself)
     const std::uint32_t record = rig.memory.add(16, "a test's target record");
@@ -2497,12 +2520,42 @@ struct ExperimentWorld final : kh::World {
     {
         return in_loop;
     }
+    float floor_there = 0.0F, motion_time = 0.0F;
+    float ground_at(kh::Actor &, const kh::Vec3 &) override
+    {
+        return floor_there;
+    }
+    float player_motion_time(kh::Object &) override
+    {
+        return motion_time;
+    }
+    float fade_from = -1.0F, fade_to = -1.0F, fade_time = -1.0F;
+    void player_fade(kh::Object &, float from, float to, float time) override
+    {
+        fade_from = from, fade_to = to, fade_time = time;
+    }
+    bool thread_ended = false;
+    void player_thread(kh::Object &, ai::Machine &, std::uint32_t thread) override
+    {
+        thread_ended = thread == 0;
+    }
+    kh::Actor *form = nullptr, *cast_by = nullptr;
+    kh::Actor *player_turned(kh::Object &) override
+    {
+        return form;
+    }
+    std::uint32_t effect(kh::Actor &a, int, int, int) override
+    {
+        cast_by = &a;
+        return 77;
+    }
 };
 
 void test_experiment()
 {
     Rig rig;
-    kh::read_shapes(rig.calls, "1:55 5 0\n1:63 1 1\n");
+    kh::read_shapes(rig.calls, "1:55 5 0\n1:63 1 1\n1:98 1 1\n1:99 1 1\n1:69 1 1\n1:97 1 1\n1:19 2 0\n1:20 2 0\n"
+                               "1:211 2 0\n1:212 2 0\n1:214 1 0\n1:87 4 1\n1:109 2 0\n");
     ExperimentWorld world;
     kh::Actor body(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "the experiment");
     body.world = &world;
@@ -2525,6 +2578,45 @@ void test_experiment()
     CHECK(call(rig, body, 1, 63, {adr(player.address())}).bits == 0);
     world.in_loop = true;
     CHECK(call(rig, body, 1, 63, {adr(player.address())}).bits == 1);
+    // 1:98, 1:99 on the player: the ground under him, where he is (the body's attacks go for it: a vector of its own
+    // place's flew it up for good)
+    body.set_place({1000.0F, -4000.0F, 0.0F});
+    player.set_place({30.0F, -120.0F, 40.0F});
+    world.floor_there = -20.0F;
+    float at[4];
+    rig.memory.read(call(rig, body, 1, 98, {adr(player.address())}).bits, at, sizeof at);
+    CHECK(at[0] == 30.0F && at[1] == -20.0F && at[2] == 40.0F && at[3] == 1.0F);
+    CHECK(call(rig, body, 1, 99, {adr(player.address())}).f() == -100.0F);
+    // 1:69 on the player: the motion played on him; 1:97 his own Spec
+    world.motion_time = 12.5F;
+    CHECK(call(rig, body, 1, 69, {adr(player.address())}).f() == 12.5F);
+    CHECK(call(rig, body, 1, 97, {adr(player.address())}).bits == player.address() + kh::field::kSpec);
+    // 1:19 and 1:20 on the player: his model, the body's fade as it was; 1:211 and 1:212 his pattern
+    call(rig, body, 1, 19, {adr(player.address()), f(10.0F)});
+    CHECK(world.fade_from == 1.0F && world.fade_to == 0.0F && world.fade_time == 10.0F && body.fade == 1.0F &&
+          body.fade_step == 0.0F);
+    call(rig, body, 1, 20, {adr(player.address()), f(2.0F)});
+    CHECK(world.fade_from == 0.0F && world.fade_to == 1.0F && world.fade_time == 1.0F);
+    call(rig, body, 1, 211, {adr(player.address()), i(9)});
+    CHECK(player.u32(0xd10) == 0x200u && body.u32(0xd10) == 0u);
+    call(rig, body, 1, 212, {adr(player.address()), i(9)});
+    CHECK(player.u32(0xd10) == 0u);
+    // 1:214: the player's thread ended, the body's own kept
+    body.side_thread = 5;
+    call(rig, body, 1, 214, {adr(player.address())});
+    CHECK(world.thread_ended && body.side_thread == 5);
+    // 1:87, 1:109: none of KH2's on a player himself; on the form he is turned into, the form's
+    CHECK(call(rig, body, 1, 87, {adr(player.address()), i(1), i(1), i(0)}).bits == 0 && world.cast_by == nullptr);
+    call(rig, body, 1, 109, {adr(player.address()), i(1)});
+    CHECK(body.hidden_parts == 0);
+    kh::Actor form(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "a card");
+    form.world = &world;
+    world.form = &form;
+    CHECK(call(rig, body, 1, 87, {adr(player.address()), i(1), i(1), i(0)}).bits == 77 && world.cast_by == &form);
+    call(rig, body, 1, 109, {adr(player.address()), i(1)});
+    CHECK(form.hidden_parts == 2u && body.hidden_parts == 0);
+    call(rig, body, 1, 20, {adr(player.address()), f(10.0F)});
+    CHECK(form.fade == 0.0F && std::fabs(form.fade_step - 0.1F) < 1e-6F && world.fade_time == 1.0F);
 }
 
 // Twilight Thorn's B_EX200: a set of motions 0 and 7 alone (as B_EX200's holds 208 and 209 of Twilight Thorn's)

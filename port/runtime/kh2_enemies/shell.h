@@ -69,6 +69,9 @@ int khdays_kh2_enemies_control_off(void);
  * form; func_ov022_0209c9fc (prepare.py's join): whether his weapons are left undrawn so. */
 int khdays_kh2_enemies_captured(void *actor);
 int khdays_kh2_enemies_turned(void *actor);
+/* Ov022_ActorSetHp: the HP the player's `actor` is about to be given, 1 for none while a KH2 script has him withstand
+ * (his damage pattern 9, 1:211). */
+int khdays_kh2_enemies_withstand(void *actor, int hp);
 
 /* ui/reaction_command.cpp: the reaction command offered to this game's own player now (its name's KH2 text number in
  * `text`), 0 none, and its name (UTF-16, how many letters, 0 none); how many reaction commands this player took and

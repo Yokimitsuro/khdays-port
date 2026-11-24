@@ -6344,6 +6344,14 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   mission over, the falcon's Days enemy defeated, mission clear at 608.0 s, the results at frame 36676. The shock waves'
   element 11 was cast fifteen times and never over in the first fights; linked to its motion, ten of ten faded out,
   2.2 s at most.
+- **A player's own model faded** (2026-11-24, read and seen in a window run of Data Luxord's fight): Days's camera
+  fades the player it comes near with his node's model's alpha (`Ov002_TickCameraTransition`: the node's model at
+  +0x7c, `NNS_G3dMdlSetMdlAlphaAll`, 0 to 31), each frame he is near; told every frame by the port too, it fades the
+  game's models and the mods' alike. Luxord's 1:19 on him took him out in 10 ticks before his card (153.8 and 279.5 s)
+  and his die (327.0 s), each then drawn in his place, and he was whole again after each.
+- **The Experiment's `atk_trap_party_fast`** (same day, window run, defeated at 414 s, signal 4, the mission over, its
+  results): 6.8 m over its ground at most in the whole fight, where it had gone up 46 m with 1:98 on the player read as
+  its own place.
 
 ## 38. Days's commands on KH2's reaction command bar
 

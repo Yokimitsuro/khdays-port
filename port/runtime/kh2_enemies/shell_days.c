@@ -54,6 +54,7 @@ extern int GameState_GetField(int a, int b);
                                Ov022_RunReplayFrame leave the node undrawn (nothing of the game sets it on an
                                actor's node) */
 #define NODE_UNDRAWN 0x20u
+#define NODE_MODEL 0x7cu    /* its NNS model (Ov002_TickCameraTransition fades its materials) */
 #define NODE_ANGLE 0x80u    /* u16: the way its model looks, (sin, 0, cos) of it (Ov022_StepGlideState: the heading
                                + 0x8000, its way (-sin, -cos) of the heading) */
 
@@ -483,6 +484,7 @@ int khdays_kh2_shell_player_hp(unsigned actor)
 #define MEMBER_MADE 0x6u  /* u16: not 0 once made (runtime/net/roomlist.c's own_level) */
 
 extern void Ov022_ActorSetHp(KhdaysRef actor, int hp);
+extern void NNS_G3dMdlSetMdlAlphaAll(KhdaysRef model, int alpha);
 
 int khdays_kh2_shell_player_most_hp(unsigned actor)
 {
@@ -520,6 +522,15 @@ int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
     *pressed = checked_rd16(actor + PLAYER_PRESSED);
     *heading = dpad < 0 ? -1 : (int)(((unsigned)dpad + (unsigned)(short)checked_rd16(actor + PLAYER_ANGLE_BIAS)) & 0xffffu);
     return 1;
+}
+
+void khdays_kh2_shell_player_alpha(unsigned actor, int alpha)
+{
+    const unsigned node = actor != 0 && khdays_game_ram(actor + PLAYER_NODE) ? checked_rd32(actor + PLAYER_NODE) : 0u;
+    const unsigned model = node != 0 && khdays_game_ram(node + NODE_MODEL) ? checked_rd32(node + NODE_MODEL) : 0u;
+    if (model != 0 && khdays_game_ram(model)) {
+        NNS_G3dMdlSetMdlAlphaAll(model, alpha);
+    }
 }
 
 void khdays_kh2_shell_player_hidden(unsigned actor, int hidden)

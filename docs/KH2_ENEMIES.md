@@ -274,7 +274,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:84 on a player, 1:361 | a player's sheet (KH2's player's `YS::SHEET`: + 0 his health's bar, + 0x244 his `PartRam`); a sheet's level (`trap_sheet_level`, `SHEET::get_level`: the PartRam's byte + 0xf, 0 without one) | his sheet made of Days's player's (his HP and most; his level, his member record's, `gPartyMembers` + 2, at most KH2's 99) -- until 2026-11-19 1:84 on a player gave the running enemy's own |
 | 1:83 | a point given on a bone (0x4000 the actor itself, in its own axes) in the world (`FUN_1403b50f0`: the bone's matrix, the point through it) | the pose the enemy has now |
 | 1:90 | a state's name shouted (`trap_obj_act_shout`): `FUN_1403cacd0` lists it with the shouter, `FUN_1403c9d40` sends the list to every object once a frame -- with a delay each its own time at random below it (+ 0x4c0 .. + 0x4d0, KH2's chance), else at once -- and each runs its own state of that name's shout routine (the state record's + 0x14, event 5; `FUN_1403ca950` through `FUN_1403e2000`), given its own handle and the shouter's; no state is entered | every KH2 enemy of the field, at the next frame's first tick, once the field's loose threads ran (2:20). Until 2026-11-10 the port entered the state at once: the Silver Rock, whose `rc_address_shift_appear` shouts its own name, entered it again and again within one tick and the game stood still |
-| 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it |
+| 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it; on a player the ground under him (Days's, a ray from where he is) |
 | 1:112 | a routine of the script as the actor's attached thread (`FUN_1403e1970`, `FUN_1403d76d0`: + 0xd48, the one before ended), the actor its first value, the third its second whenever it is not 0 (`trap_obj_hook`: `VM::dup` with one value or two) | as KH2 (until 2026-11-16 the second only when it named an object: Final Xemnas's Reflect thread, given a record, stopped at once) |
 | 1:140 | whether a target record's object (its + 8) is there (`FUN_1403bde30`; its other test, the player's lock, not read) | its + 8 only |
 | 1:143 | an actor found by its placing record's number (`FUN_1403b41e0`, 0x70 for 0) | none: the slot left empty |
@@ -576,7 +576,7 @@ enemigos"); what is built is under "Played" at the end of this section.
   | 1:148 | the actor put at a point (`FUN_1403b64d0`: + 0x670, then `FUN_1403ccb90`) |
   | 1:157 | an event sequence started by a name of up to four letters from the actor's entries of type 0x16 (`FUN_1403db2f0`: `+ 0x928`'s, made an object of kind 0xb on the actor's + 0x80), its camera's target when given ("Event sequences" below) |
   | 1:213 | its character's number (`FUN_1403b5b20`: + 8's record's + 0x4c, 00objentry.bin's: Sora 1, Roxas 14, Donald 2, Goofy 3; enemies 1000 and up) |
-  | 1:220 | a step ahead with the room's collision, up to a length (`FUN_1403b9ac0`: its collision swept in 100s, `FUN_1403b6510` puts it where it stops) |
+  | 1:220 | the object moved into space (`trap_obj_move_to_space`; `FUN_1403b9ac0`, `FUN_1403b6510` puts it: "Calls made on the player" below) |
   | 1:225 | whether its class lets hits through now (+ 0x6c8 bit 1, then its class's virtual + 0xb8: the check KH2's hit makes, `FUN_140410d60`) |
   | 1:228, 1:229 | a 12-byte record's first, second word (as 1:230's) |
   | 2:25 | a record's + 0x18 |
@@ -926,8 +926,8 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   level 32 and 99). 2:95 a sheet of her own (battle entry 216), 6:69 the others of her part number hidden as she ends,
   10:22 whether an object is blown away (KH2's blow class: 1:129, 2:1). **Seen**: her clones (`bunshin`), her claws and
   steps. Her journal names no object of hers: her stand-in's name shows.
-- **The Lingering Will** `B_EX420` (no voice bank of his own): every call of his script answered (171). 1:367 where a
-  step along his facing would end (his 12 m dash's end, 1:220's wall-stopped step), 2:82 to 2:84 and 7:32 his vacuum's
+- **The Lingering Will** `B_EX420` (no voice bank of his own): every call of his script answered (171). 1:367 where
+  12 m round him would be clear of the walls (1:220's; he dashes there), 2:82 to 2:84 and 7:32 his vacuum's
   turning, near range, rate and reach (the turning applied across the pull), 2:96 whether an attack of his still
   stands, 0:81 a pad button pressed this frame (KH2's PS2 bits as Days's buttons: he waits on L1, Days's L), 1:365
   a group of the player's commands turned off (Days's deck keeps its own: none). The object he makes, `B_EX430`
@@ -1245,6 +1245,33 @@ puts them and the player (KH2's (0, 0, 1300) and (-200, -400, 1100); (0, 0, 2250
   `power_up`, `btl_hard` and `btl_super_hard`, his shock waves gone in 2.2 s at most (ten of them); defeated at 522 s,
   552 s and 607 s by the command's last blow, the falcon gone with him and the mission's results shown (the last run;
   before its fixes the mission never ended).
+
+### Calls made on the player (2026-11-24)
+
+A script's call names its object, and KH2's player is an object as its enemies are; the port's is one of Days's
+players, whose model, motions and effects are Days's. Every call the merged kinds' scripts make on him was listed from
+the scripts (his handle, made by 1:3, followed through their routines): those answered by the actor whose script runs
+were wrong. They now act on him, or on the form he is turned into (1:242), which is KH2's player meanwhile:
+
+- 1:98 and 1:99 (49 uses, 25 kinds: the Experiment's, Twilight Thorn's, Shan-Yu's, the data battles'): the ground under
+  him. Read as the boss's own place, a way to him had only its height: the Experiment's `atk_trap_party_fast` flew up to
+  46 m and followed no one.
+- 1:19, 1:20 (Data Xigbar's, Data Luxord's): his model faded, as Days's camera fades him when it is near
+  (`NNS_G3dMdlSetMdlAlphaAll` of his node's model; none of it left: undrawn, his weapons too), not the boss's; gone
+  as a turned player is himself again (KH2's is made anew).
+- 1:211, 1:212: his damage patterns. Pattern 9 (`BTLOBJ::is_withstand`) on him keeps his HP from going under 1
+  (`Ov022_ActorSetHp`, prepare.py): Data Xigbar's desperate attack holds him so.
+- 1:87, 1:108, 1:109 (Luxord's card's puff, his die's part): the form's effects and parts; none on a player himself.
+- 1:214 the player's thread ended (Data Xemnas's), 1:69 the time of the motion an enemy plays on him (Data Roxas's),
+  1:97 his Spec (Sora's, 03system.bin's prty 1: walking 2, running 8, a jump 185 high, turning 0.262).
+- **1:220 is no step ahead** (`YS::OBJ::get_move_to_space_pos`, read): the object's collision's sphere is made 100,
+  200 ... up to the length, with no way of its own, put against the room (`dk::Octree::collisionToMap`) and pushed out
+  of the walls, each result kept while it is not off the ground (the third value: wherever); the object is put there
+  (`set_pos_trans`). So many centimetres clear of the walls: the player before he is held (Data Roxas 250, Shan-Yu and
+  the carpet 500), Demyx (300) and Hades (1000) themselves, 1:367 the Lingering Will's dash to where 1200 are. The port
+  (`move_to_space`, `shell/enemies.cpp`) pushes the place away from the nearest of the room's walls round it, no
+  further than half way to what is behind, till all are that far. Until 2026-11-24 it was a step along the running
+  boss's facing, stopped at a wall.
 
 ### Effects linked to a motion (2026-11-24)
 
@@ -2326,14 +2353,12 @@ shell's life:
   defeated by Days as a hit of all its health defeats it, its KH2 end its script's own.
 - **Put by a script** (1:148, 1:153, 1:220): the place its script gives it in a tick is kept (until 2026-11-11 the
   place Days had was written over it), and the place another's script gives it between two frames (the cubes put the
-  Sorcerer they made where they stand) is taken at the next frame's start, not Days's. 1:220's step stops at the
-  room's walls as KH2's sweep does (a body's sphere half a metre round swept along it, stopped at the first wall).
-  Until 2026-11-13 it stepped the whole length: Days's collision pushes back only one standing in a wall, so a step
-  through one (Roxas's 2.5 m before his hold) left it outside. A KH2 actor put by 1:148, 1:153 or 1:217 (2026-11-19)
-  stops short of the first wall between the player it goes for and the point, swept as a step at the higher of the
-  two: KH2 puts it there unchecked, its arenas being larger than Days's rooms -- Final Xemnas's warp (`mode_bomb`: 18 m
-  from the player, the player's way from the world's middle turned 157 to 203 degrees at random -- across KH2's
-  arena) left him outside the coliseum made from he00, behind its gate; a leap onto a rock (Scar's) still lands, the sweep passing over it.
+  Sorcerer they made where they stand) is taken at the next frame's start, not Days's. A KH2 actor put by 1:148, 1:153
+  or 1:217 (2026-11-19) stops short of the first wall between the player it goes for and the point, swept as a step at
+  the higher of the two: KH2 puts it there unchecked, its arenas being larger than Days's rooms -- Final Xemnas's warp
+  (`mode_bomb`: 18 m from the player, the player's way from the world's middle turned 157 to 203 degrees at random --
+  across KH2's arena) left him outside the coliseum made from he00, behind its gate; a leap onto a rock (Scar's) still
+  lands, the sweep passing over it.
 - **The room's walls stop its way** (2026-11-14): each tick its way along the ground -- its motion's root, its
   steering, its slide, a vacuum's pull, on the ground or in the air -- is swept by a sphere of its Days sphere's radius
   (half a metre at least), its centre that radius and a step (30 cm) over its feet, against the room's walls: up to the

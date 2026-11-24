@@ -727,6 +727,81 @@ bool wall_sweep(unsigned shell, const Vec3 &place, float radius, Vec3 &way, bool
 }
 namespace {
 
+// The nearest of the room's walls round a point (KH2's cm), looked for within `reach` along ways round it: how far it
+// is in `distance`, the way to it in `to`; whether there is one
+bool nearest_wall(unsigned shell, const Vec3 &at, float reach, float &distance, Vec3 &to)
+{
+    constexpr int kWays = 32;
+    bool any = false;
+    for (int i = 0; i < kWays; ++i) {
+        const float turn = 6.2831853F * float(i) / float(kWays);
+        const Vec3 w = {std::sin(turn), 0.0F, std::cos(turn)};
+        float share = 0.0F;
+        Vec3 n{};
+        if (!wall_cast(shell, at, {w[0] * reach, 0.0F, w[2] * reach}, 0.0F, share, n))
+            continue;
+        if (const float d = share * reach; !any || d < distance) {
+            any = true;
+            distance = d;
+            to = w;
+        }
+    }
+    return any;
+}
+
+// A sphere of `radius` round a place (KH2's cm) pushed along the ground out of the room's walls: away from the nearest,
+// no further than half way to what is behind it, till it is that far from them all
+void push_from_walls(unsigned shell, Vec3 &place, float radius)
+{
+    constexpr int kPasses = 16;
+    for (int pass = 0; pass < kPasses; ++pass) {
+        const Vec3 at = {place[0], place[1] - kWallRadius - kWallStepOver, place[2]};
+        float d = 0.0F;
+        Vec3 to{};
+        if (!nearest_wall(shell, at, radius, d, to))
+            return;
+        float push = radius - d, share = 0.0F;
+        Vec3 n{};
+        if (const float reach = push + radius;
+            wall_cast(shell, at, {-to[0] * reach, 0.0F, -to[2] * reach}, 0.0F, share, n))
+            push = std::min(push, std::max(0.0F, (share * reach - d) * 0.5F));
+        if (push < kWallGap)
+            return;
+        place[0] -= to[0] * push;
+        place[2] -= to[2] * push;
+    }
+}
+} // namespace
+
+// A place moved into space (YS::OBJ::get_move_to_space_pos): its collision's sphere made 100, 200 ... up to `length`
+// cm, each put against the room with no way of its own and pushed out of its walls; kept while it stands on the ground
+// (within a step of where it was) -- `air`: wherever it is. Whether any step was
+bool move_to_space(unsigned shell, Vec3 &place, float length, bool air)
+{
+    constexpr float kSpaceStep = 100.0F;
+    bool moved = false;
+    for (float radius = 0.0F; radius < length;) {
+        radius = std::min(radius + kSpaceStep, length);
+        Vec3 at = place;
+        push_from_walls(shell, at, radius);
+        if (!air) {
+            float from[3], to[3], hit[3];
+            to_days({at[0], at[1] - kGroundSearchUp, at[2]}, from);
+            to_days({at[0], at[1] + kGroundSearchDown, at[2]}, to);
+            if (!khdays_kh2_shell_ray(shell, from, to, hit))
+                break;
+            const float ground = to_kh2(hit)[1];
+            if (ground - at[1] > kStep)
+                break;
+            at[1] = ground;
+        }
+        place = at;
+        moved = true;
+    }
+    return moved;
+}
+namespace {
+
 // Its way along the ground this tick (`travel`, KH2's cm, from `place`), on the ground or in the air, swept with its
 // Days sphere's radius against the room's walls (wall_sweep); whether a wall stopped it. Days's collision keeps it that
 // radius off them: a sphere any larger started in the wall it stood by, and every way, even away from it, was stopped

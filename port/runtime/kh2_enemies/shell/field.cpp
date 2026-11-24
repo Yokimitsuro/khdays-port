@@ -288,6 +288,18 @@ float Field::ground(Actor &a)
     return it != by_actor.end() && it->second->floor_known ? it->second->floor : a.place()[1];
 }
 
+// The same under a place (a player's): Days's ground there, the place's own height when the ray meets none
+float Field::ground_at(Actor &by, const Vec3 &place)
+{
+    const auto it = by_actor.find(&by);
+    if (it == by_actor.end())
+        return place[1];
+    float from[3], to[3], hit[3];
+    to_days({place[0], place[1] - kGroundSearchUp, place[2]}, from);
+    to_days({place[0], place[1] + kGroundSearchDown, place[2]}, to);
+    return khdays_kh2_shell_ray(shell_of(*it->second), from, to, hit) ? to_kh2(hit)[1] : place[1];
+}
+
 // 1:90: a state every enemy of the field enters, at once or each after a time at random below `delay` (KH2's
 // chance, DAT_140783ca0 x 0x10dcd)
 void Field::broadcast(Actor &a, const std::string &name, float delay)
@@ -1056,6 +1068,20 @@ bool Field::ray(Actor &a, const Vec3 &from, const Vec3 &to, int kind, Vec3 &hit)
     return true;
 }
 
+bool Field::move_to_space(Actor &by, Vec3 &place, float length, bool air)
+{
+    const auto it = by_actor.find(&by);
+    if (it == by_actor.end())
+        return false;
+    const Vec3 was = place;
+    const bool moved = shell::move_to_space(shell_of(*it->second), place, length, air);
+    if (tracing())
+        khdays_log("kh2 enemies: %08x's script wants %.0f cm of space at %.1f %.1f %.1f (KH2's cm): %s%.1f away",
+                   it->second->days, double(length), double(was[0]), double(was[1]), double(was[2]),
+                   moved ? "" : "not on ground, ", double(std::hypot(place[0] - was[0], place[2] - was[2])));
+    return moved;
+}
+
 bool Field::wall_sweep(Actor &a, const Vec3 &place, float radius, Vec3 &way, bool slide)
 {
     const auto it = by_actor.find(&a);
@@ -1509,22 +1535,17 @@ Object *Field::player(Actor &a)
     Object *best = nullptr;
     float best_d = 0.0F;
     for (int i = 0; i < n && i < int(list.size()); ++i) {
-        auto &o = players[list[std::size_t(i)].object];
-        if (!o) {
-            o = std::make_unique<Object>(mod().memory, "a player");
-            o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
-            o->set_u32(field::kTeam, 1u); // the player's team (YS::PARTY)
-        }
+        Object &o = player_object(list[std::size_t(i)].object);
         if (const auto h = held.find(list[std::size_t(i)].object); h != held.end()) {
-            o->set_place(h->second.place); // where the script and its motion put it
-            o->set_yaw(h->second.yaw);
+            o.set_place(h->second.place); // where the script and its motion put it
+            o.set_yaw(h->second.yaw);
         } else {
-            o->set_place(to_kh2(list[std::size_t(i)].place));
+            o.set_place(to_kh2(list[std::size_t(i)].place));
         }
-        const Vec3 p = o->place();
+        const Vec3 p = o.place();
         const float d = (p[0] - at[0]) * (p[0] - at[0]) + (p[2] - at[2]) * (p[2] - at[2]);
         if (best == nullptr || d < best_d)
-            best = o.get(), best_d = d;
+            best = &o, best_d = d;
     }
     return best;
 }
@@ -1582,6 +1603,74 @@ void Field::player_carry(Object &o, Object *by)
         khdays_log(h->second.carried_by != 0 ? "kh2 enemies: player %08x put on %08x (1:18)"
                                              : "kh2 enemies: player %08x let down (1:102)",
                    object, h->second.carried_by);
+}
+
+Object &player_object(unsigned object)
+{
+    auto &o = players[object];
+    if (!o) {
+        o = std::make_unique<Object>(mod().memory, "a player");
+        o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
+        o->set_u32(field::kTeam, 1u);                      // the player's team (YS::PARTY)
+        // its Spec (1:97): walking, running, how high a jump goes, turning -- Sora's, Final Xemnas's Riku jumps by it
+        o->set_f(field::kSpec + 0x0, 2.0F);
+        o->set_f(field::kSpec + 0x4, 8.0F);
+        o->set_f(field::kSpec + 0x8, 185.0F);
+        o->set_f(field::kTurnSpeed, 0.262F);
+    }
+    return *o;
+}
+
+void Field::player_fade(Object &o, float from, float to, float time)
+{
+    const unsigned object = days_object(o);
+    if (object == 0)
+        return;
+    PlayerFade &f = player_fades[object];
+    f.now = from;
+    f.step = (to - from) / time;
+    if (tracing())
+        khdays_log("kh2 enemies: player %08x fades %s in %.0f ticks (1:%d)", object, to < from ? "out" : "in",
+                   double(time), to < from ? 19 : 20);
+}
+
+bool player_gone(unsigned object)
+{
+    const auto f = player_fades.find(object);
+    return f != player_fades.end() && f->second.now <= 0.0F;
+}
+
+// A tick of the players' fades (KH2's 60 a second)
+void player_fades_tick()
+{
+    for (auto &[object, f] : player_fades)
+        if (f.step != 0.0F) {
+            f.now = std::clamp(f.now + f.step, 0.0F, 1.0F);
+            if (f.now <= 0.0F || f.now >= 1.0F)
+                f.step = 0.0F;
+        }
+}
+
+// Every player drawn whole again (the area left: his model stays loaded, its materials' alpha with it)
+void player_fades_over()
+{
+    for (const auto &[object, f] : player_fades)
+        if (const auto actor = player_actors.find(object); actor != player_actors.end() && f.told != 31)
+            khdays_kh2_shell_player_alpha(actor->second, 31);
+    player_fades.clear();
+}
+
+float Field::player_motion_time(Object &o)
+{
+    const auto h = held.find(days_object(o));
+    return h != held.end() ? h->second.time : 0.0F;
+}
+
+Actor *Field::player_turned(Object &o)
+{
+    const auto c = captures.find(days_object(o));
+    const auto f = c != captures.end() ? allies.find(c->second.form) : allies.end();
+    return f != allies.end() && !f->second->released ? f->second->actor.get() : nullptr;
 }
 
 void Field::player_hide(Object &o, bool hidden)

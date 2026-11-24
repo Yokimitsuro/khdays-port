@@ -111,6 +111,29 @@ Actor *self_of(ai::Machine &m, const ai::Value &arg)
     return a != nullptr ? a : running(m);
 }
 
+// What a call on an object acts on: the object, but the form a script turned one of Days's players into (1:242: KH2's
+// player is that object then).
+Object *acted_object(ai::Machine &m, const ai::Value &arg)
+{
+    Object *o = object_of(m, arg);
+    if (o == nullptr || o->actor() != nullptr || !is_player(o))
+        return o;
+    Actor *me = running(m);
+    Actor *form = me != nullptr && me->world != nullptr ? me->world->player_turned(*o) : nullptr;
+    return form != nullptr ? form : o;
+}
+
+// Its actor: none for one of Days's players himself, whose model, effects and motions are the world's -- not the
+// running one's, which a script's call on the player must leave as it is (Luxord faded out with the player he turns).
+Actor *acted_on(ai::Machine &m, const ai::Value &arg)
+{
+    Object *o = acted_object(m, arg);
+    if (o != nullptr && o->actor() == nullptr && is_player(o))
+        return nullptr;
+    Actor *a = o != nullptr ? o->actor() : nullptr;
+    return a != nullptr ? a : running(m);
+}
+
 Vec3 xyz(const Vec &v)
 {
     return {v.v[0], v.v[1], v.v[2]};
@@ -520,7 +543,15 @@ void add_states(ai::Calls &calls)
             running(m)->world->player_thread(*on, m, t->id);
     });
     // 1:214 the thread attached to the actor stopped (trap_obj_hook_stop; FUN_14042cab0 -> FUN_1403d76d0 with none)
-    calls.set(1, 214, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->attach_thread(m, 0); });
+    // -- a player's, the player's thread (1:112's)
+    calls.set(1, 214, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *o = object_of(m, a[0]); o != nullptr && o->actor() == nullptr && is_player(o)) {
+            if (World *w = running(m)->world)
+                w->player_thread(*o, m, 0);
+            return;
+        }
+        self_of(m, a[0])->attach_thread(m, 0);
+    });
     // 1:5 a state table emptied: its 128 entries' ids 0 (FUN_1403ca790)
     calls.set(1, 5, [](ai::Machine &m, std::span<ai::Value> a) {
         for (std::uint32_t i = 0; i < 128; ++i)
@@ -738,7 +769,10 @@ void add_actor_fields(ai::Calls &calls)
         self_of(m, a[0])->set_bits(field::kFlags, 0x8000000u, true);
     });
     calls.set(1, 69, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_float(self_of(m, a[0])->f(0x19c));
+        if (Actor *x = acted_on(m, a[0]))
+            a[0] = ai::Value::of_float(x->f(0x19c));
+        else
+            a[0] = ai::Value::of_float(running(m)->world->player_motion_time(*object_of(m, a[0])));
     });
     // 1:84 an object's sheet (+ 0x5c0): a player's his own (World::player_sheet), not the running enemy's
     // (Sephiroth's Heartless Angel reads the player's health)
@@ -784,7 +818,7 @@ void add_actor_fields(ai::Calls &calls)
         a[0] = ai::Value::of_int(x->motions != nullptr && x->motions->hooked() ? 1 : 0);
     });
     calls.set(1, 97, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_address(self_of(m, a[0])->address() + field::kSpec);
+        a[0] = ai::Value::of_address(acted_object(m, a[0])->address() + field::kSpec);
     });
     calls.set(1, 179, [](ai::Machine &m, std::span<ai::Value> a) {
         if (is_player(object_of(m, a[0])))
@@ -793,14 +827,14 @@ void add_actor_fields(ai::Calls &calls)
     });
     // 1:211 / 1:212 bit n of + 0xd10 set / cleared (FUN_14042ba50, FUN_14042ba80)
     calls.set(1, 211, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), true);
+        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), true);
     });
     calls.set(1, 212, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
     });
     // 1:324 the same bit cleared (trap_obj_pattern_reset, FUN_14042bab0): the Hydra's
     calls.set(1, 324, [](ai::Machine &m, std::span<ai::Value> a) {
-        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
     });
     // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
     // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
@@ -1099,7 +1133,9 @@ void add_actor_fields(ai::Calls &calls)
     // hidePart clears them): the Prison Keeper's faces, the Hydra's heads
     const auto parts = [](bool hide) {
         return [hide](ai::Machine &m, std::span<ai::Value> a) {
-            Actor *x = self_of(m, a[0]);
+            Actor *x = acted_on(m, a[0]); // (a player turned into a form: the form's -- Luxord's die's)
+            if (x == nullptr)
+                return;
             const std::int32_t part = a[1].i();
             const std::uint32_t mask = part == -1 ? ~0u : part >= 0 && part < 32 ? 1u << part : 0u;
             x->hidden_parts = hide ? x->hidden_parts | mask : x->hidden_parts & ~mask;
@@ -1751,20 +1787,25 @@ void add_motions(ai::Calls &calls)
     });
     // 1:19, 1:20 a fade to gone / to seen over a time, unless held (FUN_1403b7810 on + 0xa08: a time of 2 or less is
     // 1); 1:28 gone in a tick and held (+ 0x9b8 bit 4)
-    const auto fade = [](Actor &x, float from, float to, float time) {
-        if ((x.u32(field::kFade) & bit::kFadeHeld) != 0)
+    const auto fade = [](ai::Machine &m, const ai::Value &who, float from, float to, float time) {
+        Object *o = acted_object(m, who);
+        if (o == nullptr || (o->u32(field::kFade) & bit::kFadeHeld) != 0)
             return;
         if (time <= 2.0F)
             time = 1.0F;
-        x.fade = from;
-        x.fade_step = (to - from) / time;
+        if (Actor *x = acted_on(m, who)) {
+            x->fade = from;
+            x->fade_step = (to - from) / time;
+        } else if (World *w = running(m)->world) { // one of Days's players himself
+            w->player_fade(*o, from, to, time);
+        }
     };
-    calls.set(1, 19, [fade](ai::Machine &m, std::span<ai::Value> a) { fade(*self_of(m, a[0]), 1.0F, 0.0F, a[1].f()); });
-    calls.set(1, 20, [fade](ai::Machine &m, std::span<ai::Value> a) { fade(*self_of(m, a[0]), 0.0F, 1.0F, a[1].f()); });
+    calls.set(1, 19, [fade](ai::Machine &m, std::span<ai::Value> a) { fade(m, a[0], 1.0F, 0.0F, a[1].f()); });
+    calls.set(1, 20, [fade](ai::Machine &m, std::span<ai::Value> a) { fade(m, a[0], 0.0F, 1.0F, a[1].f()); });
     calls.set(1, 28, [fade](ai::Machine &m, std::span<ai::Value> a) {
-        Actor &x = *self_of(m, a[0]);
-        fade(x, 1.0F, 0.0F, 0.0F);
-        x.set_bits(field::kFade, bit::kFadeHeld, true);
+        fade(m, a[0], 1.0F, 0.0F, 0.0F);
+        if (Object *o = acted_object(m, a[0]))
+            o->set_bits(field::kFade, bit::kFadeHeld, true);
     });
 }
 
@@ -1774,8 +1815,7 @@ void add_moving(ai::Calls &calls)
 {
     // 1:2 steered toward a point along the ground at a speed (FUN_1403b9c60: the way there, its height 0, made one
     // long at + 0x10, the speed at + 0x1c), the way's length given back; its first value the actor itself
-    // 1:148 the actor put at a point (FUN_1403b64d0: + 0x670, its w 1); 1:220 a step ahead up to a length, the room's
-    // collision stopping it (FUN_1403b9ac0: Days's collision puts it back out of the walls after).
+    // 1:148 the actor put at a point (FUN_1403b64d0: + 0x670, its w 1).
     // KH2's arenas are larger than Days's rooms: a point a script finds far off lies beyond the room's walls (Final
     // Xemnas's warp, `mode_bomb`: 18 m behind the player -- he stood outside the coliseum, behind its gate). A KH2
     // actor put so stops short of the first wall between the player it goes for and the point, swept at the higher of
@@ -1814,28 +1854,33 @@ void add_moving(ai::Calls &calls)
         if (Object *o = object_of(m, a[0]))
             o->set_bits(field::kFade, 1u << 12, true);
     });
-    // KH2 sweeps its collision along the step and stops it at a wall (FUN_1403b9ac0); the port sweeps its body's sphere
-    // (its Days sphere's) along it against the room's walls and stops it short of the first: Days's collision pushes
-    // back only one standing in a wall, so a step through one left it outside (Roxas's 2.5 m before his hold, 1:18, out
-    // of Days's arena)
-    const auto step_to_space = [](ai::Machine &m, Actor *x, float length) {
-        const Vec3 at = x->place(), f = facing_of(x->yaw());
-        if (!(length > 0.0F))
-            return at;
-        Vec3 way = {f[0] * length, 0.0F, f[2] * length};
-        if (World *w = running(m)->world)
-            w->wall_sweep(*x, at, 0.0F, way, false);
-        return Vec3{at[0] + way[0], at[1], at[2] + way[2]};
+    // 1:220 the object moved into space (YS::trap_obj_move_to_space -> OBJ::move_to_space, FUN_1403b9ac0: the sphere of
+    // its collision made 100, 200 ... up to a length with no way of its own, pushed out of the room's walls, and the
+    // object put where it came, set_pos_trans as 1:217's; with the third value it need not stand on ground): clear of
+    // the walls by that much -- a player before he is held (Roxas's 250 cm, Shan-Yu's 500), Demyx and Hades themselves.
+    // Until 2026-11-24 read as a step ahead along its facing, the running actor's
+    const auto into_space = [](ai::Machine &m, std::span<ai::Value> a, Vec3 &to) {
+        Object *o = acted_object(m, a[0]);
+        Actor *me = running(m), *x = o->actor();
+        World *w = x != nullptr ? x->world : me->world;
+        to = o->place();
+        return w != nullptr && w->move_to_space(x != nullptr ? *x : *me, to, a[1].f(), a[2].bits != 0);
     };
-    calls.set(1, 220, [step_to_space](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
-        x->set_place(step_to_space(m, x, a[1].f()));
+    calls.set(1, 220, [into_space](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 to;
+        if (!into_space(m, a, to))
+            return;
+        Object *o = acted_object(m, a[0]);
+        o->set_place(to);
+        o->set_bits(field::kFade, 1u << 12, true);
+        if (o->actor() == nullptr)
+            running(m)->world->player_place(*o, to);
     });
-    // 1:367 where that step would put it, given back (trap_obj_get_move_to_space_pos, FUN_14042bb40 -> FUN_1403b8510:
-    // the record's object, the length, a flag): the Lingering Will's 12 m dash's end
-    calls.set(1, 367, [step_to_space](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
-        const Vec3 p = step_to_space(m, x, a[1].f());
+    // 1:367 where that would put it, given back (trap_obj_get_move_to_space_pos, FUN_14042bb40 -> FUN_1403b8510): the
+    // Lingering Will dashes to where 12 m round him are clear
+    calls.set(1, 367, [into_space](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 p;
+        into_space(m, a, p);
         Vec v;
         v.v[0] = p[0];
         v.v[1] = p[1];
@@ -1915,16 +1960,26 @@ void add_moving(ai::Calls &calls)
     });
     // 1:98 its place on the ground under it (FUN_1403b5b40, its y FUN_1403b87e0's); 1:99 how far above it it is,
     // KH2's way (negative up; 0 on it or below)
-    calls.set(1, 98, [](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
-        const Vec3 at = x->place();
+    // -- a player's where he is (the Experiment's attacks go for the ground under him): read as the running actor's
+    // until 2026-11-24, which flew up and up
+    const auto ground_under = [](ai::Machine &m, const ai::Value &who, Vec3 &at) {
+        Object *o = acted_object(m, who);
+        Actor *me = running(m), *x = o->actor();
+        at = o->place();
+        if (x != nullptr)
+            return x->world != nullptr ? x->world->ground(*x) : at[1];
+        return me->world != nullptr ? me->world->ground_at(*me, at) : at[1];
+    };
+    calls.set(1, 98, [ground_under](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 at;
         Vec r;
-        r.v[0] = at[0], r.v[1] = x->world != nullptr ? x->world->ground(*x) : at[1], r.v[2] = at[2], r.v[3] = 1.0F;
+        r.v[1] = ground_under(m, a[0], at);
+        r.v[0] = at[0], r.v[2] = at[2], r.v[3] = 1.0F;
         a[0] = give_vec(m, "1:98", r);
     });
-    calls.set(1, 99, [](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
-        const float above = (x->world != nullptr ? x->world->ground(*x) : x->place()[1]) - x->place()[1];
+    calls.set(1, 99, [ground_under](ai::Machine &m, std::span<ai::Value> a) {
+        Vec3 at;
+        const float ground = ground_under(m, a[0], at), above = ground - at[1];
         a[0] = ai::Value::of_float(above <= 0.0F ? -0.0F : -above);
     });
     // 1:4 face a direction (FUN_1403b65c0: yaw = atan2(x, z)); 1:79 the same, its facing too (FUN_1403b6420)
@@ -2832,11 +2887,13 @@ void add_world(ai::Calls &calls)
     add_attacks(calls);
     add_shots(calls);
     // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
+    // (a player turned into a form: the form's -- the puff as Luxord's card appears; himself he has none of KH2's)
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
-        Actor *x = self_of(m, a[0]);
-        const std::uint32_t h = x->world != nullptr ? x->world->effect(*x, std::int32_t(a[1].bits),
-                                                                       std::int32_t(a[2].bits), std::int32_t(a[3].bits))
-                                                    : 0;
+        Actor *x = acted_on(m, a[0]);
+        const std::uint32_t h = x != nullptr && x->world != nullptr
+                                    ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits),
+                                                       std::int32_t(a[3].bits))
+                                    : 0;
         a[0] = ai::Value::of_address(h);
     });
     // 1:128 the object's class's virtual + 0x20 with a value (its native code; trigger 13 calls it with 0); 2:9 the

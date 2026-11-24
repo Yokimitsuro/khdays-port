@@ -126,6 +126,9 @@ int khdays_kh2_shell_player_pad(unsigned actor, unsigned *pressed, int *heading)
  * they (+0x694 bit 0, bSuppressDraw, would also have Ov022_TickSubObjectChain draw his sub objects: a copy of his
  * body standing in its rest pose). His weapons are drawn apart (khdays_kh2_enemies_turned). */
 void khdays_kh2_shell_player_hidden(unsigned actor, int hidden);
+/* A player's actor's model's materials' alpha (1 to 31, all of it), as Days's camera fades him when it is near
+ * (Ov002_TickCameraTransition: NNS_G3dMdlSetMdlAlphaAll of his node's + 0x7c). */
+void khdays_kh2_shell_player_alpha(unsigned actor, int alpha);
 
 #ifdef __cplusplus
 }

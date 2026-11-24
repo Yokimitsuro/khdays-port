@@ -336,6 +336,21 @@ extern "C" int khdays_kh2_enemies_disarmed(void *enemy, void *source)
     return disarmed ? 1 : 0;
 }
 
+// Ov022_ActorSetHp (prepare.py): the HP `actor` (a player's) is about to be given. Withstanding (his damage pattern 9
+// on, 1:211: YS::BTLOBJ::is_withstand), he is left one over his least, which is none: Xigbar's desperate attack, which
+// holds him in its arena, does not defeat him
+extern "C" int khdays_kh2_enemies_withstand(void *actor, int hp)
+{
+    if (hp > 0 || players.empty())
+        return hp;
+    const unsigned object = khdays_kh2_shell_player_object(unsigned(KHDAYS_REF(actor)), nullptr, nullptr);
+    const auto o = object != 0 ? players.find(object) : players.end();
+    if (o == players.end() || !o->second)
+        return hp;
+    const Object &p = *o->second;
+    return (((p.u32(0xd10) | p.u32(0xd14)) & ~p.u32(0xd18)) & 0x200u) != 0 ? 1 : hp;
+}
+
 // Ov107_AiState_ApplyHit (prepare.py's join): a Days player's hit on a KH2 enemy -- KH2's enemies alone; Days's own
 // go on as they always have -- reflected by an attack of its (clashed): 1, Days's hit answered with no damage (as an
 // enemy's barrier answers it, + 0x1c4's 0x10). His block packet (Ov022_TryBlockHit's, its low flags 0x11) of the

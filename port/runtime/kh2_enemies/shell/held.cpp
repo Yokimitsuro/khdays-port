@@ -164,8 +164,11 @@ void Field::player_thread(Object &o, ai::Machine &m, std::uint32_t id)
 {
     const unsigned object = days_object(o);
     const auto h = held.find(object);
-    if (h == held.end()) { // kept until the script takes the player in hand
-        waiting_threads[object] = {&m, id};
+    if (h == held.end()) { // kept until the script takes the player in hand; none (1:214): no longer
+        if (id != 0)
+            waiting_threads[object] = {&m, id};
+        else
+            waiting_threads.erase(object);
         return;
     }
     if (h->second.machine == &m && h->second.thread != 0 && h->second.thread != id)
@@ -583,10 +586,29 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
         khdays_kh2_shell_player_recoil(unsigned(KHDAYS_REF(actor)), r->second.data());
         recoils.erase(r);
     }
-    // his model hidden or shown as a script asked (1:133, 1:134)
-    if (const auto hp = hidden_players.find(object); hp != hidden_players.end() && hidden_told[object] != hp->second) {
-        hidden_told[object] = hp->second;
-        khdays_kh2_shell_player_hidden(unsigned(KHDAYS_REF(actor)), hp->second ? 1 : 0);
+    // his model faded as a script asked (1:19, 1:20): its materials' alpha, as Days's camera fades him when it is near
+    // -- whole again once no KH2 enemy is left to fade him back in (its battle over while he was out)
+    if (const auto f = player_fades.find(object); f != player_fades.end()) {
+        if (enemies.empty() && allies.empty()) {
+            f->second.now = 1.0F;
+            f->second.step = 0.0F;
+        }
+        if (const int alpha = int(std::lround(f->second.now * 31.0F)); alpha != f->second.told) {
+            f->second.told = alpha;
+            khdays_kh2_shell_player_alpha(unsigned(KHDAYS_REF(actor)), std::max(1, alpha)); // (none of it: undrawn)
+        }
+        if (f->second.now >= 1.0F && f->second.step == 0.0F)
+            player_fades.erase(f);
+    }
+    // his model hidden or shown as a script asked (1:133, 1:134), or faded out whole; a turned player's is his form's
+    // (below)
+    if (captures.count(object) == 0) {
+        const auto hp = hidden_players.find(object);
+        const bool hidden = (hp != hidden_players.end() && hp->second) || player_gone(object);
+        if (const auto told = hidden_told.find(object); hidden != (told != hidden_told.end() && told->second)) {
+            hidden_told[object] = hidden;
+            khdays_kh2_shell_player_hidden(unsigned(KHDAYS_REF(actor)), hidden ? 1 : 0);
+        }
     }
     // its HP lost told to the KH2 mission (its damage trigger: KH2's player's damage drains Luxord's player's time
     // gauge), in KH2's measure as the mission's boss's health is measured against what Days shows of it -- Days has
@@ -607,13 +629,8 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
                     per = double(g->health_most) / double(g->shown_most);
                     break;
                 }
-            auto &o = players[object];
-            if (!o) {
-                o = std::make_unique<Object>(mod().memory, "a player");
-                o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
-                o->set_u32(field::kTeam, 1u); // the player's team (YS::PARTY)
-            }
-            mission_damage(o->address(), std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)));
+            mission_damage(player_object(object).address(),
+                           std::max<std::int64_t>(1, std::llround(double(was->second - hp) * per)));
         }
         last_hp[object] = hp;
     }

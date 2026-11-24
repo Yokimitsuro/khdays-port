@@ -2000,6 +2000,8 @@ HOOKS = {
         ),
         (  # a defeat of the local player a mod holds: 1 instead, as the routine does for a host's peer
             "    if (nValue != pSelf->nHp) {\n",
+            "    { extern int khdays_kh2_enemies_withstand(void *actor, int hp);\n"
+            "      nValue = khdays_kh2_enemies_withstand(pEnt, nValue); }\n"
             "    { extern int khdays_scripts_lethal(void *entity, int value); nValue = khdays_scripts_lethal(pEnt, nValue); }\n"
             "    if (nValue != pSelf->nHp) {\n",
         ),

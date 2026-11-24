@@ -683,6 +683,18 @@ public:
     }
     // The height of the ground under it, KH2's y (1:98, 1:99: FUN_1403b87e0's ray down)
     virtual float ground(Actor &a);
+    // The same under a place of the field `by` is in (1:98, 1:99 on a player)
+    virtual float ground_at(Actor & /*by*/, const Vec3 &place)
+    {
+        return place[1];
+    }
+    // A place moved into space (1:220, 1:367: YS::OBJ::get_move_to_space_pos): a sphere of 100, 200 ... up to `length`
+    // cm round it put against the room and pushed out of its walls, each step kept while it stands on ground (`air`:
+    // wherever); whether any was
+    virtual bool move_to_space(Actor & /*by*/, Vec3 & /*place*/, float /*length*/, bool /*air*/)
+    {
+        return false;
+    }
     // A state's name shouted to every object (1:90: FUN_1403cacd0's list, which FUN_1403c9d40 sends once a frame to
     // every object, at once or each after a time at random below `delay`): each runs its own state of that name's
     // shout routine (StateMachine::shout)
@@ -708,6 +720,19 @@ public:
     virtual bool capture_motion(Actor & /*target*/, Actor & /*by*/, int /*slot*/, float /*blend*/)
     {
         return false;
+    }
+    // 1:69 on a player: how far the motion an enemy plays on him (1:29) is, in ticks; 0 none does
+    virtual float player_motion_time(Object & /*player*/)
+    {
+        return 0.0F;
+    }
+    // 1:19, 1:20 on a player: his model faded from `from` to `to` over `time` ticks (YS::trap_sysobj_fadeout, _fadein)
+    // -- Xigbar's and Luxord's scripts fade him out before they put him elsewhere or turn him into a card
+    virtual void player_fade(Object & /*player*/, float /*from*/, float /*to*/, float /*time*/) {}
+    // The actor of the form a player is turned into (1:242), which KH2's player then is; null while he is himself
+    virtual Actor *player_turned(Object & /*player*/)
+    {
+        return nullptr;
     }
     // 1:13 on a player: a motion of its own asked for (FUN_1403c8310), 0 its idle -- the script gives it back
     virtual void player_own_motion(Object & /*player*/, int /*id*/) {}

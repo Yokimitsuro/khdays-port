@@ -716,6 +716,19 @@ inline std::map<unsigned, Held> held; // by the Days player's object
 inline std::map<unsigned, Jump> player_jumps;
 // the Days players a script hid (1:133) by their object, their models' hiding as last told (khdays_kh2_enemies_holding)
 inline std::map<unsigned, bool> hidden_players, hidden_told;
+// a Days player's fade a script asked for (1:19, 1:20, 1:28 on him), by his object: how much of his model is drawn, its
+// change a tick, the model's alpha as last told (Days's 31 all of it); gone once he is drawn whole again
+struct PlayerFade final {
+    float now = 1.0F, step = 0.0F;
+    int told = 31;
+};
+inline std::map<unsigned, PlayerFade> player_fades;
+// whether one is faded out whole (his model and his weapons not drawn)
+bool player_gone(unsigned object);
+void player_fades_tick();
+void player_fades_over();
+// One of Days's players as a KH2 object (its Spec Sora's: 03system.bin's prty 1, his object entry's + 0x4e)
+Object &player_object(unsigned object);
 
 // A Days player a KH2 script turned into a form (1:242, YS::CHANGEFORM::Capture: KH2's player's form 12 -- Luxord's
 // card M_EX950_CARD and die M_EX950_DICE): the form's object made an ally (allies) at his place and drawn in his stead
@@ -1212,6 +1225,8 @@ public:
     void set_health(Actor &a, int hp) override;
 
     float ground(Actor &a) override;
+    float ground_at(Actor &by, const Vec3 &place) override;
+    bool move_to_space(Actor &by, Vec3 &place, float length, bool air) override;
 
     void broadcast(Actor &a, const std::string &name, float delay) override;
 
@@ -1346,6 +1361,9 @@ public:
     void player_move(Object &o, const Vec3 &way, float speed) override;
     void player_carry(Object &o, Object *by) override;
     void player_hide(Object &o, bool hidden) override;
+    void player_fade(Object &o, float from, float to, float time) override;
+    float player_motion_time(Object &o) override;
+    Actor *player_turned(Object &o) override;
     void player_steer(Object &o, const Vec3 &way, float speed) override;
     void player_slide(Object &o, const Vec3 &way, float speed) override;
     void player_jump(Object &o, const Jump &jump) override;
@@ -1419,6 +1437,7 @@ std::uint32_t cast(Enemy &e, int number, unsigned player = 0, bool on_weapon = f
 void weapon_trail(Enemy &e, unsigned object, Held &h, bool swing);
 bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out);
 bool wall_sweep(unsigned shell, const Vec3 &place, float radius, Vec3 &way, bool slide);
+bool move_to_space(unsigned shell, Vec3 &place, float length, bool air);
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place);
 Enemy *find(unsigned days);
 
