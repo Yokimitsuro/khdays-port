@@ -708,6 +708,13 @@ public:
     virtual void set_health(Actor &, int /*hp*/) {}
     // 1:226: morale orbs worth `value` of the mission's gauge scattered from an object
     virtual void scatter_orbs(Object &, float /*value*/) {}
+    // 1:278, 1:279: so many of the Hostile Program's data from a point; 1:327: all of them taken by an object
+    virtual void scatter_data(const Vec3 &, int /*n*/) {}
+    virtual void take_data(Object &) {}
+    // 1:326: how fast the room's textures scroll (1 as they are)
+    virtual void map_speed(float /*ratio*/) {}
+    // 7:0: a stop on every enemy of the field (7:1 takes it off every object: stop_end_all)
+    virtual void stop_enemies(int /*stop*/) {}
     // 2:0: the reaction of the hit at `hit` (YS::DAMAGE) on it carried out, as its class does
     virtual void damage_reaction(Actor &, std::uint32_t /*hit*/) {}
 

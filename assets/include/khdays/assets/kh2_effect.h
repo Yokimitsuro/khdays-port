@@ -161,6 +161,9 @@ public:
 
     // One KH2 tick (1/60 s) with the camera given; `draws` gets what to draw when not null.
     void tick(const EffectCamera &camera, std::vector<EffectDraw> *draws);
+
+    // The same for a stopped one (ryj::EFFECT::is_stop): drawn as it is with the camera given, nothing moved on.
+    void hold(const EffectCamera &camera, std::vector<EffectDraw> *draws);
     // A repeating effect closes: its layers stop looping and it ends when its objects have.
     void stop();
     // The points the game gives the effect (EffectPoint), kept until given again.

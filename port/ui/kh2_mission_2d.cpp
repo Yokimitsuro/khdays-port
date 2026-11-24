@@ -13,7 +13,8 @@
 // length (14's ex) along. The pieces stand in the columns the mission names as KH2's INFO_BASE
 // stacks them (each below the open ones before it by its base's height), half a DS dot a KH2 dot, under Days's own
 // pieces at the top of that side -- one KH2 PC's wide screen brings to the middle (Luxord's time gauges) in the
-// middle at the top; drawn on the CPU into HUD images.
+// middle at the top. Their quads are drawn by the window's own renderer into HUD images (sequence_image.h; on the CPU
+// only where the 2D's reference is), what is laid over them (a portrait, a name) on the CPU.
 #include "kh2_mission_2d.h"
 
 #include "../gfx/kh2_sequence.h"
@@ -28,6 +29,7 @@ extern "C" {
 #include "../runtime/characters/characters.h"
 #include "../runtime/characters/forms.h"
 #include "../runtime/core/session_log.h"
+#include "../runtime/mods/textures.h"
 #include "../runtime/scripts/game_link.h"
 int khdays_settings_game_language(void);
 }
@@ -40,6 +42,7 @@ int khdays_settings_game_language(void);
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -47,6 +50,7 @@ int khdays_settings_game_language(void);
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -153,12 +157,15 @@ int column_of(const kh2e::MissionPiece &k)
     return std::clamp(k.align, 0, 2);
 }
 
-// A piece's picture and sequence
+// A piece's picture and sequence; its picture as one of the port's textures (kept while the port runs, as those are)
 struct Pictures final {
     seq::SequenceData sequence;
     khdays::assets::DecodedTexture texture;
     std::array<int, 2> logical{};
+    std::vector<std::uint32_t> texels;
+    int atlas = -1;
 };
+std::map<std::string, std::shared_ptr<const Pictures>> kept; // by the mission's file and its picture's number
 
 // dk::Sprite: a clip of its piece's sequence playing; at its end the next (m_nextNum) or gone; a child placed at its
 // base's active point plus its offset, faded with the base's active alpha (getParentSeqAlphaOnly)
@@ -218,7 +225,10 @@ struct Piece final {
     float top = 0;      // its highest dot below its place standing (its base's clip 4): its column's top in DS pixels
     bool middle = false; // laid out by the middle of the screen (kWideColumnMove): its x KH2 PC's, moved
     std::array<Canvas, 2> canvases;
+    Canvas over; // what is laid over the first, where the window draws it
 };
+bool reference = true;                     // the 2D's reference draws this frame: the quads on the CPU
+std::vector<KhdaysSequenceImage> programs; // this frame's images' quads, for the window's renderer
 
 std::string file;
 unsigned serial = 0, ticks = 0;
@@ -527,9 +537,9 @@ bool alive(const Piece &p)
 
 void forget_images(Piece &p)
 {
-    for (Canvas &c : p.canvases) {
-        khdays_ui_image_put(c.image);
-        c = Canvas{};
+    for (Canvas *c : {&p.canvases[0], &p.canvases[1], &p.over}) {
+        khdays_ui_image_put(c->image);
+        *c = Canvas{};
     }
 }
 
@@ -584,6 +594,9 @@ void load(const kh2e::MissionView &v)
         if ((k.kind == 4 || k.kind == 5 || k.kind == 6) && k.entry >= 0 && std::size_t(k.entry) + 1 < entries.size()) {
             auto &found = loaded[k.entry];
             try {
+                const std::string key = file + "#" + std::to_string(k.entry);
+                if (const auto it = kept.find(key); !found && it != kept.end())
+                    found = it->second;
                 if (!found) {
                     const seq::BarEntry &image = entries[std::size_t(k.entry)], &sequence = entries[std::size_t(k.entry) + 1];
                     if ((image.type & 0xffffu) != 0x18 || (sequence.type & 0xffffu) != 0x19)
@@ -602,7 +615,15 @@ void load(const kh2e::MissionView &v)
                                    file.c_str(), n, u8path(file).stem().string().c_str());
                     }
                     pc->sequence = seq::read_sequence(bytes.data() + sequence.offset, sequence.size);
+                    pc->texels.resize(pc->texture.rgba.size() / 4);
+                    std::memcpy(pc->texels.data(), pc->texture.rgba.data(), pc->texels.size() * 4);
+                    pc->atlas = khdays_textures_add_info(("kh2:mission:" + key).c_str(), pc->texture.width,
+                                                         pc->texture.height, pc->texels.data(),
+                                                         KHDAYS_REPLACEMENT_NO_MIPS);
+                    if (pc->atlas < 0)
+                        throw std::runtime_error("no room for its picture");
                     found = std::move(pc);
+                    kept[key] = found;
                 }
                 // the clips its code plays (a timer's to its large 3, 31; a counter's to its columns', 37; a gauge's
                 // to its columns', 17)
@@ -683,6 +704,56 @@ void draw_overlays(const std::vector<Overlay> &overlays, std::vector<std::uint32
     }
 }
 
+// The overlays added to a hash: their places, pictures and texts
+void add_overlays(std::uint64_t &h, const std::vector<Overlay> &overlays)
+{
+    for (const Overlay &o : overlays) {
+        const auto add = [&h](const void *data, std::size_t size) {
+            const auto *b = static_cast<const unsigned char *>(data);
+            for (std::size_t i = 0; i < size; ++i)
+                h = (h ^ b[i]) * 0x100000001b3ull;
+        };
+        add(&o.x0, sizeof o.x0), add(&o.y0, sizeof o.y0), add(&o.x1, sizeof o.x1), add(&o.y1, sizeof o.y1);
+        add(&o.key, sizeof o.key), add(&o.alpha, sizeof o.alpha), add(&o.font, sizeof o.font);
+        add(o.text.data(), o.text.size() * sizeof(char16_t));
+    }
+}
+
+// A canvas's pixels given to its image
+bool give_pixels(const Canvas &c)
+{
+    std::uint32_t *out = khdays_ui_image_begin(c.image);
+    if (out == nullptr)
+        return false;
+    std::copy(c.pixels.begin(), c.pixels.end(), out);
+    khdays_ui_image_end(c.image);
+    return true;
+}
+
+// The quads given to the window's renderer, which draws them into a canvas's image
+void give_quads(const std::vector<seq::SequenceQuad> &quads, const Pictures &pc, const Canvas &c,
+                const render::SequenceView &view)
+{
+    for (std::size_t first = 0; first < quads.size(); first += KSI_MAX_QUADS) {
+        KhdaysSequenceImage &image = programs.emplace_back();
+        unsigned *w = image.words;
+        const auto number = [w](unsigned at, float v) { std::memcpy(w + at, &v, 4); };
+        w[KSI_OUTPUT] = unsigned(khdays_ui_image_replacement(c.image));
+        w[KSI_ATLAS] = unsigned(pc.atlas);
+        w[KSI_LOGICAL_W] = unsigned(pc.logical[0]);
+        w[KSI_LOGICAL_H] = unsigned(pc.logical[1]);
+        w[KSI_WIDTH] = unsigned(c.width * c.scale);
+        w[KSI_HEIGHT] = unsigned(c.height * c.scale);
+        number(KSI_VIEW_X, view.x);
+        number(KSI_VIEW_Y, view.y);
+        number(KSI_SCALE, view.scale);
+        w[KSI_FACE] = w[KSI_HD_FACE] = 0xffffffffu;
+        w[KSI_CLEAR] = first == 0 ? 1u : 0u;
+        render::encode_sequence_quads(
+            image, std::span(quads).subspan(first, std::min(quads.size() - first, std::size_t(KSI_MAX_QUADS))));
+    }
+}
+
 // A layer's quads (KH2's dots) as a HUD image: DS pixels a dot's kDot, `dy` further down; `slot` its element's; the
 // overlays laid over them
 void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads, float dy, std::uint32_t slot,
@@ -731,31 +802,8 @@ void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads
     }
     if (c.image < 0)
         return;
-    std::uint64_t h = hash_of(quads, c);
-    for (const Overlay &o : overlays) { // (and its overlays: their places, pictures and texts)
-        const auto add = [&h](const void *data, std::size_t size) {
-            const auto *b = static_cast<const unsigned char *>(data);
-            for (std::size_t i = 0; i < size; ++i)
-                h = (h ^ b[i]) * 0x100000001b3ull;
-        };
-        add(&o.x0, sizeof o.x0), add(&o.y0, sizeof o.y0), add(&o.x1, sizeof o.x1), add(&o.y1, sizeof o.y1);
-        add(&o.key, sizeof o.key), add(&o.alpha, sizeof o.alpha), add(&o.font, sizeof o.font);
-        add(o.text.data(), o.text.size() * sizeof(char16_t));
-    }
-    if (h != c.drawn) {
-        const Pictures &pc = *p.pictures;
-        c.pixels.assign(std::size_t(c.width * r) * std::size_t(c.height * r), 0);
-        render::draw_sequence(quads, pc.texture, pc.logical[0], pc.logical[1], c.pixels, c.width * r, c.height * r,
-                              {-c.left * float(r), (dy - c.top) * float(r), kDot * float(r)});
-        draw_overlays(overlays, c.pixels, c.width * r, c.height * r, kDot * float(r), -c.left * float(r),
-                      (dy - c.top) * float(r));
-        std::uint32_t *out = khdays_ui_image_begin(c.image);
-        if (out == nullptr)
-            return;
-        std::copy(c.pixels.begin(), c.pixels.end(), out);
-        khdays_ui_image_end(c.image);
-        c.drawn = h == 0 ? 1 : h;
-    }
+    const Pictures &pc = *p.pictures;
+    const render::SequenceView view{-c.left * float(r), (dy - c.top) * float(r), kDot * float(r)};
     KhdaysUiElement e{};
     e.id = "hud.kh2_mission";
     e.screen = 0;
@@ -764,7 +812,48 @@ void emit_layer(Piece &p, int layer, const std::vector<seq::SequenceQuad> &quads
     e.y = c.top;
     e.w = float(c.width);
     e.h = float(c.height);
+    if (reference) {
+        std::uint64_t h = hash_of(quads, c);
+        add_overlays(h, overlays);
+        if (h != c.drawn) {
+            c.pixels.assign(std::size_t(c.width * r) * std::size_t(c.height * r), 0);
+            render::draw_sequence(quads, pc.texture, pc.logical[0], pc.logical[1], c.pixels, c.width * r, c.height * r,
+                                  view);
+            draw_overlays(overlays, c.pixels, c.width * r, c.height * r, kDot * float(r), view.x, view.y);
+            if (!give_pixels(c))
+                return;
+            c.drawn = h == 0 ? 1 : h;
+        }
+        e.image = c.image;
+        khdays_ui_emit(KHDAYS_UI_HUD, &e);
+        return;
+    }
+    give_quads(quads, pc, c, view);
     e.image = c.image;
+    khdays_ui_emit(KHDAYS_UI_HUD, &e);
+    if (overlays.empty())
+        return;
+    // what is laid over it: an image as large as its own, given later, so above it
+    Canvas &over = p.over;
+    if (over.image < 0 || over.scale != r || over.width != c.width || over.height != c.height) {
+        khdays_ui_image_put(over.image);
+        over = Canvas{};
+        over.image = khdays_ui_image_get(c.width * r, c.height * r);
+        over.width = c.width, over.height = c.height, over.scale = r;
+    }
+    over.left = c.left, over.top = c.top;
+    if (over.image < 0)
+        return;
+    std::uint64_t h = hash_of({}, over);
+    add_overlays(h, overlays);
+    if (h != over.drawn) {
+        over.pixels.assign(std::size_t(over.width * r) * std::size_t(over.height * r), 0);
+        draw_overlays(overlays, over.pixels, over.width * r, over.height * r, kDot * float(r), view.x, view.y);
+        if (!give_pixels(over))
+            return;
+        over.drawn = h == 0 ? 1 : h;
+    }
+    e.image = over.image;
     khdays_ui_emit(KHDAYS_UI_HUD, &e);
 }
 
@@ -998,8 +1087,26 @@ extern "C" void khdays_ui_kh2_mission_2d_frame(unsigned)
         khdays_ui_changed();
 }
 
+extern "C" void khdays_ui_kh2_mission_2d_reference(int enabled)
+{
+    programs.clear();
+    if (reference == (enabled != 0))
+        return;
+    reference = enabled != 0;
+    for (Piece &p : pieces) // (an image the other drew last)
+        for (Canvas &c : p.canvases)
+            c.drawn = 0;
+}
+
+extern "C" unsigned khdays_ui_kh2_mission_2d_commands(const KhdaysSequenceImage **out)
+{
+    *out = programs.data();
+    return unsigned(programs.size());
+}
+
 extern "C" void khdays_ui_kh2_mission_2d_emit(void)
 {
+    programs.clear();
     for (Piece &p : pieces) {
         if (!p.pictures || !alive(p))
             continue;

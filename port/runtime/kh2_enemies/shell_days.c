@@ -483,6 +483,35 @@ int khdays_kh2_shell_player_hp(unsigned actor)
 #define MEMBER_LEVEL 0x2u /* u8: its level less 1 */
 #define MEMBER_MADE 0x6u  /* u16: not 0 once made (runtime/net/roomlist.c's own_level) */
 
+#define PLAYER_STRENGTH_BONUS 0x91au /* s16: Ov022StatBlock's (Ov022_ComputeStrengthDamage) */
+#define MEMBER_STRENGTH 0x8u         /* u16 */
+#define STRENGTH_MOST 999            /* Ov022_ComputeStrengthDamage's */
+#define PLAIN_BLOW 0xc00             /* fx32: 0.75, Roxas's combo's first hit's factor (RUNTIME_MAP section 30) */
+#define ENEMY_DEFENCE 0x2bcu         /* s16[8]: its parts' (Ov107_CalcHitDamage); the first */
+
+extern int Ov107_CalcDamageScale(KhdaysRef enemy, int attack, int defence);
+
+int khdays_kh2_shell_plain_blow(unsigned enemy, unsigned player)
+{
+    if (enemy == 0 || player == 0 || !khdays_game_ram(player + PLAYER_STRENGTH_BONUS) ||
+        !khdays_game_ram(enemy + ENEMY_DEFENCE)) {
+        return 0;
+    }
+    const unsigned member =
+        PARTY_MEMBERS + MEMBER_SIZE * *(const unsigned char *)KHDAYS_W(player + PLAYER_MEMBER) + MEMBER_STRENGTH;
+    if (!khdays_game_ram(member)) {
+        return 0;
+    }
+    int strength = (int)checked_rd16(member) + (short)checked_rd16(player + PLAYER_STRENGTH_BONUS);
+    if (strength > STRENGTH_MOST) {
+        strength = STRENGTH_MOST;
+    }
+    const int attack = (strength * PLAIN_BLOW >> 12) << 12; /* whole units, as the hit's */
+    const int defence = (short)checked_rd16(enemy + ENEMY_DEFENCE) * 0x1000;
+    const int amount = Ov107_CalcDamageScale(enemy, attack, defence);
+    return (amount < 0x1000 ? 0x1000 : amount + 0x800) >> 12;
+}
+
 extern void Ov022_ActorSetHp(KhdaysRef actor, int hp);
 extern void NNS_G3dMdlSetMdlAlphaAll(KhdaysRef model, int alpha);
 

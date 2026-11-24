@@ -223,6 +223,8 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
         const float turn = a.yaw(), c = std::cos(turn), sn = std::sin(turn);
         const Vec3 at = a.place();
         for (const Companion &with : kind->with) {
+            if (place_prizes(with.name, at, days))
+                continue;
             // (an enemy's kind is made as the Days enemy it stands in: none but the boss's own others, Final Xemnas's
             // hidden one, whose script hides it at once)
             KindFiles *f = enemy_entry(with.name) && with.name != k.name ? nullptr : files_of(with.name);

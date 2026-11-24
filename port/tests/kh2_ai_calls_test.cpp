@@ -2681,6 +2681,31 @@ struct ShanYuWorld final : kh::World {
         way = w;
         speed = s;
     }
+    kh::Vec3 data_at{};
+    int data = 0, stopped = 0, freed = 0;
+    float map = 1.0F;
+    const kh::Object *taker = nullptr;
+    void scatter_data(const kh::Vec3 &at, int n) override
+    {
+        data_at = at;
+        data = n;
+    }
+    void take_data(kh::Object &by) override
+    {
+        taker = &by;
+    }
+    void map_speed(float ratio) override
+    {
+        map = ratio;
+    }
+    void stop_enemies(int stop) override
+    {
+        stopped = stop;
+    }
+    void stop_end_all(int stop) override
+    {
+        freed = stop;
+    }
     const kh::Object *scattered = nullptr;
     float orbs = 0.0F;
     void scatter_orbs(kh::Object &o, float value) override
@@ -2751,6 +2776,21 @@ void test_shan_yu()
     CHECK(world.struck == &falcon && world.hit == vec);
     call(rig, shan_yu, 1, 226, {adr(falcon.address()), f(2.5F)});
     CHECK(world.scattered == &falcon && world.orbs == 2.5F);
+    // the Hostile Program's data (from a point, from an object: its place without a target point), all taken by one;
+    // the map's scroll, the Freeze
+    kh::read_shapes(rig.calls, "1:278 2 0\n1:279 2 0\n1:327 1 0\n1:326 1 0\n7:0 1 0\n7:1 1 0\n");
+    call(rig, shan_yu, 1, 279, {adr(vec), i(3)});
+    CHECK(world.data == 3 && world.data_at[0] == 3.0F && world.data_at[2] == 4.0F);
+    falcon.set_place({7.0F, 8.0F, 9.0F});
+    call(rig, shan_yu, 1, 278, {adr(falcon.address()), i(2)});
+    CHECK(world.data == 2 && world.data_at[0] == 7.0F && world.data_at[1] == 8.0F);
+    call(rig, shan_yu, 1, 327, {adr(shan_yu.address())});
+    CHECK(world.taker == &shan_yu);
+    call(rig, shan_yu, 1, 326, {f(0.0F)});
+    CHECK(world.map == 0.0F);
+    call(rig, shan_yu, 7, 0, {i(6)});
+    call(rig, shan_yu, 7, 1, {i(6)});
+    CHECK(world.stopped == 6 && world.freed == 6);
 }
 
 void test_xigbar()

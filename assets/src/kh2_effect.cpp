@@ -5130,6 +5130,50 @@ struct EffectInstance::State {
     }
 
     // ---------------------------------------------------------------------------------- a tick
+    // A command's draw, its pictures named by their object, command, particle and order (EffectDraw::key)
+    void draw_keyed(Obj &o, std::size_t ci, const Key &k, std::vector<EffectDraw> *draws)
+    {
+        const std::size_t before = draws != nullptr ? draws->size() : 0;
+        draw(o, o.layer->commands[ci], k, draws);
+        if (draws == nullptr)
+            return;
+        std::map<std::uint64_t, std::uint32_t> nth; // by particle (0: none)
+        for (std::size_t i = before; i < draws->size(); ++i) {
+            EffectDraw &d = (*draws)[i];
+            const std::uint64_t piece = d.key;
+            std::uint64_t h = o.serial * 0x9E3779B97F4A7C15ull;
+            h ^= (std::uint64_t(ci) + 1) * 0xC2B2AE3D27D4EB4Full;
+            h ^= piece * 0x165667B19E3779F9ull;
+            h ^= (std::uint64_t(nth[piece]++) + 1) * 0x27D4EB2F165667C5ull;
+            d.key = (h ^ (h >> 29)) | 1u; // (never 0)
+        }
+    }
+
+    // A step that only makes its object's matrices from its slots and the camera's: made anew for a camera moved
+    static bool matrix_step(std::uint8_t code)
+    {
+        return (code >= 0x57 && code <= 0x5e) || code == 0xd8 || (code >= 0xe6 && code <= 0xeb) || code == 0x60 ||
+               code == 0x63 || code == 0x69 || code == 0x6a || (code >= 0x70 && code <= 0x75) || code == 0x78 ||
+               code == 0x79 || code == 0x7b || code == 0xd9;
+    }
+
+    // A stopped effect's tick (ryj::EFFECT::is_stop): its objects' matrices for the camera's now and their draws, as
+    // the last tick left them (the trails' own draws move them on: frozen meanwhile)
+    void held(std::vector<EffectDraw> *draws)
+    {
+        const std::uint8_t was = frozen;
+        frozen = 1;
+        for (const auto &po : objs)
+            for (std::size_t ci = 0; !po->skip && ci < po->layer->commands.size(); ++ci)
+                if (const EffectCommand &c = po->layer->commands[ci]; matrix_step(c.code))
+                    step(*po, c, key(*po, ci));
+        for (const auto &po : objs)
+            for (std::size_t ci = 0; !po->skip && ci < po->layer->commands.size(); ++ci)
+                if (const EffectCommand &c = po->layer->commands[ci]; (words(c.code) & W3) != 0)
+                    draw_keyed(*po, ci, key(*po, ci), draws);
+        frozen = was;
+    }
+
     void run(std::vector<EffectDraw> *draws)
     {
         // FUN_1404aff20: the layers whose start has come
@@ -5171,20 +5215,7 @@ struct EffectInstance::State {
                 const Key k = (words(c.code) & W1) ? advance(o, ci) : key(o, ci);
                 if (words(c.code) & W1)
                     step(o, c, k);
-                const std::size_t before = draws != nullptr ? draws->size() : 0;
-                draw(o, c, k, draws);
-                if (draws != nullptr) {
-                    std::map<std::uint64_t, std::uint32_t> nth; // by particle (0: none)
-                    for (std::size_t i = before; i < draws->size(); ++i) {
-                        EffectDraw &d = (*draws)[i];
-                        const std::uint64_t piece = d.key;
-                        std::uint64_t h = o.serial * 0x9E3779B97F4A7C15ull;
-                        h ^= (std::uint64_t(ci) + 1) * 0xC2B2AE3D27D4EB4Full;
-                        h ^= piece * 0x165667B19E3779F9ull;
-                        h ^= (std::uint64_t(nth[piece]++) + 1) * 0x27D4EB2F165667C5ull;
-                        d.key = (h ^ (h >> 29)) | 1u; // (never 0)
-                    }
-                }
+                draw_keyed(o, ci, k, draws);
             }
         }
         for (const auto &po : objs) {
@@ -5287,6 +5318,14 @@ void EffectInstance::tick(const EffectCamera &camera, std::vector<EffectDraw> *d
         return;
     state->camera(camera);
     state->run(draws);
+}
+
+void EffectInstance::hold(const EffectCamera &camera, std::vector<EffectDraw> *draws)
+{
+    if (state->finished)
+        return;
+    state->camera(camera);
+    state->held(draws);
 }
 
 void EffectInstance::stop()

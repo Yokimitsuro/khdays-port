@@ -907,6 +907,26 @@ static void ui_check(const KhdaysFramePackage *p, const KhdaysGpuInput *in, int 
 /* Puts this frame's elements into the package. Where the reference drew the
  * screens (the game's picture), the port's composition of them replaces it;
  * under check, the two are compared. */
+/* A KH2 mission's pieces' quads (ui/kh2_mission_2d.h), as many images as they need */
+static void mission_2d_commands(KhdaysFramePackage *p)
+{
+    const KhdaysSequenceImage *images;
+    const unsigned n = khdays_ui_kh2_mission_2d_commands(&images);
+    p->mission_2d_count = 0;
+    if (n > p->mission_2d_room) {
+        KhdaysSequenceImage *grown = (KhdaysSequenceImage *)realloc(p->mission_2d_images, n * sizeof(*grown));
+        if (grown == NULL) {
+            return;
+        }
+        p->mission_2d_images = grown;
+        p->mission_2d_room = n;
+    }
+    if (n != 0) {
+        memcpy(p->mission_2d_images, images, n * sizeof(*images));
+    }
+    p->mission_2d_count = n;
+}
+
 static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int reference, u32 frame)
 {
     /* widescreen moves the elements to the sides like the HUD's pieces; on one screen they stay at their
@@ -919,6 +939,7 @@ static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int refere
     if (!khdays_ui_information_keep_hud())
         p->hud_options &= ~KHDAYS_HUD_KEEP_INFORMATION;
     khdays_ui_kh2_enemy_reference(reference);
+    khdays_ui_kh2_mission_2d_reference(reference);
     khdays_ui_collect((p->wants & KHDAYS_WANT_SITUATION) ? 0 : (int)p->desc2d[0][KD_WIDE], p->upper);
     khdays_ui_kh2_hp_commands(&p->sequence_image);
     khdays_ui_kh2_portrait_commands(p->portrait_images);
@@ -930,6 +951,7 @@ static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int refere
     khdays_ui_notification_commands(p->notification_images);
     khdays_ui_mission_panel_commands(&p->mission_panel_image);
     khdays_ui_reaction_command_commands(&p->reaction_command_image);
+    mission_2d_commands(p);
     khdays_ui_command_image_commands(&p->command_image_image);
     khdays_minimap_commands(p->minimap_images);
     khdays_minimap_radar_commands(&p->radar_image);
@@ -1157,6 +1179,7 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
     memset(&p->mission_panel_image, 0, sizeof(p->mission_panel_image));
     memset(&p->reaction_command_image, 0, sizeof(p->reaction_command_image));
     memset(&p->command_image_image, 0, sizeof(p->command_image_image));
+    p->mission_2d_count = 0;
     memset(p->minimap_images, 0, sizeof(p->minimap_images));
     memset(&p->radar_image, 0, sizeof(p->radar_image));
     p->mission_panel_state = 0;

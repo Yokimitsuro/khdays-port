@@ -262,7 +262,6 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
 | 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`; the PS3 build's `trap_obj_dead`: its death) | a player's: Days's player's HP to 0, his own defeat; an enemy's nothing |
 | 1:272 on a player | whether he is dead (`trap_obj_is_dead`) | knocked out: Days's HP 0 |
-| 1:278 | n things made at the actor (`FUN_14042a980`: n times `FUN_1403dc950` on the manager at `DAT_142af8b48`) -- **likely its prizes** | nothing: Days gives the stand-in's |
 | 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing; 0:2's text in the trace (`KHDAYS_TRACE_KH2_ENEMIES`: "avoid start", "high_attack_min") |
 | 0:15 | a bit of KH2's story (`FUN_14039a980`: `DAT_1409ab540`'s bits, 0xffff none) | 0: none in Days's field |
 | 0:23 | a value without its sign (`FUN_14041ca90`), marked a whole number | as KH2 |
@@ -352,6 +351,9 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 2:3, 2:87 | a hit's slide (`trap_enemy_exec_damage_hitback`, `FUN_1403d4960`): unless the actor stands firm, the hit's way made one long (turned back for a speed below 0) at a tenth of the speed given (its health record's + 0x1c8 added) a tick, 0.9 of itself each tick after, over below 1 or on a wall (`FUN_1403d4570`, `FUN_1403b9420`); a large hit (`trap_enemy_exec_damage_large`, `FUN_1403d4140`): from the front it faces the hit and plays 23, from behind it turns its back to it and plays 24, its idle asked after (`FUN_1403c8310`'s queue), then the slide | as KH2, its standing firm only + 0x120 bit 7 (the PC's `FUN_1403ba190` reads two flags of the native class's more); the health record's + 0x1c8 is none in Days's field. The bosses read slide by none: the Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's (2:87, 0) |
 | 2:0 | a hit's reaction carried out at once, as the object's class does (`trap_enemy_exec_damage`: `exec_damage_reaction`), and its `Flag`'s bit 0 set | a battle NPC's (`BTLOBJ::_OVR_exec_damage_reaction`); a Days enemy's was played before its trigger 6 |
 | 1:226 | morale orbs worth so much of the mission's gauge scattered from an object (`trap_obj_scatter_prize_mu`) | as KH2 ("KH2's prizes") |
+| 1:278, 1:279, 1:327 | the Hostile Program's data: so many from an object's target point, from a point, all of them taken by an object | as KH2 ("KH2's prizes") |
+| 1:326 | the room's textures' scroll's speed (`trap_bg_set_animation_speed`: `dk::Map::setAnimationSpeedRatio` of type 2) | a replaced or added room's scroll (`khdays_models_room_scroll`), 1 again as the area is left |
+| 7:0, 7:1 | a stop put on every enemy of the field (`YS::ENEMY::StopStartAll`), taken off every object | as KH2's `stops`, on the field's KH2 enemies |
 | 2:64, 2:91, 2:85 | a hit's first reaction (`trap_damage_orig_reaction`, + 0x27); a reaction kind's kind (`trap_damage_get_reaction_type`, `FUN_1403ce980` of the value given: 1 and 12 are 1, 3 6 8 10 13 16 18 are 3, 4 7 9 11 15 17 are 4, the others themselves); its element (`trap_damage_element`: its attack's record, + 0x20, its byte + 9 -- atkp's element, 0 physical, 1 fire, 2 blizzard, 3 thunder) | as KH2 on the Days hit: its element from the hit's kinds (Days's packet's high flags: Fire, Blizzard, Thunder), below ("The second bosses") |
 | 1:311 | its rate for an element (`trap_sheet_set_element_rate`, `FUN_1403c2650`: its sheet's + 0x1a8 + element, the weakness times the rate, in percent, rounded up) | the share of Days's damage of that element it takes (`khdays_kh2_enemies_damage`): the Volcanic Lord takes no fire |
 | 1:227 | a jump at once (`trap_obj_jump_direct`: its class's virtual + 0x18, the PS3 build's `YS::ACTION::jump` -- `YS::OBJ::prepare_jump` with the vector as 1:55's, then `change_action(1)`) | as KH2: class 1 on the spot, its motion as it is, no take-off waited for |
@@ -1255,6 +1257,40 @@ puts them and the player (KH2's (0, 0, 1300) and (-200, -400, 1100); (0, 0, 2250
   results; left to fall (the gauge at 0, at 131 s and 166 s), and with a gauge started at 4 (90 s), Days's game over
   and the results, cancelled.
 
+### The Hostile Program (2026-11-24)
+
+Space Paranoids' Hostile Program (`B_TR000`, a boss, kind 3; tr04's battle `b_40`, mission `TR04_MS104`, its data
+`PRIZE_TR` placed beside it). The test mission plays it in a room made from tr04, where `b_40` puts it and the player
+(KH2's (0, 0, 0) and (-650, 0, 0)).
+
+- **Its script** (46 states): its arms' rays (`atk_inter_s`, `atk_inter_l`), its missiles (`atk_vulcan_search`,
+  `atk_vulcan`), `atk_sonic`, `atk_boost`, the blades of its last phase (`blade_start`, `blade_move`, `blade_set`,
+  `blade_idle`, `blade_a`, `_b`, `_c`), `charge` (it gets health back) and `aspil` (it takes the data that are left,
+  1:327), its modes by its health (`btl_normal`, `btl_hard`, `btl_super_hard`). Its trigger 6 scatters 3 data a hit (4
+  in its last mode, 1:279), and 30 more at 80%, 60% and 40% of its health (1:230), each of which takes a part of it off
+  (1:109). Kept at 80% (1:231) as the battle begins, at 40% from its first change on, at nothing once its blades are
+  out.
+- **The data** ("KH2's prizes", below): worth 1 of the mission's gauge ("CLUSTERS", 0 of 100) each; its area places
+  them as the battle begins (its spawn's entry of kind 0x16), so they are its companions -- their calls make none where
+  no area places them (the Strafer's 1:278, `M_EX610`).
+- **The Freeze**: the gauge full sends signal 137, which turns its reaction command on (1:52; 615); taken, the player
+  plays its 252 (1:29) and, as he casts it (1:151 1), every KH2 enemy stands (7:0 `trap_enemy_stop_all_start`, stop 6),
+  the room's lines stop (1:326, 0) and the gauge runs down a third a tick (4:9); empty (signal 136) both go on (7:1,
+  1:326 1). A stopped object (`YS::OBJ::is_stop`, 6:46's too): its script and its motion stand (`OBJ::sys_exec`,
+  `MOTION::exec`), it offers no reaction command (`is_disable_rc`), its attacks strike nothing (`ATTACK::is_strike`) and
+  the effects bound to it stand (`ryj::PAX::MANAGER::get_obj_data` -> `EFFECT::bind_stop`), drawn still -- the port's
+  are drawn as they are with the camera now (`EffectInstance::hold`; held by a script, 0:66, they stayed on the screen
+  as it turned). The player is no such object: his motion plays on while the enemy whose motion it is stands (the port
+  moved him with its tick: he hung in the air for the whole Freeze), and he strikes it.
+- **A hit's trigger 6 reads the health the hit left** (`PIERROT::_OVR_exec_damage`: `BTLOBJ::add_damage` before
+  `ACT::damage` and the script's callback): the port's record of it was a tick old, so a change at a share of its
+  health came a hit late (the Hostile Program's, any kind's that asks 1:230 or 1:229 there).
+- **Played** (2026-11-24, window runs, level 30, the installed HD PACK, a test mod made by the tool with `--only` and a
+  room made from tr04; `chase_long.input`, and the same blows with the player put by it every second and a half): its
+  missiles, rays, sonic waves and blades, `charge` and `aspil`, its data falling, lying, taken and filling "CLUSTERS",
+  its parts off at 80%, 60% and 40% at the hit that reaches them; the gauge full (started at 96 and 99), "Colgar"
+  taken, it standing for the gauge's ten seconds while the player struck it; defeated, the mission cleared and its
+  results shown. The field at 60 of KH2's ticks a second throughout.
 ### Battle NPCs struck (2026-11-24)
 
 KH2's battle NPCs (`YS::BTLNPC`, entries of kind 9) with a battle sheet of their own (`2:9`) are struck by its enemies'
@@ -1273,22 +1309,27 @@ mission's (`Ov002_GetMissionLevel`), its author's, 1 to 99 (`battle_level`).
 ### KH2's prizes (2026-11-24)
 
 What a script scatters (`YS::PRIZEOBJ`, `YS::PRIZEEFFECT`, read in the PS3 build): the Land of Dragons' morale orbs
-(`PRIZE_MU`) first; `PRIZE_TR` and `PRIZE_CA` are the same class. `runtime/kh2_enemies/shell/prizes.cpp`.
+(`PRIZE_MU`) and the Hostile Program's data (`PRIZE_TR`); `PRIZE_CA` is the same class.
+`runtime/kh2_enemies/shell/prizes.cpp`.
 
-- **How many** (1:226 `trap_obj_scatter_prize_mu` -> `PRIZE_MU::AppearGauge`): from the object's target point, for each
-  of its three sizes, worth 2, 0.5 and 0.1 of the mission's gauge, as many as make 0.9, 0.9 and all of what is left.
+- **How many**: 1:226 (`trap_obj_scatter_prize_mu` -> `PRIZE_MU::AppearGauge`), from the object's target point, for each
+  of the orbs' three sizes, worth 2, 0.5 and 0.1 of the mission's gauge, as many as make 0.9, 0.9 and all of what is
+  left; 1:278 and 1:279 (`trap_obj_scatter_prize_tr`, `trap_prize_appear_tr` -> `PRIZE_TR::AppearNum`) so many data from
+  an object's target point or from a point.
 - **How they fly** (`PRIZE::appear`, `_phase_move`): thrown 20 to 40 up and up to 20 each way a tick, pulled down 3 a
   tick (50 at most), their way along the ground 0.95 of itself a tick and turned back on the axis a wall stopped it on
   (a sphere of 55); on the ground -- their height under their place: 40.3, 27.9, 18.6 -- they bounce at 0.8 of their
   fall (sound 41, twice at most) till it is 5, then lie; every 30 ticks the ground is asked for again. 900 ticks,
-  shrinking over the last 12.
+  shrinking over the last 12. The data's height 31.
 - **Taken** (`PRIZE::CanGet`, `get`, `phase_get`): once falling, by a player within 120 along the ground and 30 up or
   down; sound 42, the gauge's addition at once (`MISSION::AddGauge`), then 40 ticks round his middle, nearer and smaller.
+  1:327 (`trap_prize_get_all_tr` -> `PRIZE_TR::GetAll`): all that are not taken yet, round an object, worth nothing.
 - **Drawn** (`YS::MASSEFFECT`): one effect of the prizes' file (its one element, in the `.mdlx`'s PAX), its layer
   `pppRyjMegaBirthPrize` a sprite at each of the game's points: their places, kinds (their size's number), alphas (0x80),
   sizes and frames. The port gives the effect's points each draw and takes the frames back.
 
-The tool brings a prize's file and sounds with a kind or a mission whose script makes its call (`PRIZES`).
+The tool brings a prize's file and sounds with a kind or a mission whose script makes its call (`PRIZES`), and one
+its area places with its battle as its companion (`PLACED_PRIZES`).
 
 ### Calls made on the player (2026-11-24)
 
@@ -1676,7 +1717,11 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   pieces stand in the side their table names, each below the open ones before it in that column by its base's height
   (`INFO_BASE`), half a DS dot a KH2 dot, under Days's own pieces at the top of that side as KH2's are under its
   INFORMATION window (the hearts and clock at the left, the target's name and health at the right): on one screen
-  placed as those pieces are. While Days's INFORMATION banner is up at the top they are not drawn.
+  placed as those pieces are. While Days's INFORMATION banner is up at the top they are not drawn. Their quads are
+  drawn by the window's renderer (`sequence_image.h`, as the other KH2 pieces' are), a player's half's portrait and
+  name on the CPU over them: on the CPU whole, a gauge's pulse (a new picture a step, at 8x) took 18 ms of the game's
+  thread each step, longer than a VBlank with the rest -- every mission with a gauge (Vexen's, Shan-Yu's, the Hostile
+  Program's) ran at 20 steps a second, two thirds of its speed (seen and mended 2026-11-24).
 - **Warnings** (the PS3 build's, read 2026-11-19): a counter's or a gauge's (`MISSION2D` + 0xc bit 3) goes on and off
   as its value is set (`MISSION_COUNT::set`, `MISSION_GAUGE::set` -> `MISSION2D::check_warning`): with a warning above
   0, on once the value falls to it -- or, the piece starting at or below it, once the value reaches it -- else off
@@ -2279,10 +2324,14 @@ general rates, over 1,000,000, rounded up; then the game level's, the combo's an
 (`World::battle_entry`, once, as `2:9` names it; KH2's level multiplier is the same for both, so their share leaves
 it out) times the Soldier's blows (`kSoldierBlows`, 4: a tuning value -- KH2's own tables leave the Soldier's to
 Sora's keyblade and abilities, 2 to 90 at level 99 by his strength alone) gives its blows: Hades of the cups 60, the
-Soldier 4. A blow is the area's first Days hit on a KH2 enemy (its damage before KH2's element rate), so its health
-follows Roxas's level and gear: at that first hit on it its health becomes its blows times that blow. Until then
-Days's own HP stands (the bar full). Measured against Days's Soldier instead (its HP at the mission's level times the
-share), Hades of the cups at level 99 had 32,040 health against Roxas's 15 to 74 a hit: hundreds of blows.
+Soldier 4. A blow is a plain one of the player's (the first player's) on it, so its health follows Roxas's level and
+gear: 0.75 of his strength (Roxas's combo's first hit: RUNTIME_MAP section 30) through its Days class's defence
+(`Ov107_CalcDamageScale`), worked out at the area's first hit on a KH2 enemy; at that first hit its health becomes its
+blows times that blow (until 2026-11-24 the hit's own damage was the blow: in a level 30 mission Roxas does 40 a plain
+hit, 413 a finisher and 902 an Aero, so an enemy first struck by one of these stood ten or twenty times its health -- the Hostile
+Program 24,780 for 2,400). Until then Days's own HP stands (the bar full). Measured against Days's Soldier instead (its
+HP at the mission's level times the share), Hades of the cups at level 99 had 32,040 health against Roxas's 15 to 74 a
+hit: hundreds of blows.
 
 The shell keeps that health (64 bits); Days's HP fields (signed 16 bits) show its share, up to 32,767, at least 1
 while any is left, so the bar and Days's defeat follow it. A Days hit takes its damage after the element's rate and

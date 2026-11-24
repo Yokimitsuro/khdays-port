@@ -196,6 +196,23 @@ void allies_close()
 using namespace khdays::kh2_enemies;
 using namespace khdays::kh2_enemies::shell;
 
+namespace {
+// A tick of the players in an enemy's motions (1:29), and their ends
+void held_players_tick(Enemy &e)
+{
+    for (auto &[object, h] : held)
+        if (h.enemy == e.days)
+            hold_tick(e, object, h);
+    for (auto h = held.begin(); h != held.end();) {
+        const auto next = std::next(h);
+        if (h->second.enemy == e.days && (h->second.idle || h->second.landed))
+            let_go(h->first, h->second.landed ? "his jump's landing (KH2's class 1 lands in a motion of his own)"
+                                              : "its motion back to its own idle (range 2)");
+        h = next;
+    }
+}
+} // namespace
+
 extern "C" void khdays_kh2_enemies_made(int row, void *actor)
 {
     const unsigned days = unsigned(KHDAYS_REF(actor));
@@ -224,6 +241,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     reference_blow = 0; // the next area's first hit measures its KH2 enemies anew
     khdays_sound_shots_stop();
     khdays_kh2_shell_area_left();
+    khdays_models_room_scroll(1.0F); // (one a script left stopped)
     made_row.clear();
     row_kinds.clear();
     kh2_rows = false;
@@ -446,7 +464,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         }
         e = start(days, *k, s);
     }
-    if (e->released || khdays_stop_held(actor) || !e->stops.empty())
+    if (e->released)
         return;
     // two of KH2's ticks to one of Days's field steps (0x1000 a 30th of a second)
     static bool told_step = false;
@@ -455,6 +473,13 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         khdays_log("kh2 enemies: the field's step is %d", delta);
     }
     const int ticks = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
+    if (khdays_stop_held(actor) || !e->stops.empty()) {
+        // it stands (YS::OBJ::is_stop), but a player in its motion is an object of his own, which its stop does not
+        // hold: the Hostile Program's Freeze is cast by the player's 252, which plays on
+        for (int t = 0; t < ticks; ++t)
+            held_players_tick(*e);
+        return;
+    }
     // a player in its hands put on it (1:18 on him) stands where it does, and KH2's attached object is placed by its
     // carrier alone (its Pos its carrier's frame's): Days's collision between the two moves neither. Before, Days
     // pushed its stand-in off the player it carried, he followed it, and the two drifted tens of metres -- Twilight
@@ -540,16 +565,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     put_on_carrier(*e, place); // (its floor what carries it, not Days's ground under it)
     for (int t = 0; t < ticks; ++t) {
         one_tick(*e, s, place);
-        for (auto &[object, h] : held)
-            if (h.enemy == days)
-                hold_tick(*e, object, h);
-        for (auto h = held.begin(); h != held.end();) {
-            const auto next = std::next(h);
-            if (h->second.enemy == days && (h->second.idle || h->second.landed))
-                let_go(h->first, h->second.landed ? "his jump's landing (KH2's class 1 lands in a motion of his own)"
-                                                  : "its motion back to its own idle (range 2)");
-            h = next;
-        }
+        held_players_tick(*e);
         // a carry with its flag bit 0 ends as KH2's actor's update ends it (FUN_1403b4a12): its carrier gone or no
         // longer holding it (its + 0x18c bit 15, its motion's range 13) -- Scar, put on the player he pins, comes off
         // as he throws him; 1:161 then says so and his catch goes on

@@ -427,6 +427,7 @@ struct Model {
     bool own_motion = false;
     bool clock_started = false;
     std::uint64_t frames = 0;
+    double scrolled = 0.0; // the frames its textures have scrolled by (khdays_models_room_scroll)
     u32 last_vblank = 0;
     // a KH2 model's own motions (<model>.motions.txt): the mset, the sections of the game's animations
     // that play its motions (by first frame), each joint's KH2 bone (-1 none) and the joint of bone 0

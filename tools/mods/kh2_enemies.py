@@ -139,6 +139,8 @@ KINDS = {
     "B_MU100": "Shan-Yu",
     "B_MU110": "Shan-Yu's falcon",
     "F_MU030": "Palace gates (with Shan-Yu)",
+    # Space Paranoids' Hostile Program (tr04); its data are its battle's own prizes (PLACED_PRIZES)
+    "B_TR000": "Hostile Program",
     # FINAL MIX's data battles (their Limit Cut objects, _LV99)
     "B_EX110_LV99": "Axel (Data)",
     "B_EX130_LV99": "Xaldin (Data)",
@@ -232,6 +234,9 @@ ENGINE_SOUNDS = {"B_EX170_LAST_LV99": {374040, 374047, 374065, 374066}}
 # The prizes a script's call scatters (YS::PRIZEOBJ: an object of effects alone) and their sounds, landing and taken, in
 # KH2's own code (PRIZEEFFECT::PARAM): the Land of Dragons' morale orbs (1:226, trap_obj_scatter_prize_mu)
 PRIZES = {(1, 226): ("PRIZE_MU", {41, 42})}
+# Those an area places with a battle (a spawn's entry of kind 0x16: without it their calls make none) and their sounds:
+# the Hostile Program's data (1:278, 1:279), companions of their boss
+PLACED_PRIZES = {"PRIZE_TR": {41, 42}}
 # KH2's party AI's parameters (kn::friend_param_data: each member's follow and battle ranges, his actions' ranges and
 # motions, his hops; the PS3 build reads a debug file over them, dbg/friend_param.bin), as KINGDOM HEARTS II FINAL
 # MIX.exe holds them: its first 19 words the members' records' offsets, the whole 0x62d0 bytes (friend_params)
@@ -1001,6 +1006,7 @@ def make(
             for other in sorted(needs - set(making)):
                 left_out.append(f"{name} makes or brings {other}, not asked for (--only): its script finds none")
     scattered: set[tuple[int, int]] = set()  # the calls that scatter prizes (PRIZES)
+    prizes: set[str] = set()  # those a battle places (PLACED_PRIZES)
     for name, title in making.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         sources[1] = sources[1].with_name(motion_set_of(entries, name))
@@ -1042,7 +1048,8 @@ def make(
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
         scattered |= set(PRIZES) & set(calls)
-        with_it = companions(areas, numbered, name, set(KINDS))
+        with_it = companions(areas, numbered, name, {*KINDS, *PLACED_PRIZES})
+        prizes |= {c[0] for c in with_it} & set(PLACED_PRIZES)
         mission = mission_of(areas, numbered, name)
         if mission is not None:
             source = kh2 / "original" / MISSIONS / f"{mission}.bar"
@@ -1065,8 +1072,7 @@ def make(
         )
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
-    for call in sorted(scattered):
-        prize, prize_sounds = PRIZES[call]
+    for prize, prize_sounds in [PRIZES[c] for c in sorted(scattered)] + [(p, PLACED_PRIZES[p]) for p in sorted(prizes)]:
         source = kh2 / "original" / "obj" / f"{prize}.mdlx"
         if not source.is_file():
             left_out.append(f"{prize} (the prizes a mission scatters): KH2's {source.name} not there; none appear")

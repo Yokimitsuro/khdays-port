@@ -20,6 +20,10 @@ void khdays_models_draw_animation(unsigned animation);
 void khdays_models_draw_begin(const void *model, const void *render_obj);
 void khdays_models_draw_end(void);
 
+/* How fast the replaced rooms' textures scroll from now on: 1 as their files have it, 0 not at all (a KH2 enemy's
+ * script: 1:326). */
+void khdays_models_room_scroll(float ratio);
+
 /* NNSi_G3dFuncSbc_NODEDESC: node `node`'s matrix is the current one (`sent`:
  * it was sent, not only computed). */
 void khdays_models_node(unsigned node, int sent);

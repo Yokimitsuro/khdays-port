@@ -172,6 +172,37 @@ class Kh2EnemiesTest(unittest.TestCase):
             told = [line for line in left if line.startswith("PRIZE_MU's sound")]
             self.assertEqual([line.split(":")[0] for line in told], ["PRIZE_MU's sound 41", "PRIZE_MU's sound 42"])
 
+    def test_placed_prizes(self):
+        # a boss whose area places its prizes with it (the Hostile Program's data) brings their file and sounds and has
+        # them as its companion
+        def entry(number: int, kind: int, model: bytes) -> bytes:
+            return (struct.pack("<IBBBB", number, kind, 0, 0, 0) + model.ljust(32, b"\0")).ljust(96, b"\0")
+
+        def placed(number: int, x: float, yaw: float) -> bytes:
+            return struct.pack("<I6f", number, x, 0, 0, 0.0, yaw, 0.0).ljust(0x40, b"\0")
+
+        spawn = struct.pack("<II", 2, 1) + struct.pack("<BBh4hI", 2, 0, 1, 3, 0, 0, 0, 0).ljust(0x2C, b"\0")
+        spawn += placed(7, 0, 0) + placed(566, -650, 0) + placed(8, 100, 0)
+        records = [entry(7, 3, b"B_TR000"), entry(566, 0, b"PLAYER"), entry(8, 0x16, b"PRIZE_TR")]
+        shapes = [(1, 6, 12, False)]
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=shapes):
+            kh2 = Path(d) / "kh2.hed_out"
+            self.collection(kh2, "B_TR000", with_pages=True)
+            (kh2 / "original" / "obj" / "PRIZE_TR.mdlx").write_bytes(b"data")
+            (kh2 / "original" / "00objentry.bin").write_bytes(struct.pack("<II", 3, 3) + b"".join(records))
+            areas = kh2 / "original" / kh2_enemies.AREAS
+            areas.mkdir(parents=True)
+            (areas / "tr04.ard").write_bytes(bar([(0x0D, b"btl\0", bytes(4)), (0x0C, b"b_40", spawn)]))
+            (Path(d) / "kh2.exe").write_bytes(b"MZ")
+            mod = Path(d) / "mods" / "made up"
+            left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, None, only={"B_TR000"})
+            self.assertEqual((mod / "kh2" / "obj" / "PRIZE_TR.mdlx").read_bytes(), b"data")
+            line = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()[1].split("\t")
+            self.assertEqual((line[0], line[7].split()[0]), ("B_TR000", "PRIZE_TR"))
+            self.assertFalse([told for told in left if "not asked for" in told], left)
+            told = [line for line in left if line.startswith("PRIZE_TR's sound")]
+            self.assertEqual([line.split(":")[0] for line in told], ["PRIZE_TR's sound 41", "PRIZE_TR's sound 42"])
+
     def test_the_sounds(self):
         # a motion whose trigger 8 plays (200, 21), an effect's element playing 105 (bank 0), another none (-1)
         attributes = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 30, 8, 4, 200, 21, 0, 0)

@@ -107,6 +107,9 @@ void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw
 
 /* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */
 int khdays_kh2_shell_player_hp(unsigned actor);
+/* The damage a plain blow of the player's actor does to a Days enemy: 0.75 of its strength (Roxas's combo's first hit)
+ * through the enemy's defence (Ov107_CalcDamageScale); 0 when either is not there. */
+int khdays_kh2_shell_plain_blow(unsigned enemy, unsigned player);
 /* Its most HP (+0x16, nHpMax), -1 the same. */
 int khdays_kh2_shell_player_most_hp(unsigned actor);
 /* Its level: its member record's (gPartyMembers + 0x104 x its nId, + 0x9: + 2, the level less 1), 0 when not known (the

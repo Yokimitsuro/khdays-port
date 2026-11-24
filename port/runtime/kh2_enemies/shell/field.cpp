@@ -273,6 +273,32 @@ void Field::scatter_orbs(Object &o, float value)
     scatter_gauge_prizes(at, value);
 }
 
+void Field::scatter_data(const Vec3 &at, int n)
+{
+    scatter_data_prizes(at, n);
+}
+
+void Field::take_data(Object &by)
+{
+    take_data_prizes(by);
+}
+
+// 1:326 (trap_bg_set_animation_speed -> dk::Map::setAnimationSpeedRatio of type 2, kn::UVScrollWork's): the room's
+// textures' scroll's speed
+void Field::map_speed(float ratio)
+{
+    khdays_models_room_scroll(ratio);
+}
+
+// 7:0 (YS::ENEMY::StopStartAll): a stop on every enemy of the field
+void Field::stop_enemies(int stop)
+{
+    for (auto &[days, e] : enemies)
+        e->stops.insert(stop);
+    if (tracing())
+        khdays_log("kh2 enemies: stop %d put on the field's KH2 enemies", stop);
+}
+
 // 2:0 a hit's reaction carried out, its Flag's bit 0 set: once. A Days enemy's was played before its trigger 6 told
 // the script (khdays_kh2_enemies_hit); a battle NPC's is BTLOBJ's own
 void Field::damage_reaction(Actor &a, std::uint32_t hit)

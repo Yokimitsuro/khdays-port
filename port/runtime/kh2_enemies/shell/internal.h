@@ -518,7 +518,7 @@ struct Enemy final {
         float fade = 1.0F, fade_step = 0.0F;
         bool paused = false; // held where it is (0:66, ryj::EFFECT::stop(true)): drawn as it stands, not run
         int dome = 0; // one of the laser dome's (LaserDome): 1 its lasers', 2 hits', 3 bounces', 4 bursts' -- 0 none
-        bool prizes = false; // the prizes' (prizes.cpp): they are its points
+        int prizes = 0; // a file's prizes' (prizes.cpp: 1 the orbs', 2 the data's): they are its points -- 0 none
         // its two points when last drawn (a swing trail's base and tip): the ticks between two draws take theirs
         // between those and the new ones, as KH2's bones give a new pair each tick
         std::vector<kh2::EffectPoint> points_before;
@@ -1245,6 +1245,10 @@ public:
     void battle_entry(Actor &a, int entry) override;
     void damage_reaction(Actor &a, std::uint32_t hit) override;
     void scatter_orbs(Object &o, float value) override;
+    void scatter_data(const Vec3 &at, int n) override;
+    void take_data(Object &by) override;
+    void map_speed(float ratio) override;
+    void stop_enemies(int stop) override;
 
     void set_health(Actor &a, int hp) override;
 
@@ -1527,6 +1531,9 @@ void strike_npcs(Enemy &e, const KhdaysKh2Shell &s, std::size_t range, int group
 void npc_hurt(Enemy &by, Enemy &npc, int atkp);
 void npc_tick(Enemy &npc);
 void scatter_gauge_prizes(const Vec3 &at, float value);
+bool place_prizes(const std::string &name, const Vec3 &at, unsigned anchor);
+void scatter_data_prizes(const Vec3 &at, int n);
+void take_data_prizes(Object &by);
 void prizes_tick();
 void give_prizes(const Enemy &e, Enemy::Running &r);
 void take_prizes(Enemy::Running &r);

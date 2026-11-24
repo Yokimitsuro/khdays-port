@@ -131,6 +131,39 @@ void test_hold_and_stop()
     expect(fx.done(), "stopped: its never-ending layer let go, the effect done");
 }
 
+// a stopped effect: drawn with the camera now, nothing moved on
+void test_stopped_draw()
+{
+    const auto bytes = made_up(3, 0, false);
+    auto block = std::make_shared<const EffectBlock>(read_effect(bytes.data(), bytes.size())[0]);
+    EffectInstance fx(block, 0, 1), never(block, 0, 1);
+    const EffectCamera cam{identity(), identity(), identity()};
+    EffectCamera moved = cam;
+    moved.view[12] = 5.0F;
+    std::vector<EffectDraw> draws, others;
+    fx.tick(cam, &draws);
+    never.tick(cam, nullptr);
+    const EffectVertex first = draws.at(0).triangles.at(0);
+    const std::uint64_t key = draws[0].key;
+    for (int k = 0; k < 4; ++k) {
+        draws.clear();
+        fx.hold(moved, &draws);
+    }
+    expect(draws.size() == 1 && near(draws[0].triangles.at(0).x, first.x + 5.0F) &&
+               near(draws[0].triangles[0].y, first.y) && near(draws[0].triangles[0].a, first.a),
+           "stopped, where the camera now has it, as it was");
+    expect(draws[0].key == key, "its draw's key kept");
+    for (int k = 0; k < 2; ++k) {
+        draws.clear();
+        others.clear();
+        fx.tick(cam, &draws);
+        never.tick(cam, &others);
+        expect(draws.size() == 1 && others.size() == 1 && near(draws[0].triangles.at(0).a, others[0].triangles.at(0).a),
+               "let go on from where it stood");
+    }
+    expect(near(draws.at(0).triangles.at(0).a, 0.5F), "(its second key's frame reached only now)");
+}
+
 void test_unknown_command_refused()
 {
     auto bytes = made_up(0, 0, false);
@@ -490,6 +523,7 @@ int main()
         test_reading();
         test_run();
         test_hold_and_stop();
+        test_stopped_draw();
         test_unknown_command_refused();
         test_rotation_orders();
         test_random_ranges();

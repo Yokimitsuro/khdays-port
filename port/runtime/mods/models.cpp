@@ -24,6 +24,8 @@ bool kh2_enemy_drawn = false;
 // The draw is the room's (a mission world's model, the game's or a mod's in its place) while a KH2 enemy's script hides
 // the map (Final Xemnas's laser dome, 8:6 to 8:7): its shapes left out, the room black.
 bool room_hidden = false;
+// How fast the rooms' textures scroll (1 as their files have it): a KH2 enemy's script's (1:326).
+float room_scroll = 1.0F;
 
 // A KH2 model drawn in a pose of the port's (khdays_models_draw_posed): its bones' model-space matrices, KH2's
 // centimetres; null for every other draw.
@@ -468,8 +470,10 @@ void draw(Model &m)
         moved = m.own->world_now;
     } else if (m.own_motion) {
         const u32 now = khdays_events_vblank_count();
-        if (m.clock_started && !khdays_link_paused())
+        if (m.clock_started && !khdays_link_paused()) {
             m.frames += now - m.last_vblank;
+            m.scrolled += double(now - m.last_vblank) * (m.room ? double(room_scroll) : 1.0);
+        }
         m.clock_started = true;
         m.last_vblank = now;
         if (!m.animations.empty())
@@ -960,7 +964,7 @@ void draw(Model &m)
         // its picture now, and how far its texture has scrolled
         const Mesh::Picture picture = picture_now(mesh, m.frames);
         const float tex_w = picture.w, tex_h = picture.h;
-        const auto offset = khdays::room::scroll_offset(mesh.scroll, m.frames, tex_w, tex_h);
+        const auto offset = khdays::room::scroll_offset(mesh.scroll, std::uint64_t(m.scrolled), tex_w, tex_h);
         uint32_t attr = (material.attr & ~0xc0u) | (mesh.double_sided ? 0xc0u : 0x80u);
         if (!picture.translucent && game_alpha >= 30u)
             attr = (attr & ~(31u << 16)) | (31u << 16);
@@ -1644,6 +1648,11 @@ extern "C" int khdays_models_shape(const void *list, unsigned int size)
     if (khdays_shadow_sprite_active())
         return 0; // retain the original flat shadow until its animated replacement is ready
     return matrices_only(list, size);
+}
+
+extern "C" void khdays_models_room_scroll(float ratio)
+{
+    room_scroll = ratio;
 }
 
 extern "C" void khdays_models_dialogue_speaker(int portrait)

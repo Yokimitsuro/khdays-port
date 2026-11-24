@@ -1592,6 +1592,14 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         valid = 0;
         return 0;
     }
+    for (uint32_t i = 0; i < p->mission_2d_count; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->mission_2d_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            khdays_sequence_gpu_forget(); /* what it drew never reached the card */
+            valid = 0;
+            return 0;
+        }
+    }
     for (int i = 0; i < 3; ++i) {
         if (!khdays_sequence_gpu_draw(device, cmd, &p->party_images[i])) {
             SDL_CancelGPUCommandBuffer(cmd);

@@ -530,7 +530,11 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
     float units = 1.0F;
     const kh2::EffectCamera cam = effect_camera(view, projection, units);
     kh2::EffectCamera placed = cam;
+    const bool stopped = the_field().is_stopped(*e.actor);
     for (Enemy::Running &r : e.fx) {
+        // one bound to it stands while it does (ryj::PAX::MANAGER::get_obj_data: EFFECT::bind_stop(OBJ::is_stop))
+        const bool bound_stop = stopped && r.player == 0 && !r.in_world;
+        const bool standing = r.paused || bound_stop;
         unlink(e, r);
         // its two points (a swing trail's base and tip), where its element has them: on its bones now
         std::vector<kh2::EffectPoint> points;
@@ -578,7 +582,7 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             give_dome(e, r);
         if (r.prizes && ticks > 0)
             give_prizes(e, r);
-        for (unsigned t = 0; t < (r.paused ? 0u : ticks); ++t) {
+        for (unsigned t = 0; t < (standing ? 0u : ticks); ++t) {
             const bool last = t + 1 == ticks;
             if (!points.empty())
                 r.fx->set_points(last ? points : points_between(before, points, float(t + 1) / float(ticks)));
@@ -592,11 +596,16 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             r.fx->tick(placed, last ? &r.draws : nullptr);
             r.age += 1.0F;
         }
+        if (standing) { // drawn as it is, with the camera now (its draws are on the screen)
+            r.draws.clear();
+            r.fx->hold(placed, &r.draws);
+        }
+        const bool drawn_anew = standing || ticks > 0;
         if (r.dome != 0 && ticks > 0)
             take_dome(r);
         if (r.prizes && ticks > 0)
             take_prizes(r);
-        if (r.coloured && ticks > 0) // its script's colour (0:67): each corner's times it, once a tick's draws
+        if (r.coloured && drawn_anew) // its script's colour (0:67): each corner's times it, once a tick's draws
             for (kh2::EffectDraw &d : r.draws)
                 for (kh2::EffectVertex &v : d.triangles) {
                     v.r *= r.colour[0];
@@ -604,14 +613,12 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
                     v.b *= r.colour[2];
                     v.a *= r.colour[3];
                 }
-        if (r.fade_step != 0.0F && ticks > 0) { // its fading (EFFECT::fade), held or not: its draws' alpha its share
-            // (a held one's draws are the last tick's, already at the share before: those times the change)
-            const float was = r.fade;
-            r.fade = std::max(0.0F, r.fade + r.fade_step * float(ticks));
-            const float by = !r.paused ? r.fade : was > 0.0F ? r.fade / was : 0.0F;
+        if (r.fade_step != 0.0F && drawn_anew) { // its fading (EFFECT::fade), held or not: its draws' alpha its share
+            if (!bound_stop)
+                r.fade = std::max(0.0F, r.fade + r.fade_step * float(ticks));
             for (kh2::EffectDraw &d : r.draws)
                 for (kh2::EffectVertex &v : d.triangles)
-                    v.a *= by;
+                    v.a *= r.fade;
         }
         const KindFiles &files = r.files != nullptr ? *r.files : *e.kind;
         if (trace_level() >= 2)

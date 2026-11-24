@@ -2960,9 +2960,43 @@ void add_world(ai::Calls &calls)
         if (World *w = running(m)->world; w != nullptr && o != nullptr)
             w->scatter_orbs(*o, a[1].f());
     });
-    // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
-    // **likely its prizes** -- Days gives its stand-in's own
-    calls.set(1, 278, [](ai::Machine &, std::span<ai::Value>) {});
+    // The Hostile Program's data (PRIZE_TR): 1:278 n from an object's target point (trap_obj_scatter_prize_tr,
+    // FUN_14042a980 -- the Strafer's too), 1:279 n from a point (trap_prize_appear_tr), 1:327 all of them taken by an
+    // object (trap_prize_get_all_tr: the Hostile Program's own "aspil"); none but where its battle places them
+    calls.set(1, 278, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        World *w = running(m)->world;
+        if (w == nullptr || o == nullptr)
+            return;
+        Vec3 at = o->place();
+        w->aim_point(*o, at);
+        w->scatter_data(at, a[1].i());
+    });
+    calls.set(1, 279, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->scatter_data(xyz(read_vec(m, a[0].bits)), a[1].i());
+    });
+    calls.set(1, 327, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (World *w = running(m)->world; w != nullptr && o != nullptr)
+            w->take_data(*o);
+    });
+    // 1:326 the map's animations of type 2's speed (trap_bg_set_animation_speed -> dk::Map::setAnimationSpeedRatio:
+    // its textures' scroll): the Hostile Program's Freeze stops Space Paranoids' lines
+    calls.set(1, 326, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->map_speed(a[0].f());
+    });
+    // 7:0 a stop on every enemy of the field, 7:1 it off every object (Ts::trap_enemy_stop_all_start, _end:
+    // YS::ENEMY::StopStartAll, YS::OBJ::StopEndAll): the Freeze (6)
+    calls.set(7, 0, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->stop_enemies(a[0].i());
+    });
+    calls.set(7, 1, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world)
+            w->stop_end_all(a[0].i());
+    });
     // 2:9 its health's record made from a battle entry (FUN_140411350 -> FUN_1403c0280: + 0x5c0; 12 bytes a value,
     // the first its health now and at most -- what 1:84, 1:228 and 1:229 read, the scripts' "hp_rate"; + 0x268 the
     // actor): its health -- its battle entry's (the second value: 00battle.bin's enmp, the Soldier's 33, Hades's 19 or

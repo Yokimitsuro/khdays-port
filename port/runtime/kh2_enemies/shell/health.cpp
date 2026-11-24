@@ -185,6 +185,9 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     if (!blow && damage > 0)
         e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     Actor &a = *e->actor;
+    // its sheet's health the hit's by now (YS::BTLOBJ::add_damage, before its mission and its trigger 6 are told): the
+    // Hostile Program's trigger 6 asks for it (1:230) to change at 80%, 60% and 40%
+    the_field().health(a);
     // the last to hit it (2:88): the party member whose blow it is, else the nearest player
     Object *striker = party != nullptr ? party : the_field().player(a);
     mission_damage(a.address(), damage, striker != nullptr ? striker->address() : 0u); // (its last blow too)
@@ -416,6 +419,20 @@ namespace khdays::kh2_enemies::shell {
 
 namespace {
 
+// The area's blow, what its KH2 enemies' health is measured in (reference_blow): a plain blow of the player's, of the
+// first of them, on the enemy struck -- not the hit's own damage, a finisher's or a spell's (Roxas at level 100: 40 a
+// plain blow, 413 a finisher, 902 an Aero -- an enemy first struck by one stood ten, twenty times its health). 0: none
+int plain_blow(const Enemy &e)
+{
+    std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
+    const int n = khdays_kh2_shell_players(shell_of(e), list.data(), int(list.size()));
+    for (int i = 0; i < n && i < int(list.size()); ++i)
+        if (const auto actor = player_actors.find(list[std::size_t(i)].object); actor != player_actors.end())
+            if (const int blow = khdays_kh2_shell_plain_blow(shell_of(e), actor->second); blow > 0)
+                return blow;
+    return 0;
+}
+
 int kept_damage(void *actor, int amount, int kinds)
 {
     Enemy *e = find(unsigned(KHDAYS_REF(actor)));
@@ -429,6 +446,8 @@ int kept_damage(void *actor, int amount, int kinds)
         e->health = e->health >= 0 ? 0 : e->health;
         return std::max(1, whole.hp);
     }
+    if (reference_blow <= 0)
+        reference_blow = plain_blow(*e);
     // a KH2 player's blow (a reaction command's strike) on one with a health of its own: its power in the area's
     // measured blows -- before any Days hit measured one, kept for its health once it is measured
     if (e->blow_landing && e->health_share > 0.0) {
@@ -474,9 +493,9 @@ int kept_damage(void *actor, int amount, int kinds)
         }
         amount = int(std::clamp(std::round(blows * double(reference_blow)), 1.0, 2147483647.0));
     }
-    // its health in Days's damage at the first hit on it: kSoldierBlows x its share of KH2's Soldier blows of the area's
-    // first hit's size -- as many of Roxas's blows as Sora's it stands in KH2 (Hades of the cups: 60), whatever Roxas's
-    // level and gear
+    // its health in Days's damage at the first hit on it: kSoldierBlows x its share of KH2's Soldier blows of the
+    // area's blow's size -- as many of Roxas's blows as Sora's it stands in KH2 (Hades of the cups: 60), whatever
+    // Roxas's level and gear, and whatever the first hit is (a plain blow not known: that hit's own)
     if (e->health < 0 && e->health_share > 0.0) {
         if (reference_blow <= 0)
             reference_blow = amount;
