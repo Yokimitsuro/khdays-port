@@ -231,12 +231,14 @@ WEAPONS = {"P_EH000_LAST": ("W_EH000", "W_EH000_LAST")}
 # The sounds KH2's own code plays for a kind, which none of its files names (bank x 1000 + number): Final Xemnas's laser
 # dome (ryj::LAST_XEMNUS_LASER: its hum, a laser's hit, its bounce off a player and off his partner)
 ENGINE_SOUNDS = {"B_EX170_LAST_LV99": {374040, 374047, 374065, 374066}}
-# The prizes a script's call scatters (YS::PRIZEOBJ: an object of effects alone) and their sounds, landing and taken, in
-# KH2's own code (PRIZEEFFECT::PARAM): the Land of Dragons' morale orbs (1:226, trap_obj_scatter_prize_mu)
-PRIZES = {(1, 226): ("PRIZE_MU", {41, 42})}
-# Those an area places with a battle (a spawn's entry of kind 0x16: without it their calls make none) and their sounds:
-# the Hostile Program's data (1:278, 1:279), companions of their boss
-PLACED_PRIZES = {"PRIZE_TR": {41, 42}}
+# The sounds of a prize landing and taken, in KH2's own code (PRIZEEFFECT::PARAM)
+PRIZE_SOUNDS = {41, 42}
+# The prizes a script's call scatters (YS::PRIZEOBJ: an object of effects alone): the Land of Dragons' morale orbs
+# (1:226, trap_obj_scatter_prize_mu)
+PRIZES = {(1, 226): ("PRIZE_MU", PRIZE_SOUNDS)}
+# Those an area places with a battle (a spawn's entry of kind 0x16: without it their calls make none): the Hostile
+# Program's data (1:278, 1:279), companions of their boss
+PLACED_PRIZES = {"PRIZE_TR": PRIZE_SOUNDS}
 # KH2's party AI's parameters (kn::friend_param_data: each member's follow and battle ranges, his actions' ranges and
 # motions, his hops; the PS3 build reads a debug file over them, dbg/friend_param.bin), as KINGDOM HEARTS II FINAL
 # MIX.exe holds them: its first 19 words the members' records' offsets, the whole 0x62d0 bytes (friend_params)
