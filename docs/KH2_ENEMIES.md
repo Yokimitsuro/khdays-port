@@ -2158,7 +2158,7 @@ KH2 starts that PAX's first elements, each as `1:87` starts one (`FUN_1402c6b30`
 starts it; the `.a.us`'s element 0 is another, a bright orb), Scar's ghosts (0x13a2) their nine. Its HD pictures are
 in the model's own folder after its textures' (a file's pictures run through its entries in BAR order:
 `mdlx_texture_pictures`), each container of a texture entry that holds several counted (Hades's `tim_` holds two
-sets of five: his flame's pictures are `-10` and `-11`). The shell reads it (`read_model_effects`) and starts them as
+sets of five: his flame's pictures are `-10` and `-11`). The shell reads it (`model_effects`) and starts them as
 it makes the enemy (`model_effects`).
 
 Hades's flame is ten particle spawners (`0xc9`) on his head's bone 103, at its top (the element's place 24 along

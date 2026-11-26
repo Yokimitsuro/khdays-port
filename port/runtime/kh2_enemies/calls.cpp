@@ -2878,10 +2878,10 @@ void add_world(ai::Calls &calls)
     // (on a player turned into a form: the form's; on himself none)
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = acted_on(m, a[0]);
-        const std::uint32_t h = x != nullptr && x->world != nullptr
-                                    ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits),
-                                                       std::int32_t(a[3].bits))
-                                    : 0;
+        const std::uint32_t h =
+            x != nullptr && x->world != nullptr
+                ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits), std::int32_t(a[3].bits))
+                : 0;
         a[0] = ai::Value::of_address(h);
     });
     // 1:128 the object's class's virtual + 0x20 with a value (its native code; trigger 13 calls it with 0); 2:9 the

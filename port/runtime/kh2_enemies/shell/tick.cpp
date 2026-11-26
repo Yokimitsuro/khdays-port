@@ -480,7 +480,8 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     // a player in its hands put on it (1:18 on him) stands where it does: Days's collision between the two moves
     // neither (else they drift apart)
-    if (e->placed && std::any_of(held.begin(), held.end(), [days](const auto &h) { return h.second.carried_by == days; })) {
+    if (e->placed &&
+        std::any_of(held.begin(), held.end(), [days](const auto &h) { return h.second.carried_by == days; })) {
         s.place[0] = e->place[0];
         s.place[2] = e->place[2];
     }
@@ -534,8 +535,8 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         const float kept[3] = {s.place[0], height, s.place[2]};
         place[1] = to_kh2(kept)[1];
     }
-    // (-1: no ground under it; below 0: sunk into it) -- measured from the higher of the place it was given and where
-    // a blow threw it up before (Days lowers a stand-in off the ground after it measures: Ov107_AiState_ResolveContacts)
+    // (-1: no ground under it; below 0: sunk into it) -- measured from the higher of the place it was given and
+    // where a blow threw it up before (Days lowers a stand-in off the ground after it measures)
     if (s.above != -1.0F) {
         const float measured[3] = {s.place[0], e->placed ? std::max(s.place[1], e->place[1]) : s.place[1], s.place[2]};
         e->floor = (e->placed ? to_kh2(measured)[1] : place[1]) + s.above * kKh2PerDays;

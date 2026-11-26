@@ -39,8 +39,8 @@ constexpr float kGroundAbove = 5.0F;                     // a lying prize's grou
 // How near a player takes it (PRIZE::CanGet), and how it spirals into him
 constexpr float kReachAcross = 120.0F, kReachUp = 30.0F;
 constexpr float kSpiral = 30.0F, kSpiralMost = 0.59341F; // how far round it goes a tick, at most (34 degrees)
-// Its sprite's bytes for the effect (EffectPoint::bytes): its kind, its alpha, its size and its frame (/ 255; a frame of
-// kAnyFrame one at random)
+// Its sprite's bytes for the effect (EffectPoint::bytes): its kind, its alpha, its size (/ 255) and its frame
+// (kAnyFrame: one at random)
 constexpr std::uint8_t kSpriteAlpha = 0x80, kWholeSize = 255, kAnyFrame = 255;
 
 enum class Phase { moving, lying, taken };

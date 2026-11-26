@@ -160,8 +160,8 @@ std::vector<unsigned char> write_p2(const P2 &p)
     return b;
 }
 
-// A room record of the room table: kRecord bytes, then its objects' offsets (u32 each, from the record), then its object
-// (u8 flags, u8 its model's member, u16).
+// A room record of the room table: kRecord bytes, then its objects' offsets (u32 each, from the record), then its
+// object (u8 flags, u8 its model's member, u16).
 constexpr std::size_t kRecord = 0x20;
 constexpr std::size_t kRecordId = 0x0, kRecordExitCount = 0x1, kRecordObjectCount = 0x2;
 constexpr std::size_t kRecordCollision = 0x3; // its collision's member

@@ -1775,8 +1775,8 @@ void Field::player_jump(Object &o, const Jump &jump)
     player_jumps[object] = jump;
     o.set_bits(field::kFlags, bit::kInAir, true); // (1:57, 1:60: off the ground from the jump's start)
     if (tracing())
-        khdays_log("kh2 enemies: player %08x jumps (rising %.1f over %.1f ticks, %.1f %.1f a tick along; KH2's cm)", object,
-                   double(-jump.rise), double(jump.apex), double(jump.along[0]), double(jump.along[2]));
+        khdays_log("kh2 enemies: player %08x jumps (rising %.1f over %.1f ticks, %.1f %.1f a tick along; KH2's cm)",
+                   object, double(-jump.rise), double(jump.apex), double(jump.along[0]), double(jump.along[2]));
 }
 
 bool Field::player_in_loop(Object &o)

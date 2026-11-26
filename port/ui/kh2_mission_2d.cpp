@@ -621,9 +621,9 @@ void load(const kh2e::MissionView &v)
                     pc->sequence = seq::read_sequence(bytes.data() + sequence.offset, sequence.size);
                     pc->texels.resize(pc->texture.rgba.size() / 4);
                     std::memcpy(pc->texels.data(), pc->texture.rgba.data(), pc->texels.size() * 4);
-                    pc->atlas = khdays_textures_add_info(("kh2:mission:" + key).c_str(), pc->texture.width,
-                                                         pc->texture.height, pc->texels.data(),
-                                                         KHDAYS_REPLACEMENT_NO_MIPS);
+                    pc->atlas =
+                        khdays_textures_add_info(("kh2:mission:" + key).c_str(), pc->texture.width, pc->texture.height,
+                                                 pc->texels.data(), KHDAYS_REPLACEMENT_NO_MIPS);
                     if (pc->atlas < 0)
                         throw std::runtime_error("no room for its picture");
                     found = std::move(pc);

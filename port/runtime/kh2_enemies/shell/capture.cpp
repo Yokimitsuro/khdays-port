@@ -30,8 +30,9 @@ void end_capture(unsigned object, const char *why)
     if (c->second.actor != 0 && c->second.hidden)
         khdays_kh2_shell_player_hidden(c->second.actor, 0);
     hidden_told[object] = false;
-    if (const auto f = player_fades.find(object); f != player_fades.end()) { // himself again (faded out before he was
-        f->second.now = 1.0F;                                              // turned), drawn whole
+    // himself again, drawn whole (a script faded him out before he was turned)
+    if (const auto f = player_fades.find(object); f != player_fades.end()) {
+        f->second.now = 1.0F;
         f->second.step = 0.0F;
     }
     if (tracing())

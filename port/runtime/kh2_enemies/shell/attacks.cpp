@@ -194,12 +194,10 @@ void blow_reaction(Enemy &t, int atkp)
     t.blow_karma += attack_param(atkp).revenge;
 }
 
-// A motion's attack of `team` (attack, above; the player's 1 when a member or a form of his swings it): each of its
-// group's spheres strikes the other KH2 enemies of the teams it strikes (YS::ATTACK::is_strike: none of its own team, none
-// of 0, none its script keeps from hits -- YS::OBJ::is_hit_attack) it reaches, each once a range -- a body as a player's
-// (its Days sphere's radius round, from its feet to KH2's player's height) -- a blow of the player's on each: Days's
-// damage, its last Days hit's (else any KH2 enemy's, else 1) times the attack's power over 100, as his weapon's
-// (held_tick)
+// A motion's attack of `team` (attack, above): each of its group's spheres strikes the other KH2 enemies of the teams
+// it strikes (strikes_team; none its script keeps from hits) it reaches, each once a range -- a body as a player's (its
+// Days sphere's radius round, from its feet to KH2's player's height) -- a blow of the player's on each: Days's damage,
+// its last Days hit's (else any KH2 enemy's, else 1) times the attack's power over 100, as his weapon's (held_tick)
 void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp, int team)
 {
     const auto struck = [&](const Enemy &t) {
@@ -274,10 +272,9 @@ void hitback_push(int atkp, float dx, float dz, float push[3])
     push[2] = dz / flat * half;
 }
 
-// A hit made with an attack on an object at once (2:17, and its sweep below), as its team strikes (YS::ATTACK::is_strike):
-// a Days player its enemy's hit (KH2's own attack landing on him: trigger 15 too), a KH2 enemy the player's blow (the
-// Neoshadow's strike, KH2's player owning it; an enemy's attack of the player's team or of all teams: Days's damage the
-// player's last hit times the attack's power)
+// A hit made with an attack on an object at once (2:17, and its sweep below), as its team strikes (strikes_team): a
+// Days player its enemy's hit (trigger 15 too), a KH2 enemy the player's blow (Days's damage the player's last hit
+// times the attack's power)
 void strike(AttackObject &o, Object &target)
 {
     const auto owner = enemies.find(o.enemy);
@@ -664,8 +661,8 @@ void attack_objects(Enemy &e)
         };
         const bool on_players = !o.players && strikes_team(o.team, kTeamPlayer);
         const bool on_enemies = !o.players && std::any_of(enemies.begin(), enemies.end(), [&](const auto &x) {
-                                    return struck_enemy(x.first, *x.second);
-                                });
+            return struck_enemy(x.first, *x.second);
+        });
         bool on_npcs = false;
         if (!o.players)
             each_npc(o.team, [&](const Enemy &) { on_npcs = true; });

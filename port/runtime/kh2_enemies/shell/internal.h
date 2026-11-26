@@ -720,9 +720,8 @@ struct Held final {
     bool landed = false;     // his jump (player_jumps) met the ground: let go, his landing motion his own
 };
 inline std::map<unsigned, Held> held; // by the Days player's object
-// a jump a script gave a Days player (1:55 on him, World::player_jump), by his object: hold_tick moves him along it while
-// an enemy's motion holds him (1:29), till he lands -- his landing motion his own (KH2's class 1 lands in + 0x11c),
-// so he is let go then
+// a jump a script gave a Days player (1:55 on him, World::player_jump), by his object: hold_tick moves him along it
+// while an enemy's motion holds him (1:29), till he lands -- he is let go then, his landing his own
 inline std::map<unsigned, Jump> player_jumps;
 // the Days players a script hid (1:133) by their object, their models' hiding as last told (khdays_kh2_enemies_holding)
 inline std::map<unsigned, bool> hidden_players, hidden_told;
