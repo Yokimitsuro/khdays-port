@@ -5150,7 +5150,7 @@ struct EffectInstance::State {
     }
 
     // A step that only makes its object's matrices from its slots and the camera's: made anew for a camera moved
-    static bool matrix_step(std::uint8_t code)
+    static bool matrix_step(std::uint32_t code)
     {
         return (code >= 0x57 && code <= 0x5e) || code == 0xd8 || (code >= 0xe6 && code <= 0xeb) || code == 0x60 ||
                code == 0x63 || code == 0x69 || code == 0x6a || (code >= 0x70 && code <= 0x75) || code == 0x78 ||
