@@ -40,35 +40,33 @@ std::uint32_t npc_hit(Enemy &by, Enemy &npc, int atkp, int first, int reaction, 
     return hit->address();
 }
 
-// KH2's damage of an enemy's attack on it (YS::SHEET::calc_damage): the attacker's level's strength (none for a
-// magic's) less its own level's defence, kept to the level's most and its own (its battle entry's share of its health)
-// and to the least the same way, x the power x its rates over a million, rounded up; a cure's kinds 5 and 6 as a party
-// member's (member_damage). The game level changes neither side's (SHEET::adjust_game_level: no PARTY's hit nor its
-// own)
+// KH2's damage of an enemy's attack on it (YS::SHEET::calc_damage): the attacker's strength (none for a magic's) less
+// its own defence, each its level's, kept between the least and the most its level and its battle row allow, times
+// the attack's power and its rates for the attack's element and for every hit, rounded up
 int npc_damage(const Enemy &by, const Enemy &npc, const AttackParam &ap)
 {
     const std::optional<LevelParam> lv = level_param(battle_level(by)), own = level_param(battle_level(npc));
     if (!lv || !own)
         return 0;
     const std::int64_t strength = ap.magic ? 0 : lv->strength, whole = npc.health_most;
-    if (ap.kind == attack_record::kCureShare)
-        return int((whole * strength * ap.power + 9999) / 10000);
-    if (ap.kind == attack_record::kCure)
-        return int((strength * ap.power + 99) / 100);
+    if (const int cure = cure_amount(ap, whole, strength); cure >= 0)
+        return cure;
     const BattleRow &row = battle_row(npc.battle_number);
-    const std::int64_t most = std::min<std::int64_t>(lv->most, (whole * row.most + 9999) / 10000);
-    const std::int64_t least = std::max<std::int64_t>(lv->least, (whole * row.least + 9999) / 10000);
+    const std::int64_t most = std::min<std::int64_t>(lv->most, rounded_up(whole * row.most, kPerTenThousand));
+    const std::int64_t least = std::max<std::int64_t>(lv->least, rounded_up(whole * row.least, kPerTenThousand));
     const std::int64_t value = std::max(std::min(strength - own->defence, most), least);
-    const int rate = row.rates[std::size_t(std::clamp(ap.element, 0, 5))], every = row.rates[6];
-    return int(std::min<std::int64_t>((value * ap.power * rate * every + 999999) / 1000000, 0x7fffffff));
+    const int rate = row.rates[std::size_t(std::clamp(ap.element, 0, kElements - 1))];
+    const int every = row.rates[kEveryElement];
+    const std::int64_t rates = std::int64_t(kPercent) * kPercent * kPercent; // power, rate and every: percent each
+    return int(std::min<std::int64_t>(rounded_up(value * ap.power * rate * every, rates), 0x7fffffff));
 }
 } // namespace
 
-// The level a KH2 enemy's battle sheet is of (SHEET::set: its battle entry's + 2, else YS::LEVELPARAM's current one,
-// its area's): the mission's for the latter (Days's, its author's), 1 to 99
+// The level a KH2 enemy's battle sheet is of (SHEET::set): its battle entry's, else the area's -- the Days mission's
 int battle_level(const Enemy &e)
 {
-    return std::clamp(e.battle_level > 0 ? e.battle_level : khdays_kh2_shell_mission_level(), 1, 99);
+    constexpr int kLeast = 1, kMost = 99;
+    return std::clamp(e.battle_level > 0 ? e.battle_level : khdays_kh2_shell_mission_level(), kLeast, kMost);
 }
 
 // The battle NPCs its motion's attack of `team` reaches (its group's spheres on their collision's TYPE_HIT shapes),
@@ -79,7 +77,7 @@ void strike_npcs(Enemy &e, const KhdaysKh2Shell &s, std::size_t range, int group
         if (&npc == &e || e.struck[range].count(npc.days) != 0)
             return;
         for (const Shape &sh : e.kind->shapes) {
-            if (sh.group != group || (sh.kind & 0xff) != 6)
+            if (sh.group != group || (sh.kind & 0xff) != kTypeAttack)
                 continue;
             float c[3];
             days_point(e, s, sh.bone, sh.at, c);
@@ -92,11 +90,9 @@ void strike_npcs(Enemy &e, const KhdaysKh2Shell &s, std::size_t range, int group
     });
 }
 
-// An attack on it (YS::PIERROT::_OVR_exec_damage, a battle NPC's): none once it is dead, its last attacker told (2:88),
-// its damage off its health (BTLOBJ::add_damage: kept to its least, 1:231, one over it while its pattern 9 withstands;
-// a cure's on it), its reaction as its patterns change it, its state's routine for a hit (ACT::damage: event 3), its
-// trigger 6, its reaction unless the script carried it out (2:0), its mission told last (UNITSCRIPT::DamageCallback) --
-// alone with its pattern 13 on
+// An attack on a battle NPC (YS::PIERROT::_OVR_exec_damage): its damage off its health (kept to its least, one over
+// while it withstands; a cure's on it), its state's routine for a hit, its trigger 6, its reaction unless its script
+// carried it out (2:0), then its mission told -- only its mission while its pattern kMissionOnly is on
 void npc_hurt(Enemy &by, Enemy &npc, int atkp)
 {
     Actor &a = *npc.actor;
@@ -128,8 +124,8 @@ void npc_hurt(Enemy &by, Enemy &npc, int atkp)
     const int reaction = cure ? 0 : hit_pattern_reaction(a, first, false);
     const std::uint32_t hit = npc_hit(by, npc, atkp, first, reaction, damage);
     const ai::Value packet = ai::Value::of_address(hit);
-    a.states().event(a, 3, {&packet, 1});
-    a.event(6, {&packet, 1});
+    a.states().event(a, kEventStruck, {&packet, 1});
+    a.event(kTriggerDamage, {&packet, 1});
     if (!npc.dying)
         the_field().damage_reaction(a, hit);
     mission_damage(a.address(), damage, by.actor->address(), ap.kind);
@@ -146,7 +142,8 @@ void npc_tick(Enemy &npc)
     if (npc.hurt_motion < 0)
         return;
     Actor &a = *npc.actor;
-    const bool landing = a.motion.id == npc.hurt_motion + 1 && (npc.hurt_motion == 16 || npc.hurt_motion == 18);
+    const bool landing = a.motion.id == npc.hurt_motion + 1 &&
+                         (npc.hurt_motion == damage_motion::kBlowFront || npc.hurt_motion == damage_motion::kBlowBack);
     if ((a.motion.id == npc.hurt_motion || landing || a.jump.on) && !(a.motion.ended && !a.jump.on))
         return;
     npc.hurt_motion = -1;

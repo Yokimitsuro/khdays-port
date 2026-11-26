@@ -904,9 +904,6 @@ static void ui_check(const KhdaysFramePackage *p, const KhdaysGpuInput *in, int 
     }
 }
 
-/* Puts this frame's elements into the package. Where the reference drew the
- * screens (the game's picture), the port's composition of them replaces it;
- * under check, the two are compared. */
 /* A KH2 mission's pieces' quads (ui/kh2_mission_2d.h), as many images as they need */
 static void mission_2d_commands(KhdaysFramePackage *p)
 {
@@ -927,6 +924,9 @@ static void mission_2d_commands(KhdaysFramePackage *p)
     p->mission_2d_count = n;
 }
 
+/* Puts this frame's elements into the package. Where the reference drew the
+ * screens (the game's picture), the port's composition of them replaces it;
+ * under check, the two are compared. */
 static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int reference, u32 frame)
 {
     /* widescreen moves the elements to the sides like the HUD's pieces; on one screen they stay at their

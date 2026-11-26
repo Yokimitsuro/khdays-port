@@ -488,6 +488,9 @@ int khdays_kh2_shell_player_hp(unsigned actor)
 #define STRENGTH_MOST 999            /* Ov022_ComputeStrengthDamage's */
 #define PLAIN_BLOW 0xc00             /* fx32: 0.75, Roxas's combo's first hit's factor (RUNTIME_MAP section 30) */
 #define ENEMY_DEFENCE 0x2bcu         /* s16[8]: its parts' (Ov107_CalcHitDamage); the first */
+#define FX32_SHIFT 12                /* fx32: 20.12 fixed point */
+#define FX32_ONE (1 << FX32_SHIFT)
+#define FX32_HALF (FX32_ONE / 2)
 
 extern int Ov107_CalcDamageScale(KhdaysRef enemy, int attack, int defence);
 
@@ -506,10 +509,10 @@ int khdays_kh2_shell_plain_blow(unsigned enemy, unsigned player)
     if (strength > STRENGTH_MOST) {
         strength = STRENGTH_MOST;
     }
-    const int attack = (strength * PLAIN_BLOW >> 12) << 12; /* whole units, as the hit's */
-    const int defence = (short)checked_rd16(enemy + ENEMY_DEFENCE) * 0x1000;
+    const int attack = (strength * PLAIN_BLOW >> FX32_SHIFT) << FX32_SHIFT; /* whole units, as the hit's */
+    const int defence = (short)checked_rd16(enemy + ENEMY_DEFENCE) * FX32_ONE;
     const int amount = Ov107_CalcDamageScale(enemy, attack, defence);
-    return (amount < 0x1000 ? 0x1000 : amount + 0x800) >> 12;
+    return (amount < FX32_ONE ? FX32_ONE : amount + FX32_HALF) >> FX32_SHIFT; /* rounded, at least 1 */
 }
 
 extern void Ov022_ActorSetHp(KhdaysRef actor, int hp);

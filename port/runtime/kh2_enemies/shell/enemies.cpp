@@ -735,9 +735,10 @@ namespace {
 bool nearest_wall(unsigned shell, const Vec3 &at, float reach, float &distance, Vec3 &to)
 {
     constexpr int kWays = 32;
+    constexpr float kTurn = 6.2831853F; // a whole turn
     bool any = false;
     for (int i = 0; i < kWays; ++i) {
-        const float turn = 6.2831853F * float(i) / float(kWays);
+        const float turn = kTurn * float(i) / float(kWays);
         const Vec3 w = {std::sin(turn), 0.0F, std::cos(turn)};
         float share = 0.0F;
         Vec3 n{};
@@ -776,9 +777,9 @@ void push_from_walls(unsigned shell, Vec3 &place, float radius)
 }
 } // namespace
 
-// A place moved into space (YS::OBJ::get_move_to_space_pos): its collision's sphere made 100, 200 ... up to `length`
-// cm, each put against the room with no way of its own and pushed out of its walls; kept while it stands on the ground
-// (within a step of where it was) -- `air`: wherever it is. Whether any step was
+// A place moved till the room's walls are `length` cm from it (YS::OBJ::get_move_to_space_pos): a sphere round it
+// pushed out of the walls, grown a step at a time; each step kept while it stands on the ground within a step of
+// where it was (`air`: wherever). Whether any step was
 bool move_to_space(unsigned shell, Vec3 &place, float length, bool air)
 {
     constexpr float kSpaceStep = 100.0F;

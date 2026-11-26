@@ -255,7 +255,7 @@ void Field::battle_entry(Actor &a, int entry)
     e.record_most = own;
     if (allies.count(e.days) != 0) { // a battle NPC, which no Days hit measures: KH2's own (SHEET::set)
         const std::optional<LevelParam> level = level_param(battle_level(e));
-        e.record_most = (std::int64_t(own) * (level ? level->health : 100) + 99) / 100;
+        e.record_most = rounded_up(std::int64_t(own) * (level ? level->health : kPercent), kPercent);
         e.health = e.health_most = e.record_most;
     }
     if (tracing())
@@ -1312,7 +1312,7 @@ void Field::signal(int id, int argument)
 // 14)
 void Field::set_count(Kh2Mission &m, int index, int n)
 {
-    MissionPiece *c = mission_piece(m, 5, index);
+    MissionPiece *c = mission_piece(m, kCounterPiece, index);
     if (c == nullptr)
         return;
     const int was = c->value;
@@ -1339,8 +1339,8 @@ void Field::check_warning(const Kh2Mission &m, MissionPiece &p, int value)
     const bool on = p.start <= p.warning ? value >= p.warning : value <= p.warning;
     if (on != p.alert) {
         p.alert = on;
-        khdays_log("kh2 enemies: mission %s's %s %d warns%s", m.name.c_str(), p.kind == 6 ? "gauge" : "counter",
-                   p.index, on ? "" : " no more");
+        khdays_log("kh2 enemies: mission %s's %s %d warns%s", m.name.c_str(),
+                   p.kind == kGaugePiece ? "gauge" : "counter", p.index, on ? "" : " no more");
     }
 }
 
@@ -1355,14 +1355,14 @@ void Field::mission_warning(int kind, int index, bool on)
         return;
     p->alert = on;
     khdays_log("kh2 enemies: mission %s's %s %d warns%s (its script)", kh2_mission->name.c_str(),
-               kind == 6 ? "gauge" : "counter", index, on ? "" : " no more");
+               kind == kGaugePiece ? "gauge" : "counter", index, on ? "" : " no more");
 }
 
 // YS::MISSION_GAUGE::set (the PS3 build's): gauge `index` kept between 0 and its most; reaching 0 from above
 // sends 136, its most from below 137, with its index, while its pieces are up
 void Field::set_gauge(Kh2Mission &m, int index, float level)
 {
-    MissionPiece *g = mission_piece(m, 6, index);
+    MissionPiece *g = mission_piece(m, kGaugePiece, index);
     if (g == nullptr)
         return;
     const float was = g->level, most = float(g->most);
@@ -1382,17 +1382,17 @@ void Field::set_gauge(Kh2Mission &m, int index, float level)
         khdays_log("kh2 enemies: mission %s's gauge %d at %.2f", m.name.c_str(), index, double(level));
 }
 
-float Field::mission_gauge(unsigned number, int index, float value)
+float Field::mission_gauge(unsigned call, int index, float value)
 {
     if (!kh2_mission || kh2_mission->over) // (over, KH2's is gone: YS::MISSION::end)
         return 0.0F;
     Kh2Mission &m = *kh2_mission;
-    const MissionPiece *g = mission_piece(m, 6, index);
+    const MissionPiece *g = mission_piece(m, kGaugePiece, index);
     if (g == nullptr)
         return 0.0F;
-    if (number == 12) // GetGaugeRatio
+    if (call == kGaugeRatio)
         return g->most != 0 ? g->level / float(g->most) : 0.0F;
-    if (number == 8) { // SetGauge
+    if (call == kSetGauge) {
         set_gauge(m, index, value);
         return 0.0F;
     }
@@ -1483,7 +1483,7 @@ int Field::mission(unsigned number, int first, int second)
         return 0;
     Kh2Mission &m = *kh2_mission;
     const auto count = [&](int index) {
-        const MissionPiece *c = mission_piece(m, 5, index);
+        const MissionPiece *c = mission_piece(m, kCounterPiece, index);
         return c != nullptr ? c->value : 0;
     };
     const auto end = [&](const char *how) {
@@ -1663,7 +1663,7 @@ void Field::player_carry(Object &o, Object *by)
     if (h == held.end())
         return;
     h->second.carried_by = it != by_actor.end() ? it->second->days : 0u;
-    // what carries him (+ 0x6a0, YS::OBJ's Attach: 1:161 -- the Experiment's catch holds him while it does)
+    // what carries him (1:161 asks: the Experiment's catch lasts while it does)
     o.set_u32(field::kCarrier, by != nullptr && h->second.carried_by != 0 ? by->address() : 0u);
     if (h->second.carried_by != 0 && player_jumps.erase(object) != 0) // his jump over: he is where it stands
         o.set_bits(field::kFlags, bit::kInAir, false);
@@ -1680,11 +1680,12 @@ Object &player_object(unsigned object)
         o = std::make_unique<Object>(mod().memory, "a player");
         o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
         o->set_u32(field::kTeam, kTeamPlayer);
-        // its Spec (1:97): walking, running, how high a jump goes, turning -- Sora's, Final Xemnas's Riku jumps by it
-        o->set_f(field::kSpec + 0x0, 2.0F);
-        o->set_f(field::kSpec + 0x4, 8.0F);
-        o->set_f(field::kSpec + 0x8, 185.0F);
-        o->set_f(field::kTurnSpeed, 0.262F);
+        // its Spec (1:97), Sora's (03system.bin's prty 1): Final Xemnas's Riku jumps by it
+        constexpr float kWalk = 2.0F, kRun = 8.0F, kJump = 185.0F, kTurn = 0.262F;
+        o->set_f(field::kWalkSpeed, kWalk);
+        o->set_f(field::kRunSpeed, kRun);
+        o->set_f(field::kJumpHeight, kJump);
+        o->set_f(field::kTurnSpeed, kTurn);
     }
     return *o;
 }
@@ -1723,8 +1724,8 @@ void player_fades_tick()
 void player_fades_over()
 {
     for (const auto &[object, f] : player_fades)
-        if (const auto actor = player_actors.find(object); actor != player_actors.end() && f.told != 31)
-            khdays_kh2_shell_player_alpha(actor->second, 31);
+        if (const auto actor = player_actors.find(object); actor != player_actors.end() && f.told != kWholeAlpha)
+            khdays_kh2_shell_player_alpha(actor->second, kWholeAlpha);
     player_fades.clear();
 }
 

@@ -32,6 +32,7 @@ constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 
 // its fall's most, its speed up and down, its acceleration; 1:97 gives a script its place): made by YS::OBJ's own
 // constructor (YS::SPEC::SPEC), a party member's from its tables (YS::SPEC::set)
 constexpr std::uint32_t kSpec = 0x128;
+constexpr std::uint32_t kWalkSpeed = kSpec + 0x0, kRunSpeed = kSpec + 0x4, kJumpHeight = kSpec + 0x8;
 constexpr std::uint32_t kTurnSpeed = kSpec + 0xc; // 1:80's step when it is given none
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
 constexpr std::uint32_t kMotionNow = 0x184; // the motion its controller plays (1:238: a reaction command's wait)
@@ -49,10 +50,7 @@ constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's 
 constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
 constexpr std::uint32_t kFacing = 0x680;    // vec4, its w the yaw: 1:79, 1:201
 constexpr std::uint32_t kYaw = 0x7a8;       // float: 1:4, 1:79
-// its team (YS::OBJ's, the PS3 build's + 0x3b0; 1:38): the classes' constructors make an enemy's 2 (YS::ENEMYBASE, but
-// Mushroom XIII's, is_kinoko: their scripts give their own), the player's and his party's 1 (YS::PARTY, YS::BTLNPC), a
-// gimmick's 3 (YS::GIMMICKOBJ), any other's 0. An attack strikes every team but its own and 0 (YS::ATTACK)
-constexpr std::uint32_t kTeam = 0x4dc;
+constexpr std::uint32_t kTeam = 0x4dc;      // its Team: made by its class (entry_team), changed by its script (1:38)
 constexpr std::uint32_t kFlags8c8 = 0x8c8;  // bit 6 set and cleared by 1:104, 1:105
 constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20, 1:28); bit 2 the dead mark (1:328)
 constexpr std::uint32_t kUnitArgs = 0x9f4;  // YS::OBJ's UnitArg: its spawn's values, a word each (1:39, 1:218)
@@ -84,6 +82,7 @@ constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1
 // kFlags: YS::OBJ's Flag (1:70 sets one, 1:71 clears it; the PS3 build's names): no touching objects, no being hit
 constexpr std::uint32_t kNoHitObject = 1u << 1, kNoHitAttack = 1u << 3;
 constexpr std::uint32_t kNoHitback = 1u << 7;    // kFlags: nothing pushes it back (YS::BTLOBJ::can_hitback)
+constexpr std::uint32_t kMovedAtOnce = 1u << 12; // kFade: put somewhere by its script (1:217), no travel between
 constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
 constexpr std::uint32_t kDeadMark = 1u << 2;    // kFade: counted as defeated (1:328, FUN_1403d4a40)
@@ -105,6 +104,9 @@ constexpr std::uint32_t kLevel = 0x24c;       // byte: its level
 constexpr std::uint32_t kOwner = 0x268;       // the object it is of
 constexpr std::uint32_t kSize = 0x270;
 } // namespace sheet
+
+// The events a hit runs: its state's routine (StateEntry::on_struck) and the script's trigger
+constexpr int kEventStruck = 3, kTriggerDamage = 6;
 
 // A hit as the scripts read it (YS::DAMAGE: trigger 6 gives one)
 namespace hit_record {
@@ -219,6 +221,13 @@ constexpr bool finishing_reaction(int r)
 // A push back (YS::BTLOBJ's hitback): its speed a tick a tenth of its length, kHitbackKept of itself each tick after,
 // over below kHitbackLeast
 constexpr float kHitbackTick = 0.1F, kHitbackKept = 0.9F, kHitbackLeast = 1.0F;
+
+// What a gauge call does (World::mission_gauge; its call number 4:n)
+enum GaugeCall : unsigned {
+    kSetGauge = 8,
+    kAddGauge = 9,
+    kGaugeRatio = 12,
+};
 
 // KH2's damage motions, by their number in a motion set
 namespace damage_motion {
@@ -857,9 +866,8 @@ public:
     {
         return place[1];
     }
-    // A place moved into space (1:220, 1:367: YS::OBJ::get_move_to_space_pos): a sphere of 100, 200 ... up to `length`
-    // cm round it put against the room and pushed out of its walls, each step kept while it stands on ground (`air`:
-    // wherever); whether any was
+    // A place moved till the room's walls are `length` cm from it (1:220, 1:367: YS::OBJ::get_move_to_space_pos),
+    // kept on the ground unless `air`; whether it could be
     virtual bool move_to_space(Actor & /*by*/, Vec3 & /*place*/, float /*length*/, bool /*air*/)
     {
         return false;
@@ -906,8 +914,8 @@ public:
     {
         return 0.0F;
     }
-    // 1:19, 1:20 on a player: his model faded from `from` to `to` over `time` ticks (YS::trap_sysobj_fadeout, _fadein)
-    // -- Xigbar's and Luxord's scripts fade him out before they put him elsewhere or turn him into a card
+    // 1:19, 1:20 on a player: his model faded from `from` to `to` over `time` ticks (Xigbar fades him out before he
+    // moves him)
     virtual void player_fade(Object & /*player*/, float /*from*/, float /*to*/, float /*time*/) {}
     // The actor of the form a player is turned into (1:242), which KH2's player then is; null while he is himself
     virtual Actor *player_turned(Object & /*player*/)
@@ -930,18 +938,15 @@ public:
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
     virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
-    // 1:146 on a player: his push back along a way (made one long) at a speed a tick, 0.9 of itself each tick till
-    // below 1 (YS::BTLOBJ::exec_hitback, as an actor's slide: Actor::step); 6:66 its speed 0, stopped -- Shan-Yu's
-    // reaction command 270 sends Sora on so
+    // 1:146 on a player: his push back along a way (one long) at a speed a tick, as an actor's slide; 6:66 its speed 0
     virtual void player_slide(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
-    // 1:63 on a player: whether the motion an enemy plays on him (1:29) has reached its loop, its blend run out (one
-    // that does not loop: its end) -- the Experiment's catch of him (253) lasts till then; false when none does
+    // 1:63 on a player: whether the motion an enemy plays on him (1:29) has reached its loop (or its end), its blend
+    // run out; false when none plays
     virtual bool player_in_loop(Object & /*player*/)
     {
         return false;
     }
-    // 1:55, 1:168 on a player: his jump (class 1's arc as an actor's, `jump`'s), his motion then the enemy's he is given
-    // (1:29) -- the Experiment's reaction command 603 throws him so at it
+    // 1:55, 1:168 on a player: his jump along class 1's arc, as an actor's, in the motion an enemy plays on him
     virtual void player_jump(Object & /*player*/, const Jump & /*jump*/) {}
     // 1:18 / 1:102 on a player: carried by one of KH2's actors (`by`, none: let down) -- he stands where it does, the
     // camera with him (Final Xemnas's grab puts Sora on Riku, whom the pad then moves); 1:133 / 1:134 on a player his
@@ -1015,9 +1020,9 @@ public:
     {
         return fallback;
     }
-    // the field's mission's gauge `index` (YS::MISSION's SetGauge, AddGauge, GetGaugeRatio): 8 set to `value`, 9
-    // `value` added, 12 its level over its most given back
-    virtual float mission_gauge(unsigned /*number*/, int /*index*/, float /*value*/)
+    // the field's mission's gauge `index`: set to `value`, `value` added, or its level over its most given back
+    // (GaugeCall)
+    virtual float mission_gauge(unsigned /*call*/, int /*index*/, float /*value*/)
     {
         return 0.0F;
     }
@@ -1092,10 +1097,8 @@ public:
     World *world = nullptr;
     const Motions *motions = nullptr;
     Playing motion;
-    // the objects whose motions follow this one's (1:126, YS::MOTION::sync: its list at + 0x94, each one's next at
-    // + 0x9c; 1:236 takes one off): each motion this one starts, they start too -- the same number, blend and frame
-    // (YS::MOTION::start_num, once its own start took). Twilight Thorn's B_EX200, carried on it, plays its own 208
-    // and 209 (their effects) as Twilight Thorn plays its
+    // the objects whose motions follow this one's (1:126, 1:236): each motion it starts they start too, the same
+    // number, blend and frame (YS::MOTION::start_num)
     std::vector<std::uint32_t> synced;
     Jump jump;
     // a jump waiting for its motion's take-off (1:55, 1:168, 1:156 keep their class in + 0x648, which a motion's

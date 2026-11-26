@@ -3,10 +3,8 @@
 
 namespace khdays::kh2_enemies::shell {
 
-// KH2's damage told to its mission (YS::UNITSCRIPT::DamageCallback, the PS3 build's: its trigger 6, given the object
-// struck and the hit -- Luxord's time gauges drain there): the hit as YS::DAMAGE, its damage (+ 0x28, 2:46) in KH2's
-// measure, its attacker (+ 0x10, 0 none known: Shan-Yu's mission takes twice his gates' damage by him) and its attack's
-// record (+ 0x20) of type `kind` (+ 4: 5 and 6 a cure, 2:72)
+// KH2's damage told to its mission (YS::UNITSCRIPT::DamageCallback: its trigger 6, given the object struck and the
+// hit): the hit as YS::DAMAGE, its damage in KH2's measure, its attacker (0 none known) and its attack's kind (2:72)
 void mission_damage(std::uint32_t object, std::int64_t damage, std::uint32_t attacker, int kind)
 {
     if (!kh2_mission || !kh2_mission->actor || kh2_mission->over || object == 0 || damage <= 0)
@@ -30,10 +28,8 @@ void mission_damage(std::uint32_t object, std::int64_t damage, std::uint32_t att
                    static_cast<long long>(damage));
 }
 
-// A KH2 mission ended by its boss's end (4:16 trap_mission_dead_boss): the battle is over, and what KH2's area holds of
-// it goes with the cutscene that follows. Days's wave still waits for each of them, so the other KH2 enemies of that
-// mission leave (their "leave", which fades them out) and count as defeated. Shan-Yu's falcon, kept at a tenth of its
-// health (it goes "out" and comes back, "in"), could never be beaten and kept the mission from ending
+// A KH2 mission ended by its boss's end (4:16): its other KH2 enemies leave (their "leave" state) and count as
+// defeated, as KH2's cutscene takes them away -- Days's wave waits for each of them (Shan-Yu's falcon never falls)
 void battle_over(const std::string &mission)
 {
     std::vector<Enemy *> others;
@@ -131,9 +127,10 @@ void start_mission(const std::string &name)
     mm.actor->machine().start_main(3);
     std::string pieces;
     for (const MissionPiece &p : mm.pieces)
-        pieces += p.kind == 4   ? " (a timer of " + std::to_string(p.most / 60) + " s)"
-                  : p.kind == 6 ? " (a gauge at " + std::to_string(p.value) + " of " + std::to_string(p.most) + ")"
-                                : " (a count of " + std::to_string(p.value) + ")";
+        pieces += p.kind == kTimerPiece ? " (a timer of " + std::to_string(p.most / 60) + " s)"
+                  : p.kind == kGaugePiece
+                      ? " (a gauge at " + std::to_string(p.value) + " of " + std::to_string(p.most) + ")"
+                      : " (a count of " + std::to_string(p.value) + ")";
     khdays_log("kh2 enemies: mission %s set going%s", name.c_str(), pieces.c_str());
 }
 } // namespace khdays::kh2_enemies::shell

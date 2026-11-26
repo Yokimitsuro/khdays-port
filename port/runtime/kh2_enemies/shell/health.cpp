@@ -169,11 +169,9 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // a party member's blow (Riku's): him the striker, and the patterns that ask for one not the player's on
     Object *party = blow && e->landing_party != 0 ? Object::at(mod().memory, e->landing_party) : nullptr;
     e->landing_party = 0;
-    // its reaction: a Days hit's a small one (REACTION_SMALL, 3: most of KH2's player's attacks' in atkp), a full one's
-    // (Days's finishing hit: its packet's 0x20) a small finishing one (REACTION_F_SMALL, 6: KH2's finishing reactions are
-    // 6, 7, 10 and 11, trap_damage_is_finish's -- the Experiment falls apart only to a finish at 70% of its health); a
-    // KH2 player's blow's its attacks' (atkp + 10): "The End"'s and Cerberus's finish's none (0) -- the enemy then goes
-    // on as it was (Roxas's rc_duelbaut on to his second phase); then as the enemy's damage patterns on change it
+    // its reaction: a Days hit's a small one, a finishing one for Days's finishers (the Experiment falls apart only to
+    // a finish); a KH2 player's blow's its attack's (none for "The End" and Cerberus's finish: the enemy goes on as it
+    // was); then as the enemy's damage patterns change it
     const int first_reaction = blow ? e->landing_reaction : e->days_full ? kReactionFinishSmall : kReactionSmall;
     e->days_full = false;
     const int hit_reaction = hit_pattern_reaction(*e->actor, first_reaction, party != nullptr);
@@ -186,8 +184,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     if (!blow && damage > 0)
         e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     Actor &a = *e->actor;
-    // its sheet's health the hit's by now (YS::BTLOBJ::add_damage, before its mission and its trigger 6 are told): the
-    // Hostile Program's trigger 6 asks for it (1:230) to change at 80%, 60% and 40%
+    // its sheet's health the hit's by now, before its mission and its trigger 6 are told (the Hostile Program changes
+    // at shares of its health)
     the_field().health(a);
     // the last to hit it (2:88): the party member whose blow it is, else the nearest player
     Object *striker = party != nullptr ? party : the_field().player(a);
@@ -197,11 +195,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         // counted defeated (+ 0x9b8 bit 2, FUN_1403d4a40 as its death tells its group): what 1:272 reads -- Zexion
         // asks it of his books
         a.set_bits(field::kFade, bit::kDeadMark, true);
-        // an enemy's (its entry's kind 4: the PS3 build's YS::ZAKO::_OVR__dead) tells the field: signal 75 with its
-        // serial (the water clones' end counted by Demyx and his mission)
-        // a boss's (its entry's kind 3, or 0xc a large one's: YS::BOSS::_OVR__dead) signal 4 with its entry's number:
-        // its mission completes on it (Barbossa's asks for his, 1015) -- but not one sent away as its battle ends
-        // (battle_over), which in KH2 does not die
+        // the field told (YS::ZAKO::_OVR__dead, YS::BOSS::_OVR__dead): Demyx counts his water clones' ends, a boss's
+        // mission completes on it -- but not on one sent away as its battle ends (battle_over)
         if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0) {
             const unsigned kind = entry_kind(mod().memory, entry);
             if (kind == kEntryEnemy)
@@ -318,9 +313,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
 
 // Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): its script's FLAG_NOHIT_ATTACK and
 // FLAG_NOHIT_OBJ (+ 0x120 bits 3 and 1): no hit lands, nothing touches it (the Mole Driller under the ground) -- but
-// the hit that counts it defeated (dead_mark: Zexion's illusion ends with its hits off). Nor does a player's, of the
-// player's team, on a KH2 enemy of his team or of none (YS::ATTACK::is_strike: the Experiment's head and arms while its
-// body catches them, 1:38)
+// the hit that counts it defeated (dead_mark: Zexion's illusion ends with its hits off). Nor does a player's on a KH2
+// enemy his team does not strike (the Experiment's head and arms while its body catches them, 1:38)
 extern "C" int khdays_kh2_enemies_untouched(void *actor)
 {
     const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
@@ -347,9 +341,8 @@ extern "C" int khdays_kh2_enemies_disarmed(void *enemy, void *source)
     return disarmed ? 1 : 0;
 }
 
-// Ov022_ActorSetHp (prepare.py): the HP `actor` (a player's) is about to be given. Withstanding (his damage pattern 9
-// on, 1:211: YS::BTLOBJ::is_withstand), he is left one over his least, which is none: Xigbar's desperate attack, which
-// holds him in its arena, does not defeat him
+// Ov022_ActorSetHp (prepare.py): the HP `actor` (a player's) is about to be given; 1 at least while a KH2 script has
+// him withstand (Xigbar's desperate attack does not defeat him)
 extern "C" int khdays_kh2_enemies_withstand(void *actor, int hp)
 {
     if (hp > 0 || players.empty())
@@ -369,7 +362,7 @@ extern "C" int khdays_kh2_enemies_withstand(void *actor, int hp)
 extern "C" int khdays_kh2_enemies_reflected(void *actor, void *source, int flags)
 {
     Enemy *e = find(unsigned(KHDAYS_REF(actor)));
-    if (e != nullptr) // (the hit's packet as Ov107_AiState_ApplyHit begins it: its kind for khdays_kh2_enemies_hit)
+    if (e != nullptr) // (the hit's kind, for khdays_kh2_enemies_hit)
         e->days_full = source != nullptr && (flags & kDaysHitFull) != 0;
     if (source == nullptr || e == nullptr || e->dying || e->dead_marked || e->blow_landing || !e->actor)
         return 0; // (dead_mark's hit, which counts it defeated, meets no attack of its)
@@ -421,9 +414,8 @@ namespace khdays::kh2_enemies::shell {
 
 namespace {
 
-// The area's blow, what its KH2 enemies' health is measured in (reference_blow): a plain blow of the player's, of the
-// first of them, on the enemy struck -- not the hit's own damage, a finisher's or a spell's (Roxas at level 100: 40 a
-// plain blow, 413 a finisher, 902 an Aero -- an enemy first struck by one stood ten, twenty times its health). 0: none
+// The area's blow its KH2 enemies' health is measured in (reference_blow): the first player's plain blow on the enemy
+// struck, not the hit's own damage (a finisher or a spell does ten, twenty times as much). 0: none
 int plain_blow(const Enemy &e)
 {
     std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
@@ -441,8 +433,7 @@ int kept_damage(void *actor, int amount, int kinds)
     if (e == nullptr || e->dying || amount <= 0)
         return amount;
     e->hit_kinds = unsigned(kinds);
-    // the hit that counts it defeated (dead_mark): all of it, whatever its least, its withstanding or its elements
-    // keep -- Shan-Yu's falcon, which KH2 never lets fall, goes as his battle ends
+    // the hit that counts it defeated (dead_mark) takes all of it, whatever would keep it (Shan-Yu's falcon)
     if (KhdaysKh2Shell whole; e->dead_marked && khdays_kh2_shell_read(e->days, &whole)) {
         e->health_taken = std::max<std::int64_t>(1, e->health);
         e->health = e->health >= 0 ? 0 : e->health;

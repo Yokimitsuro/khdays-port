@@ -489,24 +489,20 @@ void trace_slivers(const Enemy &e, const KindFiles &files, const Enemy::Running 
                e.days, number, r.element->effect, double(r.age), slivers, double(longest), behind, all);
 }
 
-// PAX::MANAGER::exec's deletions of an effect on an object (none of one its script placed in the world or let go): the
-// motion running as it started over, as another starts (MOTION::end), for an element linked to it (0x20) -- Shan-Yu's
-// shock waves (his 207's, which loop till then: they stood one on another, the floor white for the rest of the
-// fight) -- or its object gone (a fallen enemy whose end is over) for one that goes with it (0x200; a linked one too,
-// its leaving ending its motion). Once, as system_delete does it: its loops closed (0x80), else faded out over its
-// element's frames (0x40), else it plays on
+// An effect on an object deleted, once (PAX::MANAGER::exec, ElementFlags): one linked to the motion it began in as
+// that motion ends (Shan-Yu's looping shock waves), one that goes with its object as the object goes
 void unlink(const Enemy &e, Enemy::Running &r)
 {
     if (r.deleted || r.in_world || r.element == nullptr)
         return;
     const std::uint32_t flags = r.element->flags;
-    const bool over = (flags & 0x20u) != 0 && motion_of(e, r.player) != r.motion;
-    if (!over && !(e.released && (flags & 0x220u) != 0))
+    const bool over = (flags & kElementLinked) != 0 && motion_of(e, r.player) != r.motion;
+    if (!over && !(e.released && (flags & (kElementLinked | kElementGoesWithObject)) != 0))
         return;
     r.deleted = true;
-    if ((flags & 0x80u) != 0) {
+    if ((flags & kElementCloses) != 0) {
         r.fx->stop();
-    } else if ((flags & 0x40u) != 0) {
+    } else if ((flags & kElementFades) != 0) {
         if (r.element->fade <= 0)
             r.fade = 0.0F; // (fadeout_kill of 0: killed)
         r.fade_step = r.fade > 0.0F ? -r.fade / float(r.element->fade) : -1.0F;
@@ -783,7 +779,7 @@ void ghosts_close()
         float view[16];
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
-        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * 31.0F));
+        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * float(kWholeAlpha)));
         if (alpha == 0 || e.pose.empty() || e.released) // (its end over: gone, its last effects alone left)
             continue;
         std::vector<float> bones(e.pose.size() * 16);
@@ -950,7 +946,7 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
         khdays_ui_reaction_mark_draw(spot);
     }
     draw_effects(*e, view, pure);
-    const unsigned alpha = unsigned(std::lround(drawn_fade(*e) * 31.0F));
+    const unsigned alpha = unsigned(std::lround(drawn_fade(*e) * float(kWholeAlpha)));
     if (alpha == 0 || e->pose.empty())
         return 1; // gone: nothing of it, nor of its stand-in
     std::vector<float> bones(e->pose.size() * 16);

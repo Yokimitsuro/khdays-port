@@ -370,9 +370,8 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         }
     }
     const Vec3 asked = {h.move[0] + h.steer[0], h.move[1] + h.steer[1], h.move[2] + h.steer[2]};
-    // a jump a script gave him (1:55: player_jumps) while nothing carries him: class 1's as an enemy's (Actor::update)
-    // -- its height by its time, its way along kept 0.9 a tick and the rest the steering's (1:111), 0.95 kept unsteered
-    // -- in the air till he meets the ground past its top, where he lands (hold's loop: let go)
+    // a jump a script gave him (1:55: player_jumps) while nothing carries him, as an enemy's (Actor::update): its
+    // height by its time, its way along steered (1:111) or slowed; he lands on the ground past its top
     const auto jumping = h.carried_by == 0 ? player_jumps.find(object) : player_jumps.end();
     if (jumping != player_jumps.end()) {
         Jump &j = jumping->second;
@@ -585,14 +584,13 @@ extern "C" int khdays_kh2_enemies_holding(void *actor)
         khdays_kh2_shell_player_recoil(unsigned(KHDAYS_REF(actor)), r->second.data());
         recoils.erase(r);
     }
-    // his model faded as a script asked (1:19, 1:20): its materials' alpha, as Days's camera fades him when it is near
-    // -- whole again once no KH2 enemy is left to fade him back in (its battle over while he was out)
+    // his model faded as a script asked (1:19, 1:20); whole again once no KH2 enemy is left to fade him back in
     if (const auto f = player_fades.find(object); f != player_fades.end()) {
         if (enemies.empty() && allies.empty()) {
             f->second.now = 1.0F;
             f->second.step = 0.0F;
         }
-        if (const int alpha = int(std::lround(f->second.now * 31.0F)); alpha != f->second.told) {
+        if (const int alpha = int(std::lround(f->second.now * float(kWholeAlpha))); alpha != f->second.told) {
             f->second.told = alpha;
             khdays_kh2_shell_player_alpha(unsigned(KHDAYS_REF(actor)), std::max(1, alpha)); // (none of it: undrawn)
         }

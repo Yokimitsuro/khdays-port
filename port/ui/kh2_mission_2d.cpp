@@ -157,6 +157,9 @@ int column_of(const kh2e::MissionPiece &k)
     return std::clamp(k.align, 0, 2);
 }
 
+// FNV-1a's start and prime: what tells a layer's draw from the last
+constexpr std::uint64_t kFnvBasis = 0xcbf29ce484222325ull, kFnvPrime = 0x100000001b3ull;
+
 // A piece's picture and sequence; its picture as one of the port's textures (kept while the port runs, as those are)
 struct Pictures final {
     seq::SequenceData sequence;
@@ -193,11 +196,11 @@ struct Canvas final {
 // FNV-1a over the quads' every vertex and blending, and the canvas they are drawn in
 std::uint64_t hash_of(const std::vector<seq::SequenceQuad> &quads, const Canvas &c)
 {
-    std::uint64_t h = 0xcbf29ce484222325ull;
+    std::uint64_t h = kFnvBasis;
     const auto add = [&h](const void *data, std::size_t size) {
         const auto *b = static_cast<const unsigned char *>(data);
         for (std::size_t i = 0; i < size; ++i)
-            h = (h ^ b[i]) * 0x100000001b3ull;
+            h = (h ^ b[i]) * kFnvPrime;
     };
     for (const seq::SequenceQuad &q : quads) {
         for (const seq::SequenceVertex &v : q.vertices) {
@@ -374,9 +377,9 @@ void open(Piece &p)
     p.shown = p.shown_most = std::numeric_limits<int>::min();
     p.countdown = 0;
     p.closing = false;
-    if (p.kh2.kind == 4)
+    if (p.kh2.kind == kh2e::kTimerPiece)
         open_timer(p);
-    else if (p.kh2.kind == 6)
+    else if (p.kh2.kind == kh2e::kGaugePiece)
         open_gauge(p);
     else
         open_counter(p);
@@ -496,7 +499,7 @@ void alert_update(Piece &p)
     if (p.kh2.alert == p.alerting || p.sprites.size() < 2)
         return;
     p.alerting = p.kh2.alert;
-    const bool counter = p.kh2.kind == 5;
+    const bool counter = p.kh2.kind == kh2e::kCounterPiece;
     set(p, 0, p.alerting ? 0 : 4);
     set(p, 1, p.alerting ? 6 : 10);
     p.sprites[0].next = p.alerting && counter ? 1 : -1;
@@ -591,7 +594,8 @@ void load(const kh2e::MissionView &v)
     for (const kh2e::MissionPiece &k : v.pieces) {
         Piece p;
         p.kh2 = k;
-        if ((k.kind == 4 || k.kind == 5 || k.kind == 6) && k.entry >= 0 && std::size_t(k.entry) + 1 < entries.size()) {
+        if ((k.kind == kh2e::kTimerPiece || k.kind == kh2e::kCounterPiece || k.kind == kh2e::kGaugePiece) &&
+            k.entry >= 0 && std::size_t(k.entry) + 1 < entries.size()) {
             auto &found = loaded[k.entry];
             try {
                 const std::string key = file + "#" + std::to_string(k.entry);
@@ -627,7 +631,7 @@ void load(const kh2e::MissionView &v)
                 }
                 // the clips its code plays (a timer's to its large 3, 31; a counter's to its columns', 37; a gauge's
                 // to its columns', 17)
-                const int last = k.kind == 4 ? 31 : k.kind == 6 ? 17 : 37;
+                const int last = k.kind == kh2e::kTimerPiece ? 31 : k.kind == kh2e::kGaugePiece ? 17 : 37;
                 if (found->sequence.clips.size() <= std::size_t(last))
                     throw std::runtime_error("entry " + std::to_string(k.entry + 1) + "'s sequence has " +
                                              std::to_string(found->sequence.clips.size()) + " clips, " +
@@ -635,7 +639,10 @@ void load(const kh2e::MissionView &v)
                 p.pictures = found;
             } catch (const std::exception &e) {
                 khdays_log("kh2 mission pieces: %s's %s: %s; not shown", file.c_str(),
-                           k.kind == 4 ? "timer" : k.kind == 6 ? "gauge" : "counter", e.what());
+                           k.kind == kh2e::kTimerPiece   ? "timer"
+                           : k.kind == kh2e::kGaugePiece ? "gauge"
+                                                         : "counter",
+                           e.what());
             }
         }
         pieces.push_back(std::move(p));
@@ -704,14 +711,14 @@ void draw_overlays(const std::vector<Overlay> &overlays, std::vector<std::uint32
     }
 }
 
-// The overlays added to a hash: their places, pictures and texts
+// The overlays added to a hash (FNV-1a, as hash_of's): their places, pictures and texts
 void add_overlays(std::uint64_t &h, const std::vector<Overlay> &overlays)
 {
     for (const Overlay &o : overlays) {
         const auto add = [&h](const void *data, std::size_t size) {
             const auto *b = static_cast<const unsigned char *>(data);
             for (std::size_t i = 0; i < size; ++i)
-                h = (h ^ b[i]) * 0x100000001b3ull;
+                h = (h ^ b[i]) * kFnvPrime;
         };
         add(&o.x0, sizeof o.x0), add(&o.y0, sizeof o.y0), add(&o.x1, sizeof o.x1), add(&o.y1, sizeof o.y1);
         add(&o.key, sizeof o.key), add(&o.alpha, sizeof o.alpha), add(&o.font, sizeof o.font);
@@ -1057,9 +1064,9 @@ extern "C" void khdays_ui_kh2_mission_2d_frame(unsigned)
             else if (!v.shown && alive(p) && !p.closing)
                 close(p);
             if (alive(p) && !p.closing) {
-                if (p.kh2.kind == 4)
+                if (p.kh2.kind == kh2e::kTimerPiece)
                     timer_update(p);
-                else if (p.kh2.kind == 6)
+                else if (p.kh2.kind == kh2e::kGaugePiece)
                     gauge_update(p);
                 else
                     counter_update(p);

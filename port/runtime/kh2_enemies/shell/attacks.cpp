@@ -90,7 +90,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
         float nearest = -1.0F, reach = 0.0F, centre[3] = {}, toward = 0.0F;
         int spheres = 0;
         for (const Shape &sh : e.kind->shapes) {
-            if (sh.group != group || (sh.kind & 0xff) != 6)
+            if (sh.group != group || (sh.kind & 0xff) != kTypeAttack)
                 continue;
             float c[3];
             ++spheres;
@@ -150,7 +150,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
             const Vec3 f = days_facing(a.yaw()); // (Days's places)
             std::string where;
             for (const Shape &sh : e.kind->shapes) {
-                if ((sh.kind & 0xff) != 6)
+                if ((sh.kind & 0xff) != kTypeAttack)
                     continue;
                 float c[3];
                 days_point(e, s, sh.bone, sh.at, c);
@@ -210,7 +210,7 @@ void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group,
         return; // (an enemy's attack among enemies of its own team: the most of them)
     const int power = attack_power(atkp);
     for (const Shape &sh : e.kind->shapes) {
-        if (sh.group != group || (sh.kind & 0xff) != 6)
+        if (sh.group != group || (sh.kind & 0xff) != kTypeAttack)
             continue;
         float c[3];
         days_point(e, s, sh.bone, sh.at, c);
@@ -527,7 +527,7 @@ bool clashed(Enemy &e, unsigned player, Object &who)
         }
         float nearest = std::numeric_limits<float>::max();
         for (const Shape &sh : e.kind->shapes) {
-            if (sh.group != group || (sh.kind & 0xff) != 6)
+            if (sh.group != group || (sh.kind & 0xff) != kTypeAttack)
                 continue;
             float c[3];
             days_point(e, s, sh.bone, sh.at, c);

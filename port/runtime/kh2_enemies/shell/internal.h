@@ -207,6 +207,15 @@ struct Shape final {
     float height = 0.0F, radius = 0.0F;
 };
 
+// An effect element's flags the port reads: deleted as the motion it began in ends, or as its object goes; once
+// deleted, its loops closed, else faded out, else it plays on (PAX::MANAGER::system_delete)
+enum ElementFlags : std::uint32_t {
+    kElementLinked = 0x20,
+    kElementFades = 0x40,
+    kElementCloses = 0x80,
+    kElementGoesWithObject = 0x200,
+};
+
 // An effect's element, as KH2FM.exe's FUN_1402c6b30 starts one (the PAX's records of 0x50 bytes from + 0x10, their
 // count at + 8): u16 its effect (the 0x82 directory's entry of that number), u16 its number (what a motion's trigger 1
 // and 1:87 name), + 6 u16 the bone it follows (0x4000 none: the actor itself; FUN_1403b50f0), + 0x10 flags, + 0x14
@@ -215,11 +224,8 @@ struct Shape final {
 struct Element final {
     std::size_t effect = 0, emitter = 0; // in KindFiles::fx
     int bone = kNoBone;
-    // + 0x10: 0x20 linked to the motion of the object it is on (its MOTION's list, PAX::create -> MOTION::link_effect),
-    // 0x200 deleted as that object goes; deleted (PAX::MANAGER::system_delete): 0x80 its loops closed, else 0x40 faded
-    // out over `fade` frames (+ 5; 0 at once), else it plays on
-    std::uint32_t flags = 0;
-    int fade = 0;
+    std::uint32_t flags = 0; // + 0x10: ElementFlags
+    int fade = 0;            // + 5: the frames it fades out over (kElementFades), 0 at once
     float start = 0.0F;
     int sound = 0;
     std::array<float, 3> place{}, turn{}, size{1.0F, 1.0F, 1.0F};
@@ -518,7 +524,7 @@ struct Enemy final {
         float fade = 1.0F, fade_step = 0.0F;
         bool paused = false; // held where it is (0:66, ryj::EFFECT::stop(true)): drawn as it stands, not run
         int dome = 0; // one of the laser dome's (LaserDome): 1 its lasers', 2 hits', 3 bounces', 4 bursts' -- 0 none
-        int prizes = 0; // a file's prizes' (prizes.cpp: 1 the orbs', 2 the data's): they are its points -- 0 none
+        int prizes = 0; // a file's prizes' (their PrizeKind + 1, prizes.cpp): they are its points -- 0 none
         // its two points when last drawn (a swing trail's base and tip): the ticks between two draws take theirs
         // between those and the new ones, as KH2's bones give a new pair each tick
         std::vector<kh2::EffectPoint> points_before;
@@ -720,11 +726,13 @@ inline std::map<unsigned, Held> held; // by the Days player's object
 inline std::map<unsigned, Jump> player_jumps;
 // the Days players a script hid (1:133) by their object, their models' hiding as last told (khdays_kh2_enemies_holding)
 inline std::map<unsigned, bool> hidden_players, hidden_told;
+// A Days model's materials' alpha: all of it
+constexpr int kWholeAlpha = 31;
 // a Days player's fade a script asked for (1:19, 1:20, 1:28 on him), by his object: how much of his model is drawn, its
-// change a tick, the model's alpha as last told (Days's 31 all of it); gone once he is drawn whole again
+// change a tick, the model's alpha as last told; gone once he is drawn whole again
 struct PlayerFade final {
     float now = 1.0F, step = 0.0F;
-    int told = 31;
+    int told = kWholeAlpha;
 };
 inline std::map<unsigned, PlayerFade> player_fades;
 // whether one is faded out whole (his model and his weapons not drawn)
@@ -1066,9 +1074,9 @@ struct Friend final {
 };
 inline std::map<unsigned, Friend> friends; // by their ally's number
 // The KH2 collision type of a shape (its kind's low byte: YS::COLLISION's TYPE_*): 1 TYPE_OBJ, an object's body (what
-// LASER::check_obj_hit tests, YS::OBJ::get_collision(1)); 2 TYPE_HIT, the spheres on its bones an attack strikes; 16
-// TYPE_STUN, where its knock-out stars stand
-constexpr int kTypeObj = 1, kTypeHit = 2, kTypeStun = 16;
+// LASER::check_obj_hit tests, YS::OBJ::get_collision(1)); 2 TYPE_HIT, the spheres on its bones an attack strikes; 6
+// an attack's spheres; 16 TYPE_STUN, where its knock-out stars stand
+constexpr int kTypeObj = 1, kTypeHit = 2, kTypeAttack = 6, kTypeStun = 16;
 
 // The party members an enemy's attacks may reach: each standing, its health known
 template <typename F> void each_member(F &&f)
@@ -1130,13 +1138,22 @@ inline int reference_blow = 0;
 // entry's number, + 2 its level -- the Data Organization's 99 --, + 4 its 32 health values, the first its own: KH2
 // times it by LVPM's for the level, which the share between two entries leaves out); zeros when the mod's file has
 // no such entry
+constexpr int kPercent = 100, kPerTenThousand = 10000;
+constexpr int kElements = 6;             // an attack's elements (0 physical, 1 fire, 2 blizzard, 3 thunder ...)
+constexpr int kEveryElement = kElements; // a battle row's rate for every hit
 struct BattleRow final {
     int health = 0, level = 0;
-    // the most and the least of its health a hit takes before its power's rates (+ 0x44, + 0x46, per 10000:
-    // YS::SHEET::set), and its rates by element, the seventh every hit's (+ 0x48, percent)
-    int most = 10000, least = 0;
-    std::array<int, 7> rates{100, 100, 100, 100, 100, 100, 100};
+    // the most and the least of its health a hit takes before its power's rates (+ 0x44, + 0x46, per ten thousand:
+    // YS::SHEET::set), and its rates (percent) by element, then every hit's (+ 0x48)
+    int most = kPerTenThousand, least = 0;
+    std::array<int, kElements + 1> rates{100, 100, 100, 100, 100, 100, 100};
 };
+
+// v / per, rounded up (KH2's damage's sums)
+constexpr std::int64_t rounded_up(std::int64_t v, std::int64_t per)
+{
+    return (v + per - 1) / per;
+}
 
 // KH2's level parameters (00battle.bin's lvpm, YS::LEVELPARAM: 12 bytes a level from 1 -- + 0 its health's
 // percentage, + 2 strength, + 4 defence, + 6 the most and + 8 the least of an enemy's strength over a defence, + 10
@@ -1363,7 +1380,7 @@ public:
     void check_warning(const Kh2Mission &m, MissionPiece &p, int value);
     void mission_warning(int kind, int index, bool on) override;
     void set_gauge(Kh2Mission &m, int index, float level);
-    float mission_gauge(unsigned number, int index, float value) override;
+    float mission_gauge(unsigned call, int index, float value) override;
     Object *attack_owner(std::uint32_t at) override;
     bool star(const Object &o) override;
     std::uint32_t player_sheet(const Object &o) override;
@@ -1444,6 +1461,17 @@ int made_team(int atkp, const Object *owner);
 int attack_team_made(int team);
 bool attack_reacts(int atkp);
 const std::vector<DamagePattern> &damage_patterns();
+
+// The health a cure gives (YS::SHEET::calc_damage): its power's share of `most` times the strength (kCureShare), or
+// of the strength (kCure); -1 for an attack that is no cure
+inline int cure_amount(const AttackParam &ap, std::int64_t most, std::int64_t strength)
+{
+    if (ap.kind == attack_record::kCureShare)
+        return int(rounded_up(most * strength * ap.power, kPerTenThousand));
+    if (ap.kind == attack_record::kCure)
+        return int(rounded_up(strength * ap.power, kPercent));
+    return -1;
+}
 
 // field.cpp -- The scripts' world as Days's field answers it (Field, World's calls).
 Field &the_field();

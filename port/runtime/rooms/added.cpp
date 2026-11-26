@@ -160,32 +160,38 @@ std::vector<unsigned char> write_p2(const P2 &p)
     return b;
 }
 
-// A room record of the room table: 0x20 bytes (id, its exits' count, its objects' count, its collision's member, ...,
-// its exits' offset at +0x1c), then its objects' offsets (u32 each, from the record), then its object (u8 flags, u8
-// its model's member, u16). Its heights, 20.12: +4 its floor's (not read), +8 the fall's (Ov002_GetSlotFloor:
-// Ov022_SelectForcedState takes the HP of a player 3 s below it), +0xc the camera's top
-// (Ov002_ResolveCameraAgainstCollision), +0x10 the player's (Ov002_GetSlotGround: Ov022_ActorUpdate puts one at it less
-// 2 m down to there).
+// A room record of the room table: kRecord bytes, then its objects' offsets (u32 each, from the record), then its object
+// (u8 flags, u8 its model's member, u16).
 constexpr std::size_t kRecord = 0x20;
-// The game's rooms under an open sky: the camera's top 30 m over the floor, the player's 100, the fall's 30 under it.
-constexpr int kCameraTop = 30 * 4096, kPlayerTop = 100 * 4096, kFall = 30 * 4096;
+constexpr std::size_t kRecordId = 0x0, kRecordExitCount = 0x1, kRecordObjectCount = 0x2;
+constexpr std::size_t kRecordCollision = 0x3; // its collision's member
+// Its heights (20.12): its floor's (not read), the fall's (Ov002_GetSlotFloor: a player 3 s below it loses his HP),
+// the camera's top (Ov002_ResolveCameraAgainstCollision) and the player's (Ov002_GetSlotGround: one above it is put 2 m
+// under it)
+constexpr std::size_t kRecordFloor = 0x4, kRecordFall = 0x8, kRecordCameraTop = 0xc, kRecordPlayerTop = 0x10;
+constexpr std::size_t kRecordExits = 0x1c; // its exits' offset
+constexpr int kMetre = 4096;               // 20.12
+// The game's rooms under an open sky: the camera's top 30 m over the floor, the player's 100, the fall's 30 under it;
+// a record's heights hold a floor 2 m under its tops
+constexpr int kCameraTop = 30 * kMetre, kPlayerTop = 100 * kMetre, kFall = 30 * kMetre, kHeadRoom = 2 * kMetre;
 
 // The lowest and the highest corner (20.12) of the grounds of a room's collision (docs/RUNTIME_MAP.md, "A room's
-// collision": their count at +0x7c, their place at +0xa0, 0x88 bytes each, +0x12 their corners, +0x50 the corners);
-// false when it has none it can read.
+// collision"); false when it has none it can read.
 bool ground_heights(const std::vector<unsigned char> &b, int *lowest, int *highest)
 {
-    constexpr std::size_t kHeader = 0xb0, kGround = 0x88;
+    constexpr std::size_t kHeader = 0xb0, kGroundCount = 0x7c, kGroundsAt = 0xa0; // u16, u32
+    constexpr std::size_t kGround = 0x88, kCornerCount = 0x12, kCorners = 0x50;   // u16; 3 words each, its y second
+    constexpr std::size_t kCorner = 12, kCornerY = 4, kMostCorners = 4;
     if (b.size() < kHeader)
         return false;
-    const std::size_t count = le16(b, 0x7c), at = le32(b, 0xa0);
+    const std::size_t count = le16(b, kGroundCount), at = le32(b, kGroundsAt);
     if (at > b.size() || count > (b.size() - at) / kGround)
         return false;
     bool found = false;
     for (std::size_t g = 0; g < count; ++g) {
         const std::size_t face = at + kGround * g;
-        for (std::size_t c = 0; c < std::min<std::size_t>(le16(b, face + 0x12), 4); ++c) {
-            const int y = static_cast<int>(le32(b, face + 0x50 + 12 * c + 4));
+        for (std::size_t c = 0; c < std::min<std::size_t>(le16(b, face + kCornerCount), kMostCorners); ++c) {
+            const int y = static_cast<int>(le32(b, face + kCorners + kCorner * c + kCornerY));
             *lowest = found ? std::min(*lowest, y) : y;
             *highest = found ? std::max(*highest, y) : y;
             found = true;
@@ -299,7 +305,7 @@ void read_map(const fs::path &folder, Added *a)
                    a->mod_path.c_str(), a->key.c_str());
         return;
     }
-    a->cell = static_cast<int>(cell * 4096 + 0.5);
+    a->cell = static_cast<int>(cell * kMetre + 0.5);
     const std::u8string png = (folder / "map.png").u8string();
     int w = 0, h = 0;
     const char *error = nullptr;
@@ -348,7 +354,7 @@ bool plan(const std::string &world, const std::vector<unsigned char> &archive)
         return false;
     }
     const std::size_t first = le32(table, 4);
-    if (first + kRecord + 4 > table.size() || table[first + 2] == 0) {
+    if (first + kRecord + 4 > table.size() || table[first + kRecordObjectCount] == 0) {
         khdays_log("rooms: %s's room 0 has no model to copy: its added rooms left out", game_path.c_str());
         return false;
     }
@@ -755,25 +761,28 @@ bool khdays_rooms_own_heights(const std::vector<unsigned char> &game, std::vecto
     bool changed = false;
     for (unsigned r = 0; r < table[0]; ++r) {
         const std::size_t at = le32(table, 4 + 4 * r), before = r < was[0] ? le32(was, 4 + 4 * r) : was.size();
-        if (at + kRecord > table.size() || table[at + 3] >= p.entries.size())
+        if (at + kRecord > table.size() || table[at + kRecordCollision] >= p.entries.size())
             continue;
-        const std::vector<unsigned char> collision = unpacked(p, table[at + 3]);
-        if (before + kRecord <= was.size() && was[before + 3] < own.entries.size() &&
-            unpacked(own, was[before + 3]) == collision)
+        const std::vector<unsigned char> collision = unpacked(p, table[at + kRecordCollision]);
+        if (before + kRecord <= was.size() && was[before + kRecordCollision] < own.entries.size() &&
+            unpacked(own, was[before + kRecordCollision]) == collision)
             continue; // the game's own room
         int lowest = 0, highest = 0;
         if (!ground_heights(collision, &lowest, &highest))
             continue;
         const auto word = [&table, at](std::size_t o) { return static_cast<int>(le32(table, at + o)); };
-        // held: the player's place 2 m under his top at least, as much to the camera's (the game's rooms leave it)
-        if (highest <= word(0x10) - 2 * 4096 && highest <= word(0xc) - 2 * 4096 && lowest >= word(8))
-            continue;
+        if (highest <= word(kRecordPlayerTop) - kHeadRoom && highest <= word(kRecordCameraTop) - kHeadRoom &&
+            lowest >= word(kRecordFall))
+            continue; // held
         khdays_log("rooms: a mod's room %u: its floors (%.2f to %.2f) not held by its heights (the fall's %.2f, the "
                    "camera's top %.2f, the player's %.2f): its own",
-                   r, lowest / 4096.0, highest / 4096.0, word(8) / 4096.0, word(0xc) / 4096.0, word(0x10) / 4096.0);
-        put32(table, at + 8, static_cast<unsigned>(std::min(word(8), lowest - kFall)));
-        put32(table, at + 0xc, static_cast<unsigned>(std::max(word(0xc), highest + kCameraTop)));
-        put32(table, at + 0x10, static_cast<unsigned>(std::max(word(0x10), highest + kPlayerTop)));
+                   r, double(lowest) / kMetre, double(highest) / kMetre, double(word(kRecordFall)) / kMetre,
+                   double(word(kRecordCameraTop)) / kMetre, double(word(kRecordPlayerTop)) / kMetre);
+        put32(table, at + kRecordFall, static_cast<unsigned>(std::min(word(kRecordFall), lowest - kFall)));
+        put32(table, at + kRecordCameraTop,
+              static_cast<unsigned>(std::max(word(kRecordCameraTop), highest + kCameraTop)));
+        put32(table, at + kRecordPlayerTop,
+              static_cast<unsigned>(std::max(word(kRecordPlayerTop), highest + kPlayerTop)));
         changed = true;
     }
     if (changed) {
@@ -832,20 +841,19 @@ bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned
         // room 0's record (what is not read kept), its own id, no exits, one object: its model
         made.insert(made.end(), table.begin() + static_cast<std::ptrdiff_t>(first),
                     table.begin() + static_cast<std::ptrdiff_t>(first + kRecord));
-        made[at] = static_cast<unsigned char>(a.id);
-        made[at + 1] = 0;
-        made[at + 2] = 1;
-        made[at + 3] = static_cast<unsigned char>(a.collision_member);
-        // its heights its own floors', not room 0's: tt's room 0 (the camera's and the player's tops 4.5 m) kept the
-        // player under 2.5 m and the camera under 4.5 -- on a floor above that he fell through it to the fall's height
+        made[at + kRecordId] = static_cast<unsigned char>(a.id);
+        made[at + kRecordExitCount] = 0;
+        made[at + kRecordObjectCount] = 1;
+        made[at + kRecordCollision] = static_cast<unsigned char>(a.collision_member);
+        // its heights its own floors', not room 0's (a floor above room 0's tops was fallen through)
         if (int lowest = 0, highest = 0; ground_heights(collision, &lowest, &highest)) {
-            put32(made, at + 4, static_cast<unsigned>(lowest));
-            put32(made, at + 8, static_cast<unsigned>(lowest - kFall));
-            put32(made, at + 0xc, static_cast<unsigned>(highest + kCameraTop));
-            put32(made, at + 0x10, static_cast<unsigned>(highest + kPlayerTop));
+            put32(made, at + kRecordFloor, static_cast<unsigned>(lowest));
+            put32(made, at + kRecordFall, static_cast<unsigned>(lowest - kFall));
+            put32(made, at + kRecordCameraTop, static_cast<unsigned>(highest + kCameraTop));
+            put32(made, at + kRecordPlayerTop, static_cast<unsigned>(highest + kPlayerTop));
         }
         made.resize(at + kRecord + 8, 0);
-        put32(made, at + 0x1c, static_cast<unsigned>(kRecord + 4)); // its exits (none) after its objects' offsets
+        put32(made, at + kRecordExits, static_cast<unsigned>(kRecord + 4)); // its exits (none) after its objects'
         put32(made, at + kRecord, static_cast<unsigned>(kRecord + 4));
         made[at + kRecord + 4] = table[object]; // the object's flags, as room 0's
         made[at + kRecord + 5] = static_cast<unsigned char>(a.model_member);

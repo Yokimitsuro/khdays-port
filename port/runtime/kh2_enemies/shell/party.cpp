@@ -497,7 +497,8 @@ void weapon_tick(Friend &f, Enemy &e, const KhdaysKh2Shell &s)
         const int atkp = std::int16_t(range.params[0]), group = std::int16_t(range.params[1]);
         const int power = attack_power(atkp);
         for (const Shape &sh : w->shapes) {
-            if (sh.group != group || (sh.kind & 0xff) != 6 || sh.bone < 0 || std::size_t(sh.bone) >= w->pose.size())
+            if (sh.group != group || (sh.kind & 0xff) != kTypeAttack || sh.bone < 0 ||
+                std::size_t(sh.bone) >= w->pose.size())
                 continue;
             const kh2::Mat4 &b = w->pose[std::size_t(sh.bone)];
             const Vec3 p = {b[0] * sh.at[0] + b[4] * sh.at[1] + b[8] * sh.at[2] + b[12],
@@ -634,10 +635,8 @@ int member_damage(const Enemy &by, const Friend &f, const AttackParam &ap)
     if (!lv)
         return 0;
     const int strength = ap.magic ? 0 : lv->strength;
-    if (ap.kind == attack_record::kCureShare)
-        return int((std::int64_t(f.hp_most) * strength * ap.power + 9999) / 10000);
-    if (ap.kind == attack_record::kCure)
-        return int((std::int64_t(strength) * ap.power + 99) / 100);
+    if (const int cure = cure_amount(ap, f.hp_most, strength); cure >= 0)
+        return cure;
     int v = strength - character_defence(f.character, level);
     v = std::min(v, std::min(lv->most, 99999));
     v = std::max(v, std::max(lv->least, 1));

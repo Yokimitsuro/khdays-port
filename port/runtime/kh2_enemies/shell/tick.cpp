@@ -175,7 +175,7 @@ void allies_close()
         float view[16];
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
-        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * 31.0F));
+        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * float(kWholeAlpha)));
         if (alpha == 0 || e.pose.empty())
             continue;
         std::vector<float> bones(e.pose.size() * 16);
@@ -414,8 +414,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                     m.others_go = false;
                     battle_over(m.name);
                 }
-                // as the pause's Give Up ends it -- Days's game over, then its results, cancelled; asked again while
-                // the game holds the field (a pause, a talk)
+                // as the pause's Give Up ends it; asked again while the game holds the field (a pause, a talk)
                 if (m.lost && khdays_link_leave_mission() == nullptr) {
                     m.lost = false;
                     khdays_log("kh2 enemies: mission %s failed: Days's ended", m.name.c_str());
@@ -425,7 +424,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                     // dk::timerTask: down to 0, or up to its most, while its pieces are up; its end tells the field
                     // 74 (the mission fails on it)
                     for (MissionPiece &p : m.pieces)
-                        if (p.kind == 4 && m.shown && !m.time_up) {
+                        if (p.kind == kTimerPiece && m.shown && !m.time_up) {
                             p.value = p.down ? std::max(0, p.value - 1) : std::min(p.value + 1, std::max(p.most, 1));
                             if (p.down ? p.value == 0 : p.most > 0 && p.value >= p.most) {
                                 m.time_up = true;
@@ -474,16 +473,13 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     const int ticks = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
     if (khdays_stop_held(actor) || !e->stops.empty()) {
-        // it stands (YS::OBJ::is_stop), but a player in its motion is an object of his own, which its stop does not
-        // hold: the Hostile Program's Freeze is cast by the player's 252, which plays on
+        // it stands (YS::OBJ::is_stop), but not a player in its motion: the Hostile Program's Freeze is his
         for (int t = 0; t < ticks; ++t)
             held_players_tick(*e);
         return;
     }
-    // a player in its hands put on it (1:18 on him) stands where it does, and KH2's attached object is placed by its
-    // carrier alone (its Pos its carrier's frame's): Days's collision between the two moves neither. Before, Days
-    // pushed its stand-in off the player it carried, he followed it, and the two drifted tens of metres -- Twilight
-    // Thorn's grab ended 130 m off its platform, out of reach for good
+    // a player in its hands put on it (1:18 on him) stands where it does: Days's collision between the two moves
+    // neither (else they drift apart)
     if (e->placed && std::any_of(held.begin(), held.end(), [days](const auto &h) { return h.second.carried_by == days; })) {
         s.place[0] = e->place[0];
         s.place[2] = e->place[2];
@@ -538,11 +534,8 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         const float kept[3] = {s.place[0], height, s.place[2]};
         place[1] = to_kh2(kept)[1];
     }
-    // (-1: no ground under it; below 0: sunk into it) -- measured (Ov107_AiState_ResolveContacts) from the place it was
-    // given, which Days lowers after by 0.148 a frame when it is off the ground, or from where a blow threw it up
-    // before: the higher of the two. From the place given alone, a thrown stand-in's floor came out that much lower --
-    // Twilight Thorn, struck by the final blow of its reaction commands, sank 3.4 m into its platform with the player
-    // it carried (let go there, he fell out of the room)
+    // (-1: no ground under it; below 0: sunk into it) -- measured from the higher of the place it was given and where
+    // a blow threw it up before (Days lowers a stand-in off the ground after it measures: Ov107_AiState_ResolveContacts)
     if (s.above != -1.0F) {
         const float measured[3] = {s.place[0], e->placed ? std::max(s.place[1], e->place[1]) : s.place[1], s.place[2]};
         e->floor = (e->placed ? to_kh2(measured)[1] : place[1]) + s.above * kKh2PerDays;

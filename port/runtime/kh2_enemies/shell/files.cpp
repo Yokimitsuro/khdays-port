@@ -126,7 +126,7 @@ std::map<int, Element> pax_elements(const std::vector<std::uint8_t> &pax)
         el.emitter = it->second.second;
         el.bone = int(u32(r + 4) >> 16);
         el.flags = u32(r + 0x10);
-        el.fade = int(u32(r + 4) >> 8 & 0xffu);
+        el.fade = int(u32(r + 4) >> 8 & 0xffu); // (its byte + 5)
         el.start = f32(r + 0x14);
         el.sound = int(std::int32_t(u32(r + 0x18)));
         for (int k = 0; k < 3; ++k) {

@@ -123,8 +123,7 @@ Object *acted_object(ai::Machine &m, const ai::Value &arg)
     return form != nullptr ? form : o;
 }
 
-// Its actor: none for one of Days's players himself, whose model, effects and motions are the world's -- not the
-// running one's, which a script's call on the player must leave as it is (Luxord faded out with the player he turns).
+// Its actor: none for one of Days's players himself, whom the world answers for (not the running actor).
 Actor *acted_on(ai::Machine &m, const ai::Value &arg)
 {
     Object *o = acted_object(m, arg);
@@ -668,9 +667,8 @@ void add_actor_fields(ai::Calls &calls)
                 v.v[i] = x->f(field::kPlace + 4 * i);
         a[0] = give_vec(m, "shared", v);
     });
-    // 1:38 its team (trap_obj_set_team; FUN_14042bd30: + 0x4dc): the Experiment's head and arms take the player's,
-    // 1, while its body catches what he flicked at it (rc_flick_shot_catch) -- his blows pass them, theirs strike it --
-    // and 2 again after
+    // 1:38 its team (trap_obj_set_team): the Experiment's head and arms join the player's while its body catches what
+    // he flicks at it
     calls.set(1, 38, [](ai::Machine &m, std::span<ai::Value> a) {
         if (Object *x = object_of(m, a[0]))
             x->set_u32(field::kTeam, a[1].bits);
@@ -708,10 +706,8 @@ void add_actor_fields(ai::Calls &calls)
     // 1:203 a spawn unit of KH2's room let go on (trap_unit_enable; FUN_140431000: its flags' bit 0 cleared): Days's
     // waves have no KH2 units -- nothing (the enemies a boss's unit would bring do not come)
     calls.set(1, 203, [](ai::Machine &, std::span<ai::Value>) {});
-    // 1:202 one held back (trap_unit_disable; YS::UNIT_GROUP::Disable: the bit set again) -- nothing so; 1:197 what
-    // is left of KH2's area's spawn cost (trap_area_cost_rest, YS::AREADATA::GetCostRest): Days's field keeps none, 0.
-    // Shan-Yu asks both only in KH2's own mu09 (1:23 8, 1:24 9: his Heartless call enables unit 148 there while the
-    // cost left is over 30, and disables it as it ends), which the port's field never is
+    // 1:202 one held back (trap_unit_disable): nothing so; 1:197 what is left of KH2's area's spawn cost
+    // (trap_area_cost_rest): none, 0 -- Shan-Yu asks both only in KH2's own area (1:23, 1:24)
     calls.set(1, 202, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 197, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:64 this tick's travel (+ 0xa28), 1:62 the tick's before (+ 0xa38), each into the call's own vector
@@ -770,10 +766,11 @@ void add_actor_fields(ai::Calls &calls)
         self_of(m, a[0])->set_bits(field::kFlags, 0x8000000u, true);
     });
     calls.set(1, 69, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
         if (Actor *x = acted_on(m, a[0]))
             a[0] = ai::Value::of_float(x->f(0x19c));
         else
-            a[0] = ai::Value::of_float(running(m)->world->player_motion_time(*object_of(m, a[0])));
+            a[0] = ai::Value::of_float(w != nullptr ? w->player_motion_time(*object_of(m, a[0])) : 0.0F);
     });
     // 1:84 an object's sheet (+ 0x5c0): a player's his own (World::player_sheet), not the running enemy's
     // (Sephiroth's Heartless Angel reads the player's health)
@@ -923,10 +920,8 @@ void add_actor_fields(ai::Calls &calls)
         else if (Actor *x = o != nullptr ? o->actor() : nullptr)
             x->hidden = false;
     });
-    // 1:126 / 1:236 the second object's motion made to follow the first's, and no more (YS::trap_obj_motion_sync,
-    // trap_obj_motion_unsync: the first's YS::MOTION -- the PS3 build's + 0x140 -- syncs or unsyncs the second's, a
-    // list it starts its motions on: Actor::synced). Twilight Thorn's rc_thorn_3 makes B_EX200 (1:0), hides it,
-    // has it follow and carries it on itself (1:18 at 0x4002); its routine 0x1fee lets it go (1:236, 1:28)
+    // 1:126 / 1:236 the second object's motions made to follow the first's, and no more (trap_obj_motion_sync,
+    // _unsync: Actor::synced) -- Twilight Thorn's darkness, B_EX200, carried on it, plays its motions with it
     calls.set(1, 126, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         Object *o = object_of(m, a[1]);
@@ -1209,9 +1204,8 @@ void add_actor_fields(ai::Calls &calls)
         m.memory().set_u32(a[0].bits + hit_record::kFlag,
                            m.memory().u32(a[0].bits + hit_record::kFlag) | hit_record::kReacted);
     });
-    // 2:0 a hit's reaction carried out at once (trap_enemy_exec_damage: its class's exec_damage_reaction, BTLOBJ's,
-    // which does nothing on a hit whose Flag's bit 0 is set and sets it): the palace's gates' (F_MU030) trigger 6 is
-    // this alone
+    // 2:0 a hit's reaction carried out at once, once (trap_enemy_exec_damage): the palace gates' trigger 6 is this
+    // alone
     calls.set(2, 0, [](ai::Machine &m, std::span<ai::Value> a) {
         if (Actor *x = self_of(m, a[0]); x != nullptr && x->world != nullptr)
             x->world->damage_reaction(*x, a[1].bits);
@@ -1235,11 +1229,9 @@ void add_actor_fields(ai::Calls &calls)
         if (Object *x = object_of(m, a[0]))
             x->set_u32(field::kKarmaLimit, a[1].bits);
     });
-    // 1:23 the world KH2's field is in, 1:24 its area (YS::trap_area_world, trap_area_area: DAT_140717008 and the byte
-    // after it -- 8 and 9 KH2's mu09, where Shan-Yu calls his Heartless; world 10 lk, the Wight Knight's area 9):
-    // Days's field is none of KH2's areas, 0 -- what the scripts do in their own areas alone they do not. 1:301 whether
-    // a tutorial is open (trap_tutorial_is_open, FUN_1403bbea0), 1:171 DAT_142a11400's bit 2 (trap_status_no_leave;
-    // its bit 7 1:206's, below): none, 0
+    // 1:23 the world KH2's field is in, 1:24 its area (trap_area_world, trap_area_area): Days's field is none of KH2's,
+    // 0, so what a script does in its own area alone it does not. 1:301 whether a tutorial is open, 1:171 whether
+    // leaving is barred (trap_status_no_leave): no, 0
     for (const unsigned n : {23u, 24u, 301u, 171u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:34 whether an event runs (YS::trap_event_is_exec -> YS::EVENT::IsExec: YS::Current set; DAT_142a11478,
@@ -1600,9 +1592,9 @@ void add_motions(ai::Calls &calls)
     // turns its back to it and plays 24 (DAMAGE_L_FRONT, DAMAGE_L_BACK), its idle asked after (FUN_1403c8310: the port's
     // actor takes it at the motion's end); then the slide. The Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's
     // (2:87, 0) slide by none.
-    // YS::BTLOBJ::set_hitback (FUN_1403d4960) on an object whose flags and battle sheet are given: false when + 0x120
-    // bit 7 holds it (can_hitback), else the way made one long (turned back for a speed below 0) and the speed a tenth
-    // of the one given, its sheet's hitback addition (+ 0x1c8, 1:348) added first
+    // A push back (YS::BTLOBJ::set_hitback) of an object with these flags and battle sheet: its way one long (turned
+    // back for a speed below 0) and its speed a tick, its sheet's addition counted (1:348); false when nothing pushes
+    // it
     const auto hitback = [](ai::Machine &m, std::uint32_t flags, std::uint32_t sheet, Vec way, float speed, Vec3 &unit,
                             float &tick) {
         if ((flags & bit::kNoHitback) != 0)
@@ -1627,10 +1619,8 @@ void add_motions(ai::Calls &calls)
         hitback(m, x.u32(field::kFlags), x.u32(field::kSheet), read_vec(m, hit), speed, x.slide, x.slide_speed);
         m.memory().set_u32(hit + hit_record::kFlag, m.memory().u32(hit + hit_record::kFlag) | hit_record::kReacted);
     };
-    // 1:146 an object pushed back along a way at a speed (trap_obj_hitback -> YS::BTLOBJ::set_hitback, as a hit's
-    // slide without the hit); 6:66 its push stopped (Ts::trap_obj_clear_hitback: + 0xad0 to + 0xadc, the PS3 build's,
-    // cleared). On a player the world's (World::player_slide): Shan-Yu's reaction command 270 sends Sora on along
-    // his own facing so (100), and his blows that catch him stop his push before they take him in hand
+    // 1:146 an object pushed back along a way at a speed (trap_obj_hitback), a hit's slide without the hit; 6:66 its
+    // push stopped (trap_obj_clear_hitback). A player's is the world's (Shan-Yu's reaction command sends Sora on so)
     calls.set(1, 146, [hitback](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         if (o == nullptr)
@@ -1854,13 +1844,10 @@ void add_moving(ai::Calls &calls)
     calls.set(1, 217, [put](ai::Machine &m, std::span<ai::Value> a) {
         put(m, a);
         if (Object *o = object_of(m, a[0]))
-            o->set_bits(field::kFade, 1u << 12, true);
+            o->set_bits(field::kFade, bit::kMovedAtOnce, true);
     });
-    // 1:220 the object moved into space (YS::trap_obj_move_to_space -> OBJ::move_to_space, FUN_1403b9ac0: the sphere of
-    // its collision made 100, 200 ... up to a length with no way of its own, pushed out of the room's walls, and the
-    // object put where it came, set_pos_trans as 1:217's; with the third value it need not stand on ground): clear of
-    // the walls by that much -- a player before he is held (Roxas's 250 cm, Shan-Yu's 500), Demyx and Hades themselves.
-    // Until 2026-11-24 read as a step ahead along its facing, the running actor's
+    // 1:220 the object moved till the room's walls are that far from it (trap_obj_move_to_space, World::move_to_space),
+    // put there as 1:217 puts one: a player before an enemy takes him in hand (Roxas's 250 cm), Demyx, Hades
     const auto into_space = [](ai::Machine &m, std::span<ai::Value> a, Vec3 &to) {
         Object *o = acted_object(m, a[0]);
         Actor *me = running(m), *x = o->actor();
@@ -1874,7 +1861,7 @@ void add_moving(ai::Calls &calls)
             return;
         Object *o = acted_object(m, a[0]);
         o->set_place(to);
-        o->set_bits(field::kFade, 1u << 12, true);
+        o->set_bits(field::kFade, bit::kMovedAtOnce, true);
         if (o->actor() == nullptr)
             running(m)->world->player_place(*o, to);
     });
@@ -1962,8 +1949,7 @@ void add_moving(ai::Calls &calls)
     });
     // 1:98 its place on the ground under it (FUN_1403b5b40, its y FUN_1403b87e0's); 1:99 how far above it it is,
     // KH2's way (negative up; 0 on it or below)
-    // -- a player's where he is (the Experiment's attacks go for the ground under him): read as the running actor's
-    // until 2026-11-24, which flew up and up
+    // -- a player's under him (the Experiment aims there)
     const auto ground_under = [](ai::Machine &m, const ai::Value &who, Vec3 &at) {
         Object *o = acted_object(m, who);
         Actor *me = running(m), *x = o->actor();
@@ -2889,7 +2875,7 @@ void add_world(ai::Calls &calls)
     add_attacks(calls);
     add_shots(calls);
     // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
-    // (a player turned into a form: the form's -- the puff as Luxord's card appears; himself he has none of KH2's)
+    // (on a player turned into a form: the form's; on himself none)
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = acted_on(m, a[0]);
         const std::uint32_t h = x != nullptr && x->world != nullptr
@@ -2948,16 +2934,16 @@ void add_world(ai::Calls &calls)
         if (carried->world != nullptr)
             carried->world->uncarry(*carried);
     });
-    // 1:226 the Land of Dragons' morale orbs (trap_obj_scatter_prize_mu): so much of the mission's gauge scattered from
-    // an object -- Shan-Yu's mission, half of what his gates lose
+    // 1:226 the Land of Dragons' morale orbs (trap_obj_scatter_prize_mu): so much of the mission's gauge scattered
+    // from an object
     calls.set(1, 226, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         if (World *w = running(m)->world; w != nullptr && o != nullptr)
             w->scatter_orbs(*o, a[1].f());
     });
-    // The Hostile Program's data (PRIZE_TR): 1:278 n from an object's target point (trap_obj_scatter_prize_tr,
-    // FUN_14042a980 -- the Strafer's too), 1:279 n from a point (trap_prize_appear_tr), 1:327 all of them taken by an
-    // object (trap_prize_get_all_tr: the Hostile Program's own "aspil"); none but where its battle places them
+    // The Hostile Program's data (PRIZE_TR), where its battle places them: 1:278 n scattered from an object
+    // (trap_obj_scatter_prize_tr), 1:279 from a point (trap_prize_appear_tr), 1:327 all taken by an object
+    // (trap_prize_get_all_tr)
     calls.set(1, 278, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *o = object_of(m, a[0]);
         World *w = running(m)->world;
@@ -2976,14 +2962,12 @@ void add_world(ai::Calls &calls)
         if (World *w = running(m)->world; w != nullptr && o != nullptr)
             w->take_data(*o);
     });
-    // 1:326 the map's animations of type 2's speed (trap_bg_set_animation_speed -> dk::Map::setAnimationSpeedRatio:
-    // its textures' scroll): the Hostile Program's Freeze stops Space Paranoids' lines
+    // 1:326 how fast the room's textures scroll (trap_bg_set_animation_speed): the Hostile Program's Freeze stops them
     calls.set(1, 326, [](ai::Machine &m, std::span<ai::Value> a) {
         if (World *w = running(m)->world)
             w->map_speed(a[0].f());
     });
-    // 7:0 a stop on every enemy of the field, 7:1 it off every object (Ts::trap_enemy_stop_all_start, _end:
-    // YS::ENEMY::StopStartAll, YS::OBJ::StopEndAll): the Freeze (6)
+    // 7:0 a stop on every enemy of the field, 7:1 off every object (trap_enemy_stop_all_start, _end): the Freeze
     calls.set(7, 0, [](ai::Machine &m, std::span<ai::Value> a) {
         if (World *w = running(m)->world)
             w->stop_enemies(a[0].i());
@@ -3189,16 +3173,15 @@ void add_world(ai::Calls &calls)
             a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i(), second) : 0);
         });
     // 4:8 a gauge's level set, 4:9 so much added (a float, the gauge's index), 4:12 its level over its most
-    // (trap_mission_set_gauge, _add_gauge, _get_gauge_ratio: FUN_140433740, FUN_140433750, FUN_140433770): World::
-    // mission_gauge
-    for (const unsigned n : {8u, 9u})
+    // (trap_mission_set_gauge, _add_gauge, _get_gauge_ratio): World::mission_gauge
+    for (const unsigned n : {unsigned(kSetGauge), unsigned(kAddGauge)})
         calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
             if (World *w = running(m)->world)
                 w->mission_gauge(n, a[1].i(), a[0].f());
         });
     calls.set(4, 12, [](ai::Machine &m, std::span<ai::Value> a) {
         World *w = running(m)->world;
-        a[0] = ai::Value::of_float(w != nullptr ? w->mission_gauge(12, a[0].i(), 0.0F) : 0.0F);
+        a[0] = ai::Value::of_float(w != nullptr ? w->mission_gauge(kGaugeRatio, a[0].i(), 0.0F) : 0.0F);
     });
     // 4:57 a gauge's warning on or off (trap_mission_warning_gauge -> YS::MISSION::WarningGauge(on, its index): Vexen's
     // once his count of full gauges reaches 5); 4:50 and 4:58 a counter's on and off (trap_mission_warning_count,
