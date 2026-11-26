@@ -16,13 +16,13 @@ void mission_damage(std::uint32_t object, std::int64_t damage, std::uint32_t att
     if (!hit)
         hit = std::make_unique<Object>(mod().memory, "a hit as a mission reads it");
     if (params == 0)
-        params = mod().memory.add(48, "a hit's attack as a mission reads it");
+        params = mod().memory.add(attack_record::kSize, "a hit's attack as a mission reads it");
     const std::uint8_t type = std::uint8_t(kind);
-    mod().memory.write(params + 4, &type, 1);
-    hit->set_u32(0x10, attacker);
-    hit->set_u32(0x14, object);
-    hit->set_u32(0x20, params);
-    hit->set_u32(0x28, std::uint32_t(std::min<std::int64_t>(damage, 0x7fffffff)));
+    mod().memory.write(params + attack_record::kKind, &type, 1);
+    hit->set_u32(hit_record::kAttacker, attacker);
+    hit->set_u32(hit_record::kTarget, object);
+    hit->set_u32(hit_record::kParams, params);
+    hit->set_u32(hit_record::kDamage, std::uint32_t(std::min<std::int64_t>(damage, 0x7fffffff)));
     const ai::Value values[2] = {ai::Value::of_address(object), ai::Value::of_address(hit->address())};
     kh2_mission->actor->event(6, values);
     if (trace_level() >= 2)

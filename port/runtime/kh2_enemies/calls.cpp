@@ -376,32 +376,33 @@ void add_math(ai::Calls &calls)
     // 1:228 / 1:229 a table's record of 12 bytes: its first, its second word (FUN_140431030, FUN_140431070); 2:25 a
     // record's + 0x18 (FUN_140432b00)
     calls.set(1, 228, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits)));
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + sheet::kValue * a[1].bits)));
     });
     calls.set(1, 229, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits + 4u)));
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + sheet::kValue * a[1].bits + sheet::kMost)));
     });
     // 1:231 / 1:232 a record's third word, the health it does not go under (YS::SHEET's HP: Hp, MaxHp, MinHp;
     // trap_sheet_set_min_hp, trap_sheet_min_hp: FUN_140431190, FUN_1404310b0) -- the shell keeps Days's hits above it;
     // 1:233 its health set, kept between the two (trap_sheet_set_hp; FUN_140431140), and given to Days's enemy
     calls.set(1, 231, [](ai::Machine &m, std::span<ai::Value> a) {
-        m.memory().set_u32(a[0].bits + 12u * a[2].bits + 8u, a[1].bits);
+        m.memory().set_u32(a[0].bits + sheet::kValue * a[2].bits + sheet::kLeast, a[1].bits);
     });
     calls.set(1, 232, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits + 8u)));
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + sheet::kValue * a[1].bits + sheet::kLeast)));
     });
     calls.set(1, 233, [](ai::Machine &m, std::span<ai::Value> a) {
-        const std::uint32_t at = a[0].bits + 12u * a[2].bits;
-        const std::int32_t least = std::int32_t(m.memory().u32(at + 8)), most = std::int32_t(m.memory().u32(at + 4));
+        const std::uint32_t at = a[0].bits + sheet::kValue * a[2].bits;
+        const std::int32_t least = std::int32_t(m.memory().u32(at + sheet::kLeast)),
+                           most = std::int32_t(m.memory().u32(at + sheet::kMost));
         const std::int32_t hp = std::max(least, std::min(std::int32_t(a[1].bits), most));
         m.memory().set_u32(at, std::uint32_t(hp));
-        const std::uint32_t owner = m.memory().u32(a[0].bits + 0x268);
+        const std::uint32_t owner = m.memory().u32(a[0].bits + sheet::kOwner);
         Object *o = a[2].bits == 0 ? Object::at(m.memory(), owner) : nullptr;
         if (Actor *x = o != nullptr ? o->actor() : nullptr; x != nullptr && x->world != nullptr)
             x->world->set_health(*x, hp);
     });
     calls.set(2, 25, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 0x18u)));
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + attack_object::kAtkp)));
     });
     // 2:26 an attack's reflection taken as played (trap_attack_exec_reflect, the PS3 build's: its + 4's 0x40): its
     // owner then plays no reflect motion nor state of it (YS::PIERROT::_OVR_exec_reflect, shell/attacks.cpp's
@@ -783,7 +784,7 @@ void add_actor_fields(ai::Calls &calls)
             a[0] = ai::Value::of_address(x->world->player_sheet(*o));
             return;
         }
-        a[0] = ai::Value::of_address(self_of(m, a[0])->u32(0x5c0));
+        a[0] = ai::Value::of_address(self_of(m, a[0])->u32(field::kSheet));
     });
     // 1:361 a sheet's level (trap_sheet_level, the PS3 build's SHEET::get_level: its PartRam's, + 0x244, byte + 0xf; 0
     // none -- an enemy's): Marluxia's doom counts down from the player's
@@ -827,14 +828,14 @@ void add_actor_fields(ai::Calls &calls)
     });
     // 1:211 / 1:212 bit n of + 0xd10 set / cleared (FUN_14042ba50, FUN_14042ba80)
     calls.set(1, 211, [](ai::Machine &m, std::span<ai::Value> a) {
-        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), true);
+        object_of(m, a[0])->set_bits(field::kPatternDefault, 1u << (a[1].bits & 31u), true);
     });
     calls.set(1, 212, [](ai::Machine &m, std::span<ai::Value> a) {
-        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+        object_of(m, a[0])->set_bits(field::kPatternDefault, 1u << (a[1].bits & 31u), false);
     });
     // 1:324 the same bit cleared (trap_obj_pattern_reset, FUN_14042bab0): the Hydra's
     calls.set(1, 324, [](ai::Machine &m, std::span<ai::Value> a) {
-        object_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+        object_of(m, a[0])->set_bits(field::kPatternDefault, 1u << (a[1].bits & 31u), false);
     });
     // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
     // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
@@ -881,14 +882,14 @@ void add_actor_fields(ai::Calls &calls)
     // 2:46 a hit's damage (YS::trap_damage_damage: YS::DAMAGE + 0x28, the PS3 build's) and 2:72 whether it cures
     // (trap_damage_is_cure: its attack's record, + 0x20, of type 5 or 6 at + 4) -- what a mission's damage trigger asks
     calls.set(2, 46, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(a[0].bits != 0 ? std::int32_t(m.memory().u32(a[0].bits + 0x28)) : 0);
+        a[0] = ai::Value::of_int(a[0].bits != 0 ? std::int32_t(m.memory().u32(a[0].bits + hit_record::kDamage)) : 0);
     });
     calls.set(2, 72, [](ai::Machine &m, std::span<ai::Value> a) {
-        const std::uint32_t params = a[0].bits != 0 ? m.memory().u32(a[0].bits + 0x20) : 0u;
+        const std::uint32_t params = a[0].bits != 0 ? m.memory().u32(a[0].bits + hit_record::kParams) : 0u;
         std::uint8_t type = 0;
         if (params != 0)
-            m.memory().read(params + 4, &type, 1);
-        a[0] = ai::Value::of_int(type == 5 || type == 6 ? 1 : 0);
+            m.memory().read(params + attack_record::kKind, &type, 1);
+        a[0] = ai::Value::of_int(attack_record::is_cure(type) ? 1 : 0);
     });
     // 1:225 whether an object is invincible (trap_obj_is_star: its motion's range 27 sets YS::MOTION's FLAG_STAR):
     // Sephiroth asks it of the player his attack landed on (his trigger 15) before following it up
@@ -1002,7 +1003,7 @@ void add_actor_fields(ai::Calls &calls)
     // part, 0
     calls.set(2, 70, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t part = 0;
-        m.memory().read(a[0].bits + 0x25, &part, 1);
+        m.memory().read(a[0].bits + hit_record::kPart, &part, 1);
         a[0] = ai::Value::of_int(part);
     });
     // 6:62 Jafar's carpet's idle (trap_obj_carpet_obj_idle, FUN_14053ee20: its class made 0x13, FUN_1403b4da0); that
@@ -1110,13 +1111,14 @@ void add_actor_fields(ai::Calls &calls)
             return;
         }
         Actor *x = self_of(m, a[0]);
-        const std::uint32_t sheet = x->u32(0x5c0);
+        const std::uint32_t sheet = x->u32(field::kSheet);
         if (sheet == 0) {
             a[0] = ai::Value::of_int(0);
             return;
         }
-        const std::uint32_t at = sheet + 12u * a[2].bits;
-        const std::int32_t least = std::int32_t(m.memory().u32(at + 8)), most = std::int32_t(m.memory().u32(at + 4));
+        const std::uint32_t at = sheet + sheet::kValue * a[2].bits;
+        const std::int32_t least = std::int32_t(m.memory().u32(at + sheet::kLeast)),
+                           most = std::int32_t(m.memory().u32(at + sheet::kMost));
         const std::int32_t hp =
             std::max(least, std::min(std::int32_t(m.memory().u32(at)) + std::int32_t(a[1].bits), most));
         m.memory().set_u32(at, std::uint32_t(hp));
@@ -1192,20 +1194,20 @@ void add_actor_fields(ai::Calls &calls)
     // reaction (3) unless the enemy's damage patterns make it none
     calls.set(2, 8, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t kind = 0;
-        m.memory().read(a[0].bits + 0x26, &kind, 1);
-        const unsigned group = kind == 1 || kind == 12 ? 1u : kind;
-        a[0] = ai::Value::of_int(group > 1 ? 1 : 0);
+        m.memory().read(a[0].bits + hit_record::kReaction, &kind, 1);
+        a[0] = ai::Value::of_int(reaction_type(kind) > kReactSlide ? 1 : 0);
     });
     // 2:7 a hit's reaction kind itself (YS::DAMAGE's Reaction, + 0x26; FUN_140431f10)
     calls.set(2, 7, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t kind = 0;
-        m.memory().read(a[0].bits + 0x26, &kind, 1);
+        m.memory().read(a[0].bits + hit_record::kReaction, &kind, 1);
         a[0] = ai::Value::of_int(kind);
     });
     // 2:15 a hit's reaction to be carried out (trap_damage_exec_reaction; FUN_140432050: its Flag, + 0x18, bit 0) --
     // 2:1 sets it too; the port plays a Days hit's reaction before trigger 6, so nothing waits on it
     calls.set(2, 15, [](ai::Machine &m, std::span<ai::Value> a) {
-        m.memory().set_u32(a[0].bits + 0x18, m.memory().u32(a[0].bits + 0x18) | 1u);
+        m.memory().set_u32(a[0].bits + hit_record::kFlag,
+                           m.memory().u32(a[0].bits + hit_record::kFlag) | hit_record::kReacted);
     });
     // 2:0 a hit's reaction carried out at once (trap_enemy_exec_damage: its class's exec_damage_reaction, BTLOBJ's,
     // which does nothing on a hit whose Flag's bit 0 is set and sets it): the palace's gates' (F_MU030) trigger 6 is
@@ -1218,8 +1220,8 @@ void add_actor_fields(ai::Calls &calls)
     // (FUN_1404321f0 -> FUN_1403cedc0). A Days hit names none: no
     calls.set(2, 92, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t kind = 0;
-        m.memory().read(a[0].bits + 0x27, &kind, 1);
-        a[0] = ai::Value::of_int((kind >= 6 && kind < 8) || (kind >= 10 && kind < 12) ? 1 : 0);
+        m.memory().read(a[0].bits + hit_record::kFirstReaction, &kind, 1);
+        a[0] = ai::Value::of_int(finishing_reaction(kind) ? 1 : 0);
     });
     // 1:161 whether another object carries the actor (+ 0x6a0, YS::OBJ's Attach; FUN_14042b980 -> FUN_1403da520): none
     // of Days's do
@@ -1585,10 +1587,10 @@ void add_motions(ai::Calls &calls)
             x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
         x->play(std::int32_t(front ? a[2].bits : a[3].bits), 0.0F, 0.0F);
         std::uint8_t first = 0;
-        m.memory().read(hit + 0x27, &first, 1);
-        x->set_bits(0x124, 1u << 17, (first >= 6 && first < 8) || (first >= 10 && first < 12));
+        m.memory().read(hit + hit_record::kFirstReaction, &first, 1);
+        x->set_bits(0x124, 1u << 17, finishing_reaction(first));
         thrown(*x, way.v[0], way.v[2], a[5].f(), -a[4].f());
-        m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+        m.memory().set_u32(hit + hit_record::kFlag, m.memory().u32(hit + hit_record::kFlag) | hit_record::kReacted);
     });
     // 2:3 a hit's slide (trap_enemy_exec_damage_hitback, FUN_140431c90 -> FUN_1403d4120 -> FUN_1403d4960): unless its
     // + 0x120 bit 7 holds it, the hit's way (Dir, + 0; turned back for a speed below 0) made one long, its speed a
@@ -1603,7 +1605,7 @@ void add_motions(ai::Calls &calls)
     // of the one given, its sheet's hitback addition (+ 0x1c8, 1:348) added first
     const auto hitback = [](ai::Machine &m, std::uint32_t flags, std::uint32_t sheet, Vec way, float speed, Vec3 &unit,
                             float &tick) {
-        if ((flags & (1u << 7)) != 0)
+        if ((flags & bit::kNoHitback) != 0)
             return false;
         if (speed < 0.0F) {
             speed = -speed;
@@ -1613,17 +1615,17 @@ void add_motions(ai::Calls &calls)
         const float n = std::sqrt(way.v[0] * way.v[0] + way.v[1] * way.v[1] + way.v[2] * way.v[2]);
         unit = n > 0.0F ? Vec3{way.v[0] / n, way.v[1] / n, way.v[2] / n} : Vec3{};
         if (sheet != 0) {
-            const std::uint32_t bits = m.memory().u32(sheet + 0x1c8);
+            const std::uint32_t bits = m.memory().u32(sheet + sheet::kHitbackMore);
             float more = 0.0F;
             std::memcpy(&more, &bits, 4);
             speed += more;
         }
-        tick = speed * 0.1F;
+        tick = speed * kHitbackTick;
         return true;
     };
     const auto slide = [hitback](Actor &x, ai::Machine &m, std::uint32_t hit, float speed) {
-        hitback(m, x.u32(field::kFlags), x.u32(0x5c0), read_vec(m, hit), speed, x.slide, x.slide_speed);
-        m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+        hitback(m, x.u32(field::kFlags), x.u32(field::kSheet), read_vec(m, hit), speed, x.slide, x.slide_speed);
+        m.memory().set_u32(hit + hit_record::kFlag, m.memory().u32(hit + hit_record::kFlag) | hit_record::kReacted);
     };
     // 1:146 an object pushed back along a way at a speed (trap_obj_hitback -> YS::BTLOBJ::set_hitback, as a hit's
     // slide without the hit); 6:66 its push stopped (Ts::trap_obj_clear_hitback: + 0xad0 to + 0xadc, the PS3 build's,
@@ -1635,7 +1637,8 @@ void add_motions(ai::Calls &calls)
             return;
         if (o->actor() != nullptr) {
             Actor &x = *o->actor();
-            hitback(m, x.u32(field::kFlags), x.u32(0x5c0), read_vec(m, a[1].bits), a[2].f(), x.slide, x.slide_speed);
+            hitback(m, x.u32(field::kFlags), x.u32(field::kSheet), read_vec(m, a[1].bits), a[2].f(), x.slide,
+                    x.slide_speed);
             return;
         }
         World *world = running(m) != nullptr ? running(m)->world : nullptr;
@@ -1667,7 +1670,7 @@ void add_motions(ai::Calls &calls)
         const float sign = front ? -1.0F : 1.0F;
         if (way.v[0] != 0.0F || way.v[2] != 0.0F)
             x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
-        x->play(front ? 23 : 24, 0.0F, 0.0F);
+        x->play(front ? damage_motion::kLargeFront : damage_motion::kLargeBack, 0.0F, 0.0F);
         x->motion.queued.push_back({0, 0.0F});
         slide(*x, m, a[1].bits, a[2].f());
     });
@@ -1691,15 +1694,15 @@ void add_motions(ai::Calls &calls)
             const float sign = front ? -1.0F : 1.0F;
             if (way.v[0] != 0.0F || way.v[2] != 0.0F)
                 x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
-            x->play(own(front ? 14 : 15), 0.0F, 0.0F);
+            x->play(own(front ? damage_motion::kAirFront : damage_motion::kAirBack), 0.0F, 0.0F);
             x->motion.queued.push_back({0, 0.0F});
-            m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+            m.memory().set_u32(hit + hit_record::kFlag, m.memory().u32(hit + hit_record::kFlag) | hit_record::kReacted);
             return;
         }
         std::uint8_t kind = 0;
-        m.memory().read(hit + 0x24, &kind, 1);
+        m.memory().read(hit + hit_record::kKind, &kind, 1);
         const bool first = kind == 0 || (kind >= 2 && kind <= 5);
-        x->play(own((front ? 10 : 12) + (first ? 0 : 1)), 0.0F, 0.0F);
+        x->play(own((front ? damage_motion::kSmallFront : damage_motion::kSmallBack) + (first ? 0 : 1)), 0.0F, 0.0F);
         x->motion.queued.push_back({0, 0.0F});
         slide(*x, m, hit, a[2].f());
     });
@@ -1711,20 +1714,20 @@ void add_motions(ai::Calls &calls)
     calls.set(2, 86, [](ai::Machine &m, std::span<ai::Value> a) {
         const std::uint32_t hit = a[0].bits;
         std::uint8_t first = 0, reaction = 0;
-        m.memory().read(hit + 0x27, &first, 1);
-        m.memory().read(hit + 0x26, &reaction, 1);
-        const bool third = first == 3 || first == 6 || first == 8 || first == 10 || first == 13 || first == 16 ||
-                           first == 18;
+        m.memory().read(hit + hit_record::kFirstReaction, &first, 1);
+        m.memory().read(hit + hit_record::kReaction, &reaction, 1);
+        const bool third = reaction_type(first) == kReactSmall;
         World *w = running(m)->world;
-        float back = w != nullptr ? w->system_value(third ? 0x34u : 0x30u, 200.0F) : 200.0F;
-        if (const std::uint32_t record = m.memory().u32(hit + 0x20); record != 0) {
+        const std::uint32_t constant = third ? battle_constant::kSmallHitback : battle_constant::kHitback;
+        float back = w != nullptr ? w->system_value(constant, 200.0F) : 200.0F;
+        if (const std::uint32_t record = m.memory().u32(hit + hit_record::kParams); record != 0) {
             std::uint8_t two[2] = {};
-            m.memory().read(record + 0xc, two, 2);
+            m.memory().read(record + attack_record::kHitback, two, 2);
             const std::int16_t own = std::int16_t(two[0] | (two[1] << 8));
-            if (own != 0x7fff)
+            if (own != attack_record::kBattleHitback)
                 back = float(own);
         }
-        if (reaction == 12 || reaction == 13)
+        if (half_hitback(reaction))
             back *= 0.5F;
         a[0] = ai::Value::of_float(back);
     });
@@ -1733,27 +1736,19 @@ void add_motions(ai::Calls &calls)
     // 1 and 12 are 1; 3, 6, 8, 10, 13, 16, 18 are 3; 4, 7, 9, 11, 15, 17 are 4; the others themselves)
     calls.set(2, 64, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint8_t first = 0;
-        m.memory().read(a[0].bits + 0x27, &first, 1);
+        m.memory().read(a[0].bits + hit_record::kFirstReaction, &first, 1);
         a[0] = ai::Value::of_int(first);
     });
     calls.set(2, 91, [](ai::Machine &, std::span<ai::Value> a) {
-        const int k = std::int32_t(a[0].bits);
-        int kind = k;
-        if (k == 1 || k == 12)
-            kind = 1;
-        else if (k == 3 || k == 6 || k == 8 || k == 10 || k == 13 || k == 16 || k == 18)
-            kind = 3;
-        else if (k == 4 || k == 7 || k == 9 || k == 11 || k == 15 || k == 17)
-            kind = 4;
-        a[0] = ai::Value::of_int(kind);
+        a[0] = ai::Value::of_int(reaction_type(std::int32_t(a[0].bits)));
     });
     // 2:85 a hit's element (trap_damage_element, FUN_140432170: its attack's record, + 0x20, its byte + 9 -- atkp's
     // element: 0 physical, 1 fire, 2 blizzard, 3 thunder ...): the Volcanic Lord slides and changes state on Blizzard
     calls.set(2, 85, [](ai::Machine &m, std::span<ai::Value> a) {
-        const std::uint32_t record = m.memory().u32(a[0].bits + 0x20);
+        const std::uint32_t record = m.memory().u32(a[0].bits + hit_record::kParams);
         std::uint8_t element = 0;
         if (record != 0)
-            m.memory().read(record + 9, &element, 1);
+            m.memory().read(record + attack_record::kElement, &element, 1);
         a[0] = ai::Value::of_int(element);
     });
     // 1:311 its rate for an element (trap_sheet_set_element_rate, FUN_140431200 -> FUN_1403c2650: + 0x1a8 + element
@@ -3005,9 +3000,9 @@ void add_world(ai::Calls &calls)
     // the old one let go, FUN_1403c06b0's new one at + 0x5c0, its + 0x268 the actor): Larxene's 216 as she begins
     calls.set(2, 95, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
-        const std::uint32_t record = m.memory().add(0x270, x->name() + "'s health");
-        m.memory().set_u32(record + 0x268, x->address());
-        x->set_u32(0x5c0, record);
+        const std::uint32_t record = m.memory().add(sheet::kSize, x->name() + "'s health");
+        m.memory().set_u32(record + sheet::kOwner, x->address());
+        x->set_u32(field::kSheet, record);
         if (x->world != nullptr) {
             x->world->battle_entry(*x, a[1].i());
             x->world->health(*x);
@@ -3015,10 +3010,10 @@ void add_world(ai::Calls &calls)
     });
     calls.set(2, 9, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
-        if (x->u32(0x5c0) == 0) {
-            const std::uint32_t record = m.memory().add(0x270, x->name() + "'s health");
-            m.memory().set_u32(record + 0x268, x->address());
-            x->set_u32(0x5c0, record);
+        if (x->u32(field::kSheet) == 0) {
+            const std::uint32_t record = m.memory().add(sheet::kSize, x->name() + "'s health");
+            m.memory().set_u32(record + sheet::kOwner, x->address());
+            x->set_u32(field::kSheet, record);
         }
         if (x->world != nullptr) {
             x->world->battle_entry(*x, a[1].i());
@@ -3615,13 +3610,12 @@ void add_friend_calls(ai::Calls &calls)
     calls.set(10, 17, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *x = a[0].bits != 0 ? object_of(m, a[0]) : nullptr;
         const std::uint32_t record = x != nullptr ? x->u32(field::kEntry) : 0u;
-        a[0] = ai::Value::of_int(record != 0 && (m.memory().u32(record + 4) & 0xff) == 4 ? 1 : 0);
+        a[0] = ai::Value::of_int(entry_kind(m.memory(), record) == kEntryEnemy ? 1 : 0);
     });
     calls.set(10, 18, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *x = a[0].bits != 0 ? object_of(m, a[0]) : nullptr;
         const std::uint32_t record = x != nullptr ? x->u32(field::kEntry) : 0u;
-        const std::uint32_t kind = record != 0 ? m.memory().u32(record + 4) & 0xff : 0u;
-        a[0] = ai::Value::of_int(kind == 3 || kind == 0xc ? 1 : 0);
+        a[0] = ai::Value::of_int(boss_kind(entry_kind(m.memory(), record)) ? 1 : 0);
     });
     // 10:24 whether it has an ability (kn::tarp_friend_is_equiped_ability -> Friend::equipedAbility)
     calls.set(10, 24, [](ai::Machine &m, std::span<ai::Value> a) {

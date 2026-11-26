@@ -563,10 +563,7 @@ std::string entry_name(std::uint32_t number)
 bool enemy_entry(const std::string &name)
 {
     const std::uint32_t at = entry_record(name);
-    if (at == 0)
-        return true;
-    const unsigned kind = mod().memory.u32(at + 4) & 0xffu;
-    return kind == 3 || kind == 4 || kind == 0xc;
+    return at == 0 || enemy_kind(entry_kind(mod().memory, at));
 }
 namespace {
 
@@ -821,8 +818,8 @@ const AttackParam &attack_param(int atkp)
 // its push alone change
 int attack_key(const Actor &a, int atkp)
 {
-    const std::uint32_t sheet = a.u32(0x5c0);
-    const int level = sheet != 0 ? int(mod().memory.u32(sheet + 0x24c) & 0xffu) : 0;
+    const std::uint32_t sheet = a.u32(field::kSheet);
+    const int level = sheet != 0 ? int(mod().memory.u32(sheet + sheet::kLevel) & 0xffu) : 0;
     return level > 0 ? (atkp & 0xffff) | (level << 8) << 16 : atkp;
 }
 
@@ -836,19 +833,20 @@ int attack_team(int atkp)
     return attack_param(atkp).team;
 }
 
-// The team an object of `name` is made with (field::kTeam, its class's constructor by its entry's kind): an enemy's 2
-// (3 a boss, 4 an enemy, 0xc a large one; YS::ENEMYBASE) but Mushroom XIII's (entries 0x417 to 0x423, is_kinoko:
-// YS::OBJ's 0, their scripts set it), a friend in battle's 1 (9; YS::BTLNPC, YS::PARTY), a gimmick's 3 (0x17), 0
-// another's; an enemy's when the mod has no entry for it
+// The team an object of `name` is made with (its class's constructor, by its entry's kind): an enemy's, but Mushroom
+// XIII's (their scripts give their own), a battle NPC's the player's, a gimmick's its own, none another's; an enemy's
+// when the mod has no entry for it
 int entry_team(const std::string &name)
 {
+    constexpr unsigned kFirstMushroom = 0x417, kLastMushroom = 0x423; // Mushroom XIII's entries (is_kinoko)
     const std::uint32_t at = entry_record(name);
     if (at == 0)
-        return 2;
-    const unsigned kind = mod().memory.u32(at + 4) & 0xffu, number = mod().memory.u32(at) & 0xffffu;
-    if (kind == 3 || kind == 4 || kind == 0xc)
-        return number >= 0x417u && number <= 0x423u ? 0 : 2;
-    return kind == 9 ? 1 : kind == 0x17 ? 3 : 0;
+        return kTeamEnemy;
+    const unsigned kind = entry_kind(mod().memory, at);
+    const unsigned number = mod().memory.u32(at + object_entry::kNumber) & 0xffffu;
+    if (enemy_kind(kind))
+        return number >= kFirstMushroom && number <= kLastMushroom ? kTeamNone : kTeamEnemy;
+    return kind == kEntryBattleNpc ? kTeamPlayer : kind == kEntryGimmick ? kTeamGimmick : kTeamNone;
 }
 
 int object_team(const Object &o)
@@ -856,21 +854,25 @@ int object_team(const Object &o)
     return int(o.u32(field::kTeam));
 }
 
-// An attack's team as YS::ATTACK's constructor gives it (the PS3 build's, + 0x2c): its atkp's team (its + 8), its
-// owner's when that is 0 (none: 0), the player's 1 (the player made its owner); 3 made 4
+// An attack's team given `team` (YS::ATTACK's constructor): a gimmick's strikes every team
+int attack_team_made(int team)
+{
+    return team == kTeamGimmick ? kTeamEvery : team;
+}
+
+// An attack's team as YS::ATTACK's constructor gives it: its atkp's, else its owner's
 int made_team(int atkp, const Object *owner)
 {
     int team = attack_team(atkp);
-    if (team == 0 && owner != nullptr)
+    if (team == kTeamNone && owner != nullptr)
         team = object_team(*owner);
-    return team == 3 ? 4 : team;
+    return attack_team_made(team);
 }
 
-// Whether an attack of `team` strikes an object of `target` (YS::ATTACK::is_strike: its + 0x2d, a byte of every team
-// but its own and 0)
+// Whether an attack of `team` strikes an object of `target` (YS::ATTACK::is_strike)
 bool strikes_team(int team, int target)
 {
-    return target > 0 && target < 8 && target != team;
+    return target > kTeamNone && target < kTeams && target != team;
 }
 
 // Whether an attack gives what it strikes a reaction (its + 10: 0 and 255 none)

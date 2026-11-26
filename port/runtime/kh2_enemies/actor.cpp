@@ -534,14 +534,14 @@ Vec3 Actor::step(float ticks)
         travel[i] += move[i] * move_speed * ticks;
     move = {};
     move_speed = 0.0F;
-    // a hit's slide (FUN_1403d4570): over below 1, else its way times its speed, the speed 0.9 of itself a tick
+    // a hit's slide (FUN_1403d4570)
     if (slide_speed > 0.0F) {
-        if (slide_speed < 1.0F) {
+        if (slide_speed < kHitbackLeast) {
             slide_speed = 0.0F;
         } else {
             for (int i = 0; i < 3; ++i)
                 travel[i] += slide[std::size_t(i)] * slide_speed * ticks;
-            slide_speed *= std::pow(0.9F, ticks);
+            slide_speed *= std::pow(kHitbackKept, ticks);
         }
     }
     // its class's movement, evaluated for two ticks at a time (every tick when steered past 100), its travel a tick

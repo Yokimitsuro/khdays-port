@@ -49,7 +49,7 @@ std::uint32_t motion_attack(Enemy &e, int atkp)
 {
     if (e.attack_record == 0)
         e.attack_record = mod().memory.add(0x100, e.actor->kind() + "'s attack", true);
-    mod().memory.set_u32(e.attack_record + 0x18, std::uint32_t(atkp & 0xffff));
+    mod().memory.set_u32(e.attack_record + attack_object::kAtkp, std::uint32_t(atkp & 0xffff));
     mod().memory.set_u32(e.attack_record + 0x94, e.actor->address());
     return e.attack_record;
 }
@@ -85,7 +85,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
         const int atkp = std::int16_t(range.params[0]), team = made_team(atkp, &a);
         strike_enemies(e, s, r, group, atkp, team);
         strike_npcs(e, s, r, group, atkp, team);
-        if (!strikes_team(team, 1))
+        if (!strikes_team(team, kTeamPlayer))
             continue;
         float nearest = -1.0F, reach = 0.0F, centre[3] = {}, toward = 0.0F;
         int spheres = 0;
@@ -177,23 +177,20 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
     }
 }
 
-// A hit's reaction on `a` as its damage patterns on change its first one (patterns.h): those on are BTLOBJ's
-// Pattern, (Default | Enable) & ~Disable (YS::PIERROT::_OVR_exec_damage): + 0xd10 Default (1:211 sets a bit, 1:212
-// and 1:324 clear it), + 0xd14 Enable and + 0xd18 Disable (its motion's ranges 36 and 37 while they last,
-// motion_states); in the air as 1:60 tells it
+// A hit's reaction on `a` as its damage patterns on change its first one (patterns.h, patterns_on); in the air as
+// 1:60 tells it
 int hit_pattern_reaction(const Actor &a, int first, bool not_player)
 {
     const bool air = (a.u32(field::kStatus) & 0x1000020u) != 0 || (a.u32(field::kFlags) & bit::kInAir) != 0 ||
                      (a.u32(field::kStatus) & 0x40u) != 0;
-    const std::uint32_t on = (a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18);
-    return pattern_reaction(damage_patterns(), on, air, first, not_player);
+    return pattern_reaction(damage_patterns(), patterns_on(a), air, first, not_player);
 }
 
 // A KH2 player's blow with attack `atkp` on `t`: its reaction kept with the blow's, the strongest
 void blow_reaction(Enemy &t, int atkp)
 {
     const int r = attack_param(atkp).reaction;
-    t.blow_reaction = std::max(t.blow_reaction, r == 255 ? 0 : r);
+    t.blow_reaction = std::max(t.blow_reaction, r == kNoReaction ? 0 : r);
     t.blow_karma += attack_param(atkp).revenge;
 }
 
@@ -248,10 +245,10 @@ namespace {
 float hitback_of(int atkp)
 {
     const AttackParam &p = attack_param(atkp);
-    if (p.reaction == 0 || p.reaction == 255)
+    if (p.reaction == 0 || p.reaction == kNoReaction)
         return 0.0F;
     float cm = float(p.hitback);
-    if (p.hitback == 0x7fff) {
+    if (p.hitback == attack_record::kBattleHitback) {
         const int r = p.reaction;
         const bool small = r == 3 || r == 6 || r == 8 || r == 10 || r == 13 || r == 16 || r == 18;
         const std::vector<std::uint8_t> &values = system_constants();
@@ -288,7 +285,7 @@ void strike(AttackObject &o, Object &target)
         return;
     Enemy &e = *owner->second;
     if (const unsigned player = days_object(target); player != 0) {
-        if (!strikes_team(o.team, 1) || !o.struck.insert(player).second)
+        if (!strikes_team(o.team, kTeamPlayer) || !o.struck.insert(player).second)
             return;
         float push[3], at[3], to[3]; // from the enemy to him: its attack of its own's way
         to_days(e.actor->place(), at);
@@ -368,17 +365,17 @@ void reflect_motion(Enemy &e, const AttackParam &p)
         a.damage_motion = true;
     }
     float cm = p.reflect_hitback < 0 ? 50.0F : float(p.reflect_hitback);
-    if (air || cm <= 0.0F || (a.u32(field::kFlags) & (1u << 7)) != 0)
+    if (air || cm <= 0.0F || (a.u32(field::kFlags) & bit::kNoHitback) != 0)
         return;
-    if (const std::uint32_t sheet = a.u32(0x5c0); sheet != 0) {
-        const std::uint32_t bits = mod().memory.u32(sheet + 0x1c8);
+    if (const std::uint32_t sheet = a.u32(field::kSheet); sheet != 0) {
+        const std::uint32_t bits = mod().memory.u32(sheet + sheet::kHitbackMore);
         float more = 0.0F;
         std::memcpy(&more, &bits, 4);
         cm += more;
     }
     const Vec3 f = facing_of(a.yaw());
     a.slide = {-f[0], 0.0F, -f[2]};
-    a.slide_speed = cm * 0.1F;
+    a.slide_speed = cm * kHitbackTick;
 }
 namespace {
 
@@ -665,7 +662,7 @@ void attack_objects(Enemy &e)
                    t.started && strikes_team(o.team, object_team(*t.actor)) &&
                    (t.actor->u32(field::kFlags) & bit::kNoHitAttack) == 0;
         };
-        const bool on_players = !o.players && strikes_team(o.team, 1);
+        const bool on_players = !o.players && strikes_team(o.team, kTeamPlayer);
         const bool on_enemies = !o.players && std::any_of(enemies.begin(), enemies.end(), [&](const auto &x) {
                                     return struck_enemy(x.first, *x.second);
                                 });

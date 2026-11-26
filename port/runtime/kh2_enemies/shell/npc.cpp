@@ -13,30 +13,30 @@ std::uint32_t npc_hit(Enemy &by, Enemy &npc, int atkp, int first, int reaction, 
     if (!hit)
         hit = std::make_unique<Object>(mod().memory, "a KH2 attack's hit on a battle NPC");
     if (params == 0)
-        params = mod().memory.add(48, "the attack of a hit on a battle NPC");
+        params = mod().memory.add(attack_record::kSize, "the attack of a hit on a battle NPC");
     const AttackParam &p = attack_param(atkp);
-    std::uint8_t record[48] = {};
-    record[2] = std::uint8_t(atkp);
-    record[3] = std::uint8_t(atkp >> 8);
-    record[4] = std::uint8_t(p.kind);
-    record[6] = std::uint8_t(p.power);
-    record[7] = std::uint8_t(p.power >> 8);
-    record[9] = std::uint8_t(p.element);
-    record[0xc] = std::uint8_t(p.hitback);
-    record[0xd] = std::uint8_t(p.hitback >> 8);
-    record[0xe] = std::uint8_t(p.blow_along);
-    record[0xf] = std::uint8_t(p.blow_along >> 8);
+    std::uint8_t record[attack_record::kSize] = {};
+    const auto put16 = [&record](std::uint32_t at, int v) {
+        record[at] = std::uint8_t(v);
+        record[at + 1] = std::uint8_t(v >> 8);
+    };
+    put16(attack_record::kNumber, atkp);
+    record[attack_record::kKind] = std::uint8_t(p.kind);
+    put16(attack_record::kPower, p.power);
+    record[attack_record::kElement] = std::uint8_t(p.element);
+    put16(attack_record::kHitback, p.hitback);
+    put16(attack_record::kBlowAlong, p.blow_along);
     mod().memory.write(params, record, sizeof record);
     const Vec3 w = hit_way(*by.actor, *npc.actor);
     const float way[4] = {w[0], w[1], w[2], 0.0F};
-    mod().memory.write(hit->address(), way, sizeof way);
-    hit->set_u32(0x10, by.actor->address());
-    hit->set_u32(0x14, npc.actor->address());
-    hit->set_u32(0x18, 0);
-    hit->set_u32(0x1c, motion_attack(by, atkp));
-    hit->set_u32(0x20, params);
-    hit->set_u32(0x24, std::uint32_t(reaction & 0xff) << 16 | std::uint32_t(first & 0xff) << 24);
-    hit->set_u32(0x28, std::uint32_t(damage));
+    mod().memory.write(hit->address() + hit_record::kWay, way, sizeof way);
+    hit->set_u32(hit_record::kAttacker, by.actor->address());
+    hit->set_u32(hit_record::kTarget, npc.actor->address());
+    hit->set_u32(hit_record::kFlag, 0);
+    hit->set_u32(hit_record::kAttack, motion_attack(by, atkp));
+    hit->set_u32(hit_record::kParams, params);
+    hit->set_u32(hit_record::kKind, hit_record::reactions(reaction, first));
+    hit->set_u32(hit_record::kDamage, std::uint32_t(damage));
     return hit->address();
 }
 
@@ -51,9 +51,9 @@ int npc_damage(const Enemy &by, const Enemy &npc, const AttackParam &ap)
     if (!lv || !own)
         return 0;
     const std::int64_t strength = ap.magic ? 0 : lv->strength, whole = npc.health_most;
-    if (ap.kind == 5)
+    if (ap.kind == attack_record::kCureShare)
         return int((whole * strength * ap.power + 9999) / 10000);
-    if (ap.kind == 6)
+    if (ap.kind == attack_record::kCure)
         return int((strength * ap.power + 99) / 100);
     const BattleRow &row = battle_row(npc.battle_number);
     const std::int64_t most = std::min<std::int64_t>(lv->most, (whole * row.most + 9999) / 10000);
@@ -101,23 +101,23 @@ void npc_hurt(Enemy &by, Enemy &npc, int atkp)
 {
     Actor &a = *npc.actor;
     const AttackParam &ap = attack_param(atkp);
-    const std::uint32_t sheet = a.u32(0x5c0), on = (a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18);
-    const bool cure = ap.kind == 5 || ap.kind == 6;
+    const std::uint32_t sheet = a.u32(field::kSheet);
+    const bool cure = attack_record::is_cure(ap.kind);
     const int damage = npc_damage(by, npc, ap);
-    const int first = ap.reaction == 255 ? 0 : ap.reaction;
-    if ((on & 1u << 13) != 0) {
+    const int first = ap.reaction == kNoReaction ? 0 : ap.reaction;
+    if (pattern_on(a, pattern::kMissionOnly)) {
         mission_damage(a.address(), damage, by.actor->address(), ap.kind);
         return;
     }
     if (npc.dying || (a.u32(field::kFade) & bit::kDeadMark) != 0)
         return;
     a.set_u32(field::kAttacker, by.actor->address());
-    const std::int64_t least = std::int32_t(mod().memory.u32(sheet + 8));
+    const std::int64_t least = std::int32_t(mod().memory.u32(sheet + sheet::kLeast));
     std::int64_t taken = damage;
-    if (!cure && npc.health - taken <= least && (on & 1u << 9) != 0)
+    if (!cure && npc.health - taken <= least && pattern_on(a, pattern::kWithstand))
         taken = std::max<std::int64_t>(0, npc.health - least - 1);
     npc.health = cure ? std::min(npc.health + damage, npc.health_most) : std::max(npc.health - taken, least);
-    mod().memory.set_u32(sheet, std::uint32_t(npc.health));
+    mod().memory.set_u32(sheet + sheet::kHealth, std::uint32_t(npc.health));
     if (npc.health <= 0) { // BTLOBJ::_OVR__dead, then its "dead" (PIERROT's)
         npc.dying = true;
         a.set_bits(field::kFade, bit::kDeadMark, true);

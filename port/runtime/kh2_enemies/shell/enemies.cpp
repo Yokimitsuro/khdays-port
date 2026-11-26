@@ -185,7 +185,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
                        double(body), double(was_radius), double(was_centre));
     }
     if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0) {
-        raw->large = (mod().memory.u32(entry + 4) & 0xffu) == 0xcu;
+        raw->large = entry_kind(mod().memory, entry) == kEntryLargeEnemy;
         // a pirate (its entry's + 0x48 bit 5) out of the moonlight, as every Days floor is (1:40): its parts 10 to 19
         // faded out, as YS::OBJ::exec_pirate leaves them at Place 0
         if ((mod().memory.u32(entry + 0x48) & 0x20u) != 0)
@@ -663,8 +663,8 @@ void motion_states(Enemy &e)
                 (r.id == 36 ? enable : disable) |= 1u << (r.params[0] & 31u);
         }
     a.set_u32(field::kMotionMarks, (a.u32(field::kMotionMarks) & ~0xffu) | ai_ranges);
-    a.set_u32(0xd14, enable);
-    a.set_u32(0xd18, disable);
+    a.set_u32(field::kPatternEnable, enable);
+    a.set_u32(field::kPatternDisable, disable);
 }
 
 // A sphere of `radius` (KH2's cm) from `from` along `way` (KH2's) against the room's walls (khdays_kh2_shell_wall: Days's
@@ -846,7 +846,7 @@ Vec3 vacuum_pull(Enemy &e, const Vec3 &place)
     const float weight = f32(entry + 0x50);
     if (weight == 0.0F || (a.u32(field::kFlags) & 4u) != 0 || ((a.u32(field::kStatus) >> 25) & 1u) != 0)
         return pull;
-    const unsigned kind = ((a.u32(field::kFlags6c8) >> 7) & 1u) != 0 ? 0u : (mod().memory.u32(entry + 4) & 0xffu);
+    const unsigned kind = (a.u32(field::kFlags6c8) & bit::kPlayer) != 0 ? 0u : entry_kind(mod().memory, entry);
     for (const std::uint32_t v : vacuums) {
         if ((mod().memory.u32(v + 0x10) & (1u << (kind & 31u))) != 0)
             continue;

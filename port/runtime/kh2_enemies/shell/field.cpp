@@ -208,7 +208,7 @@ bool Field::bone_point(Actor &a, int bone, const Vec3 &local, Vec3 &out)
 void Field::health(Actor &a)
 {
     const auto it = by_actor.find(&a);
-    const std::uint32_t record = a.u32(0x5c0);
+    const std::uint32_t record = a.u32(field::kSheet);
     KhdaysKh2Shell s;
     if (it == by_actor.end() || record == 0)
         return;
@@ -223,18 +223,18 @@ void Field::health(Actor &a)
         const std::int64_t now =
             e.health == 0 ? 0 : std::max<std::int64_t>(1, std::llround(share * double(e.record_most)));
         a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(now, 0x7fffffff)));
-        a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.record_most, 0x7fffffff)));
+        a.memory().set_u32(record + sheet::kMost, std::uint32_t(std::min<std::int64_t>(e.record_most, 0x7fffffff)));
         return;
     }
     if (e.health >= 0) {
         a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(e.health, 0xffffffff)));
-        a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.health_most, 0xffffffff)));
+        a.memory().set_u32(record + sheet::kMost, std::uint32_t(std::min<std::int64_t>(e.health_most, 0xffffffff)));
         return;
     }
     if (!khdays_kh2_shell_read(e.days, &s))
         return;
     a.memory().set_u32(record, std::uint32_t(std::max(0, s.hp)));
-    a.memory().set_u32(record + 4, std::uint32_t(std::max(1, s.hp_max)));
+    a.memory().set_u32(record + sheet::kMost, std::uint32_t(std::max(1, s.hp_max)));
 }
 
 // 2:9's battle entry: its health KH2's over KH2's Soldier's (the entries' first health values: KH2's level
@@ -304,18 +304,18 @@ void Field::stop_enemies(int stop)
 void Field::damage_reaction(Actor &a, std::uint32_t hit)
 {
     const auto it = by_actor.find(&a);
-    if (it == by_actor.end() || hit == 0 || (mod().memory.u32(hit + 0x18) & 1u) != 0)
+    if (it == by_actor.end() || hit == 0 || (mod().memory.u32(hit + hit_record::kFlag) & hit_record::kReacted) != 0)
         return;
-    mod().memory.set_u32(hit + 0x18, mod().memory.u32(hit + 0x18) | 1u);
+    mod().memory.set_u32(hit + hit_record::kFlag, mod().memory.u32(hit + hit_record::kFlag) | hit_record::kReacted);
     Enemy &e = *it->second;
     if (allies.count(e.days) == 0)
         return;
     float way[4] = {};
     std::uint8_t reaction = 0;
-    mod().memory.read(hit, way, sizeof way);
-    mod().memory.read(hit + 0x26, &reaction, 1);
-    const std::uint32_t attack = mod().memory.u32(hit + 0x1c);
-    const int atkp = attack != 0 ? int(mod().memory.u32(attack + 0x18) & 0xffffu) : 0;
+    mod().memory.read(hit + hit_record::kWay, way, sizeof way);
+    mod().memory.read(hit + hit_record::kReaction, &reaction, 1);
+    const std::uint32_t attack = mod().memory.u32(hit + hit_record::kAttack);
+    const int atkp = attack != 0 ? int(mod().memory.u32(attack + attack_object::kAtkp) & 0xffffu) : 0;
     if (const int motion = hit_reaction(e, {way[0], way[1], way[2]}, reaction, attack_param(atkp)); motion >= 0)
         e.hurt_motion = motion;
 }
@@ -401,7 +401,7 @@ void Field::attack_made(std::uint32_t at, Actor &by, Object *owner, int atkp, in
     o.group = group;
     o.sub = sub;
     attacks[at] = o;
-    mod().memory.set_u32(at + 0x18, std::uint32_t(atkp)); // (2:25, as a motion's attack: motion_attack)
+    mod().memory.set_u32(at + attack_object::kAtkp, std::uint32_t(atkp)); // (2:25, as a motion's attack)
     if (tracing())
         khdays_log("kh2 enemies: %08x makes an attack (atkp %d, group %d, team %d)%s", o.enemy, atkp, group, o.team,
                    o.players ? " of KH2's player" : "");
@@ -441,7 +441,7 @@ void Field::attack_follow(std::uint32_t at, std::uint32_t effect)
 void Field::attack_team(std::uint32_t at, int team)
 {
     if (const auto o = attacks.find(at); o != attacks.end())
-        o->second.team = team == 3 ? 4 : team;
+        o->second.team = attack_team_made(team);
 }
 
 void Field::attack_strike(std::uint32_t at, Object *target)
@@ -509,7 +509,7 @@ bool Field::attack_can_hit(std::uint32_t at, Object *target)
         return false;
     // (YS::ATTACK::is_strike's teams: a player of the player's, an enemy its own)
     if (days_object(*target) != 0)
-        return strikes_team(o->second.team, 1);
+        return strikes_team(o->second.team, kTeamPlayer);
     return target->actor() != nullptr && strikes_team(o->second.team, object_team(*target));
 }
 
@@ -1442,10 +1442,10 @@ std::uint32_t Field::player_sheet(const Object &o)
     const int most = std::max(1, khdays_kh2_shell_player_most_hp(actor->second));
     const int level = khdays_kh2_shell_player_level(actor->second);
     mod().memory.set_u32(s.sheet, std::uint32_t(hp));
-    mod().memory.set_u32(s.sheet + 4, std::uint32_t(most));
-    mod().memory.set_u32(s.sheet + 8, 0);
-    mod().memory.set_u32(s.sheet + 0x244, s.part);
-    mod().memory.set_u32(s.sheet + 0x268, o.address());
+    mod().memory.set_u32(s.sheet + sheet::kMost, std::uint32_t(most));
+    mod().memory.set_u32(s.sheet + sheet::kLeast, 0);
+    mod().memory.set_u32(s.sheet + sheet::kPart, s.part);
+    mod().memory.set_u32(s.sheet + sheet::kOwner, o.address());
     // (KH2's levels end at 99: Marluxia's doom counts down from it in two figures -- a Days player at 100 began
     // at "00")
     mod().memory.set_u32(s.part + 0xc, std::uint32_t(std::clamp(level, 0, 99)) << 24);
@@ -1679,7 +1679,7 @@ Object &player_object(unsigned object)
     if (!o) {
         o = std::make_unique<Object>(mod().memory, "a player");
         o->set_bits(field::kFlags6c8, bit::kPlayer, true); // KH2's player (FUN_1403a7a40)
-        o->set_u32(field::kTeam, 1u);                      // the player's team (YS::PARTY)
+        o->set_u32(field::kTeam, kTeamPlayer);
         // its Spec (1:97): walking, running, how high a jump goes, turning -- Sora's, Final Xemnas's Riku jumps by it
         o->set_f(field::kSpec + 0x0, 2.0F);
         o->set_f(field::kSpec + 0x4, 8.0F);

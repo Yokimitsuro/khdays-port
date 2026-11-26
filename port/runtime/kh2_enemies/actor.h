@@ -43,6 +43,7 @@ constexpr std::uint32_t kMotionMarks = 0x2ac;
 // the script's collision groups (1:52 to 1:54; YS::COLLISION_FLAG): a word of groups turned on, the next of those
 // turned off (a pair for each 32), looked at before the motion's (+ 0x5a0, ranges 4 and 5; FUN_1403ba550)
 constexpr std::uint32_t kCollisionFlags = 0x5a8;
+constexpr std::uint32_t kSheet = 0x5c0;     // its battle sheet (2:9, namespace sheet), 0 none
 constexpr std::uint32_t kPlace = 0x670;     // vec4: 1:147
 constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's maker, FUN_1403a7a40), read by 1:309
 constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
@@ -61,6 +62,9 @@ constexpr std::uint32_t kTravelBefore = 0xa38; // vec4: the tick's before (1:62)
 // asked, a tick's worth); 6:24 gives it, its steering stops on it (FUN_140421450)
 constexpr std::uint32_t kPressed = 0xa78;
 constexpr std::uint32_t kTarget = 0xbf8;       // its target slot (2:23)
+// its damage patterns, a bit each (patterns_on): its own (1:211 sets one, 1:212 and 1:324 clear it), and those its
+// motion's ranges 36 and 37 turn on and off while they last
+constexpr std::uint32_t kPatternDefault = 0xd10, kPatternEnable = 0xd14, kPatternDisable = 0xd18;
 constexpr std::uint32_t kAttacker = 0xd38;  // the last to hit it (FUN_140410700), 2:88
 constexpr std::uint32_t kKarmaLimit = 0xd4c; // YS::ENEMY's KarmaLimit (2:76), after its Karma
 constexpr std::uint32_t kSize = 0xe00;      // past every offset read so far
@@ -79,10 +83,160 @@ constexpr std::uint32_t kKeepsCarried = 1u << 15;
 constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1403ba9a0, 1:60)
 // kFlags: YS::OBJ's Flag (1:70 sets one, 1:71 clears it; the PS3 build's names): no touching objects, no being hit
 constexpr std::uint32_t kNoHitObject = 1u << 1, kNoHitAttack = 1u << 3;
+constexpr std::uint32_t kNoHitback = 1u << 7;    // kFlags: nothing pushes it back (YS::BTLOBJ::can_hitback)
 constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
 constexpr std::uint32_t kDeadMark = 1u << 2;    // kFade: counted as defeated (1:328, FUN_1403d4a40)
 } // namespace bit
+
+// The damage patterns the port reads (bits of field::kPatternDefault ...)
+namespace pattern {
+constexpr int kWithstand = 9;    // a hit leaves it one over its least health (YS::BTLOBJ::is_withstand)
+constexpr int kMissionOnly = 13; // a hit on it tells its mission and nothing else (a battle NPC's)
+} // namespace pattern
+
+// A battle sheet (YS::SHEET): its values (kValue bytes each, the first its health: now, most, least) ...
+namespace sheet {
+constexpr std::uint32_t kValue = 12;
+constexpr std::uint32_t kHealth = 0x0, kMost = 0x4, kLeast = 0x8;
+constexpr std::uint32_t kHitbackMore = 0x1c8; // float: added to a push back's speed (1:348)
+constexpr std::uint32_t kPart = 0x244;        // the part it is of
+constexpr std::uint32_t kLevel = 0x24c;       // byte: its level
+constexpr std::uint32_t kOwner = 0x268;       // the object it is of
+constexpr std::uint32_t kSize = 0x270;
+} // namespace sheet
+
+// A hit as the scripts read it (YS::DAMAGE: trigger 6 gives one)
+namespace hit_record {
+constexpr std::uint32_t kWay = 0x0;            // vec4: from the attacker to what it struck, along the ground (2:1)
+constexpr std::uint32_t kAttacker = 0x10;      // who struck (2:88)
+constexpr std::uint32_t kTarget = 0x14;        // what it struck
+constexpr std::uint32_t kFlag = 0x18;          // kReacted: its reaction carried out (2:0, 2:15)
+constexpr std::uint32_t kAttack = 0x1c;        // the attack object that struck (attack_object)
+constexpr std::uint32_t kParams = 0x20;        // its attack's record (attack_record)
+constexpr std::uint32_t kKind = 0x24;          // byte
+constexpr std::uint32_t kPart = 0x25;          // byte: the part it struck (2:70)
+constexpr std::uint32_t kReaction = 0x26;      // byte: its reaction after the damage patterns (2:7, 2:8)
+constexpr std::uint32_t kFirstReaction = 0x27; // byte: before them (2:64, 2:92)
+constexpr std::uint32_t kDamage = 0x28;        // its damage (2:46)
+constexpr std::uint32_t kReacted = 1u;
+// The word at kKind: no kind, its two reactions
+constexpr std::uint32_t reactions(int reaction, int first)
+{
+    return std::uint32_t(reaction & 0xff) << 16 | std::uint32_t(first & 0xff) << 24;
+}
+} // namespace hit_record
+
+// An attack object (YS::ATTACK)
+namespace attack_object {
+constexpr std::uint32_t kOwner = 0xc; // 2:24
+constexpr std::uint32_t kAtkp = 0x18; // its atkp's number (2:25)
+} // namespace attack_object
+
+// An attack's record (ATTACKPARAM, 00battle.bin's atkp)
+namespace attack_record {
+constexpr std::uint32_t kSize = 48;
+constexpr std::uint32_t kNumber = 0x2;    // u16
+constexpr std::uint32_t kKind = 0x4;      // kCureShare, kCure, else damage
+constexpr std::uint32_t kPower = 0x6;     // u16
+constexpr std::uint32_t kElement = 0x9;   // 0 physical, 1 fire, 2 blizzard, 3 thunder ...
+constexpr std::uint32_t kHitback = 0xc;   // s16: how far it throws (KH2's cm), kBattleHitback the battle constant's
+constexpr std::uint32_t kBlowAlong = 0xe; // s16
+constexpr int kBattleHitback = 0x7fff;
+constexpr int kCureShare = 5, kCure = 6; // cures: a share of the most health, and the strength's
+constexpr bool is_cure(int kind)
+{
+    return kind == kCureShare || kind == kCure;
+}
+} // namespace attack_record
+
+// An object entry's record (00objentry.bin: what field::kEntry points at)
+namespace object_entry {
+constexpr std::uint32_t kNumber = 0x0; // u16
+constexpr std::uint32_t kKind = 0x4;   // byte: EntryKind
+} // namespace object_entry
+enum EntryKind : unsigned {
+    kEntryBoss = 3,
+    kEntryEnemy = 4,
+    kEntryBattleNpc = 9,
+    kEntryLargeEnemy = 0xc, // a large boss
+    kEntryPrizes = 0x16,
+    kEntryGimmick = 0x17,
+};
+constexpr bool enemy_kind(unsigned kind)
+{
+    return kind == kEntryBoss || kind == kEntryEnemy || kind == kEntryLargeEnemy;
+}
+constexpr bool boss_kind(unsigned kind)
+{
+    return kind == kEntryBoss || kind == kEntryLargeEnemy;
+}
+
+// The teams (field::kTeam): an attack strikes every team but its own and none (strikes_team)
+enum Team : int {
+    kTeamNone = 0,
+    kTeamPlayer = 1, // the player, his party, battle NPCs
+    kTeamEnemy = 2,
+    kTeamGimmick = 3,
+    kTeamEvery = 4, // an attack a gimmick's team makes: it strikes every team, gimmicks too
+};
+constexpr int kTeams = 8;
+
+// A hit's reactions (YS::DAMAGE's Reaction)
+constexpr int kNoReaction = 255;        // an attack's that gives none
+constexpr int kReactionSmall = 3;       // REACTION_SMALL
+constexpr int kReactionFinishSmall = 6; // REACTION_F_SMALL
+// A reaction's type (DAMAGE::GetReactionType); the reactions not listed are their own
+enum ReactionType : int {
+    kReactSlide = 1,
+    kReactOnSpot = 2, // a small hit without its slide
+    kReactSmall = 3,
+    kReactBlow = 4,
+    kReactTornado = 5,
+    kReactLarge = 14,
+};
+constexpr int reaction_type(int r)
+{
+    if (r == 1 || r == 12)
+        return kReactSlide;
+    if (r == 3 || r == 6 || r == 8 || r == 10 || r == 13 || r == 16 || r == 18)
+        return kReactSmall;
+    if (r == 4 || r == 7 || r == 9 || r == 11 || r == 15 || r == 17)
+        return kReactBlow;
+    return r;
+}
+// Whether a reaction slides half as far (DAMAGE::get_hitback)
+constexpr bool half_hitback(int r)
+{
+    return r == 12 || r == 13;
+}
+// Whether a reaction finishes (trap_damage_is_finish: 6, 7, 10, 11)
+constexpr bool finishing_reaction(int r)
+{
+    return (r >= 6 && r < 8) || (r >= 10 && r < 12);
+}
+
+// A push back (YS::BTLOBJ's hitback): its speed a tick a tenth of its length, kHitbackKept of itself each tick after,
+// over below kHitbackLeast
+constexpr float kHitbackTick = 0.1F, kHitbackKept = 0.9F, kHitbackLeast = 1.0F;
+
+// KH2's damage motions, by their number in a motion set
+namespace damage_motion {
+constexpr int kSmallFront = 10, kSmallBack = 12; // the next number each: a hit of another kind
+constexpr int kAirFront = 14, kAirBack = 15;
+constexpr int kBlowFront = 16, kBlowBack = 18; // the next number each: its landing
+constexpr int kLargeFront = 23, kLargeBack = 24;
+constexpr int kKnockedOut = 54, kGetUp = 55; // a party member's
+} // namespace damage_motion
+
+// KH2's battle constants (03system.bin's "sstm", World::system_value) by offset
+namespace battle_constant {
+constexpr std::uint32_t kBlowUp = 0x24, kBlowAlong = 0x28;     // a blow's, its attack giving none
+constexpr std::uint32_t kHitback = 0x30, kSmallHitback = 0x34; // a push back's, its attack giving none
+constexpr std::uint32_t kKnockedCure = 0x54;                   // the share of a cure a knocked out party member gets
+constexpr std::uint32_t kGetUpHealth = 0x58;                   // the share of its most health it gets up with
+constexpr std::uint32_t kStunOutside = 0x5c;                   // how fast its stun runs out outside a battle
+} // namespace battle_constant
 
 // One state of the table a script fills (1:5, 1:6; FUN_1403ca0e0): 32 bytes in the script's own memory.
 struct StateEntry final {
@@ -229,6 +383,21 @@ protected:
     std::vector<std::uint8_t> bytes_;
     std::uint32_t address_ = 0;
 };
+
+// The damage patterns on now: (default | enable) & ~disable (YS::PIERROT::_OVR_exec_damage)
+inline std::uint32_t patterns_on(const Object &o)
+{
+    return (o.u32(field::kPatternDefault) | o.u32(field::kPatternEnable)) & ~o.u32(field::kPatternDisable);
+}
+inline bool pattern_on(const Object &o, int pattern)
+{
+    return (patterns_on(o) >> pattern & 1u) != 0;
+}
+// An object entry's kind (EntryKind), 0 none
+inline unsigned entry_kind(ai::Memory &memory, std::uint32_t record)
+{
+    return record != 0 ? memory.u32(record + object_entry::kKind) & 0xffu : 0u;
+}
 
 // What an actor's motions are: the motion numbers its set has (KH2's list: 0 IDLE, 1 WALK ... 44 APPEAR), their
 // lengths and loops in ticks, their root motion -- an .mset behind it in the game, a made-up one in the tests.

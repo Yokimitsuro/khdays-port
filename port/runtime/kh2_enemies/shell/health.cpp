@@ -145,9 +145,10 @@ using namespace khdays::kh2_enemies;
 using namespace khdays::kh2_enemies::shell;
 
 namespace {
-constexpr int kDaysHitFull = 0x20;        // a Days hit packet's flag (HIT_FLAG_FULL): a full hit, the finishers'
-constexpr int kReactionSmall = 3;         // YS::DAMAGE's REACTION_SMALL
-constexpr int kReactionFinishSmall = 6;   // YS::DAMAGE's REACTION_F_SMALL
+constexpr int kDaysHitFull = 0x20; // a Days hit packet's flag (HIT_FLAG_FULL): a full hit, the finishers'
+constexpr int kDaysHitKarma = 10;  // a Days hit's karma: KH2's player's small hit's RevengeDamage
+// what the field is told as an enemy dies (its object as a serial) and a boss (its entry's number)
+constexpr int kSignalEnemyDead = 75, kSignalBossDead = 4;
 } // namespace
 
 extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
@@ -202,11 +203,11 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         // its mission completes on it (Barbossa's asks for his, 1015) -- but not one sent away as its battle ends
         // (battle_over), which in KH2 does not die
         if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0) {
-            const unsigned kind = mod().memory.u32(entry + 4) & 0xffu;
-            if (kind == 4u)
-                the_field().signal(75, int(e->days & 0x7fffffffu));
-            else if ((kind == 3u || kind == 0xcu) && !e->dead_marked)
-                the_field().signal(4, int(mod().memory.u32(entry) & 0xffffu));
+            const unsigned kind = entry_kind(mod().memory, entry);
+            if (kind == kEntryEnemy)
+                the_field().signal(kSignalEnemyDead, int(e->days & 0x7fffffffu));
+            else if (boss_kind(kind) && !e->dead_marked)
+                the_field().signal(kSignalBossDead, int(mod().memory.u32(entry + object_entry::kNumber) & 0xffffu));
         }
         e->reacting = false;
         e->paused = false;
@@ -240,33 +241,34 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, its
     // reaction (Reaction, + 0x26: 2:7, 2:8) and the one it had before the patterns (OrigReaction, + 0x27), its damage
     // (Damage, + 0x28: 2:46), in its health's measure
-    mod().memory.write(days_hit->address(), way, sizeof way);
-    days_hit->set_u32(0x10, striker != nullptr ? striker->address() : 0u);
-    days_hit->set_u32(0x14, a.address());
-    days_hit->set_u32(0x18, 0);
-    days_hit->set_u32(0x24, std::uint32_t(hit_reaction & 0xff) << 16 | std::uint32_t(first_reaction & 0xff) << 24);
-    days_hit->set_u32(0x28, std::uint32_t(std::min<std::int64_t>(std::max<std::int64_t>(damage, 0), 0x7fffffff)));
+    mod().memory.write(days_hit->address() + hit_record::kWay, way, sizeof way);
+    days_hit->set_u32(hit_record::kAttacker, striker != nullptr ? striker->address() : 0u);
+    days_hit->set_u32(hit_record::kTarget, a.address());
+    days_hit->set_u32(hit_record::kFlag, 0);
+    days_hit->set_u32(hit_record::kKind, hit_record::reactions(hit_reaction, first_reaction));
+    days_hit->set_u32(hit_record::kDamage,
+                      std::uint32_t(std::min<std::int64_t>(std::max<std::int64_t>(damage, 0), 0x7fffffff)));
     // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
     // and no push back of its own (+ 0xc, 0x7fff: 2:86 gives KH2's battle constants' then)
     static std::uint32_t params = 0;
     if (params == 0) {
-        params = mod().memory.add(48, "a Days hit's attack parameters");
-        const std::uint8_t none[2] = {0xff, 0x7f};
-        mod().memory.write(params + 0xc, none, 2);
+        params = mod().memory.add(attack_record::kSize, "a Days hit's attack parameters");
+        const std::uint8_t none[2] = {attack_record::kBattleHitback & 0xff, attack_record::kBattleHitback >> 8};
+        mod().memory.write(params + attack_record::kHitback, none, 2);
     }
     const std::uint8_t element = std::uint8_t(kh2_element_of(e->hit_kinds));
-    mod().memory.write(params + 9, &element, 1);
-    days_hit->set_u32(0x20, params);
+    mod().memory.write(params + attack_record::kElement, &element, 1);
+    days_hit->set_u32(hit_record::kParams, params);
     // the hit's attack (its + 0xc its owner, 2:24: the player who struck). A hit is KH2's damage (the PS3 build's
     // YS::ENEMY::_OVR_exec_damage, PIERROT::_OVR_exec_damage), not its reflect: the state's + 0x18 routine (event 7)
     // and trigger 19 are a reflected attack's (PIERROT::_OVR_exec_reflect, the PC's FUN_140411060: its ACT::clear and
     // its reflect state, "revenge", are not a hit's)
     if (!days_attack)
         days_attack = std::make_unique<Object>(mod().memory, "a Days hit's attack");
-    days_attack->set_u32(0xc, striker != nullptr ? striker->address() : 0u);
+    days_attack->set_u32(attack_object::kOwner, striker != nullptr ? striker->address() : 0u);
     days_attack_owner = striker != nullptr ? striker->address() : 0u;
     // its karma: the attack's RevengeDamage (a KH2 blow's atkp + 0x2a; a Days hit KH2's player's small hit's, 10)
-    e->karma += float(blow ? e->landing_karma : 10);
+    e->karma += float(blow ? e->landing_karma : kDaysHitKarma);
     e->landing_karma = 0;
     const StateEntry *now = a.states().current();
     if (now != nullptr && (now->flags & 2) != 0) {
@@ -323,7 +325,8 @@ extern "C" int khdays_kh2_enemies_untouched(void *actor)
 {
     const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
     return e != nullptr && !e->dying && !e->dead_marked &&
-           ((e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0 || !strikes_team(1, object_team(*e->actor)));
+           ((e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0 ||
+            !strikes_team(kTeamPlayer, object_team(*e->actor)));
 }
 
 // Ov107_AiState_ApplyHit (prepare.py's join): no hit on a KH2 enemy from a player KH2 lets make none now -- turned into
@@ -355,8 +358,7 @@ extern "C" int khdays_kh2_enemies_withstand(void *actor, int hp)
     const auto o = object != 0 ? players.find(object) : players.end();
     if (o == players.end() || !o->second)
         return hp;
-    const Object &p = *o->second;
-    return (((p.u32(0xd10) | p.u32(0xd14)) & ~p.u32(0xd18)) & 0x200u) != 0 ? 1 : hp;
+    return pattern_on(*o->second, pattern::kWithstand) ? 1 : hp;
 }
 
 // Ov107_AiState_ApplyHit (prepare.py's join): a Days player's hit on a KH2 enemy -- KH2's enemies alone; Days's own
@@ -458,10 +460,9 @@ int kept_damage(void *actor, int amount, int kinds)
             // its least health (1:231, YS::SHEET's MinHp) or its withstanding (pattern 9) keep it from falling as they
             // keep a measured hit (below): the blows stop where its health would reach its least, one over it while it
             // withstands -- Final Xemnas, kept at 1 for his laser dome, fell to his partner's blows alone otherwise
-            const std::uint32_t sheet = e->actor->u32(0x5c0);
-            const int least = sheet != 0 ? std::int32_t(mod().memory.u32(sheet + 8)) : 0;
-            const Actor &a = *e->actor;
-            const bool withstands = (((a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18)) & 0x200u) != 0;
+            const std::uint32_t sheet = e->actor->u32(field::kSheet);
+            const int least = sheet != 0 ? std::int32_t(mod().memory.u32(sheet + sheet::kLeast)) : 0;
+            const bool withstands = pattern_on(*e->actor, pattern::kWithstand);
             const double whole = kSoldierBlows * e->health_share * e->start_share;
             if (least > 0 || withstands) {
                 const double share = least > 0 && e->record_most > 0 ? double(least) / double(e->record_most) : 0.0;
@@ -528,18 +529,18 @@ int kept_damage(void *actor, int amount, int kinds)
         if (amount <= 0)
             return 0;
     }
-    const std::uint32_t record = e->actor->u32(0x5c0);
+    const std::uint32_t record = e->actor->u32(field::kSheet);
     KhdaysKh2Shell s;
     if (!khdays_kh2_shell_read(e->days, &s))
         return amount;
-    int least = record != 0 ? std::int32_t(mod().memory.u32(record + 8)) : 0;
+    int least = record != 0 ? std::int32_t(mod().memory.u32(record + sheet::kLeast)) : 0;
     if (least > 0 && e->record_most > 0 && e->health >= 0) // the record's measure to its health's
         least = int(std::min<std::int64_t>(0x7fffffff, (std::int64_t(least) * e->health_most + e->record_most - 1) /
                                                            e->record_most));
     // withstanding (its damage pattern 9 on: YS::BTLOBJ::is_withstand, the PS3 build's): a hit that would take it to
     // its least or below leaves it one over (BTLOBJ::add_damage), so it cannot fall -- Luxord, till his time gauge
     // runs out (his script takes the pattern off then, 1:324, and leaves him 1)
-    if (const Actor &a = *e->actor; (((a.u32(0xd10) | a.u32(0xd14)) & ~a.u32(0xd18)) & 0x200u) != 0)
+    if (pattern_on(*e->actor, pattern::kWithstand))
         least = std::max(least, 0) + 1;
     if (e->health >= 0) {
         // its own health takes the damage (Days's damage is in its stand-in's measure, as its health is); Days's

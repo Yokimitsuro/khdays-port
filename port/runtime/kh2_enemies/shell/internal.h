@@ -1089,7 +1089,7 @@ template <typename F> void each_npc(int team, F &&f)
 {
     for (auto &[id, npc] : allies)
         if (npc && !npc->released && npc->started && npc->actor && friends.count(id) == 0 &&
-            npc->actor->u32(0x5c0) != 0 && strikes_team(team, object_team(*npc->actor)) &&
+            npc->actor->u32(field::kSheet) != 0 && strikes_team(team, object_team(*npc->actor)) &&
             (npc->actor->u32(field::kFlags) & bit::kNoHitAttack) == 0)
             f(*npc);
 }
@@ -1177,7 +1177,7 @@ struct PlayerFiles final {
 // kh2/00battle.bin or no such attack
 struct AttackParam final {
     int power = 0, team = 0, reaction = 0;
-    int hitback = 0x7fff; // + 0xc, a short: how far its hit throws (KH2's cm), 0x7fff the battle constant's
+    int hitback = attack_record::kBattleHitback; // + 0xc, a short: how far its hit throws (KH2's cm)
     int add_drive = 0;    // + 0x29 (the PS3 build's ATTACKPARAM::AddDrive): what a landed one takes off a form's time
     int revenge = 0;      // + 0x2a (RevengeDamage): the karma a landed one adds (YS::ENEMY::_OVR_exec_damage)
     int kind = 0;         // + 4 (Type): 5 and 6 a cure's (YS::SHEET::calc_damage, BTLOBJ::add_damage), else damage
@@ -1441,6 +1441,7 @@ int attack_power(int atkp);
 int attack_team(int atkp);
 int entry_team(const std::string &name);
 int made_team(int atkp, const Object *owner);
+int attack_team_made(int team);
 bool attack_reacts(int atkp);
 const std::vector<DamagePattern> &damage_patterns();
 
@@ -1475,7 +1476,7 @@ std::uint32_t motion_attack(Enemy &e, int atkp);
 void attack(Enemy &e, const KhdaysKh2Shell &s);
 int hit_pattern_reaction(const Actor &a, int first, bool not_player = false);
 void blow_reaction(Enemy &t, int atkp);
-void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp, int team = 1);
+void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp, int team = kTeamPlayer);
 void hitback_push(int atkp, float dx, float dz, float push[3]);
 void strike(AttackObject &o, Object &target);
 void reflect_motion(Enemy &e, const AttackParam &p);

@@ -359,15 +359,14 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         for (const auto &r : attr->ranges)
             if ((r.id == 3 || r.id == 24 || r.id == 30) && h.time >= float(r.start) && h.time < float(r.end))
                 air = true;
-    // a script's push of him (1:146: YS::BTLOBJ::exec_hitback, an actor's slide as Actor::step moves it): over below 1,
-    // else its way times its speed, the speed 0.9 of itself a tick -- with the script's move (1:89)
+    // a script's push of him (1:146), as an actor's slide (Actor::step), with the script's move (1:89)
     if (h.slide_speed > 0.0F) {
-        if (h.slide_speed < 1.0F) {
+        if (h.slide_speed < kHitbackLeast) {
             h.slide_speed = 0.0F;
         } else {
             for (int i = 0; i < 3; ++i)
                 h.move[std::size_t(i)] += h.slide[std::size_t(i)] * h.slide_speed;
-            h.slide_speed *= 0.9F;
+            h.slide_speed *= kHitbackKept;
         }
     }
     const Vec3 asked = {h.move[0] + h.steer[0], h.move[1] + h.steer[1], h.move[2] + h.steer[2]};

@@ -634,9 +634,9 @@ int member_damage(const Enemy &by, const Friend &f, const AttackParam &ap)
     if (!lv)
         return 0;
     const int strength = ap.magic ? 0 : lv->strength;
-    if (ap.kind == 5)
+    if (ap.kind == attack_record::kCureShare)
         return int((std::int64_t(f.hp_most) * strength * ap.power + 9999) / 10000);
-    if (ap.kind == 6)
+    if (ap.kind == attack_record::kCure)
         return int((std::int64_t(strength) * ap.power + 99) / 100);
     int v = strength - character_defence(f.character, level);
     v = std::min(v, std::min(lv->most, 99999));
@@ -660,13 +660,13 @@ void member_add_hp(Friend &f, Enemy &m, int amount)
     if (f.knocked) {
         f.knocked = false;
         Actor &a = *m.actor;
-        if (a.motion.id == 54 && a.play(55, 0.0F, 0.0F)) {
+        if (a.motion.id == damage_motion::kKnockedOut && a.play(damage_motion::kGetUp, 0.0F, 0.0F)) {
             a.motion.queued.clear();
             a.motion.queued.push_back({0, 0.0F});
-            f.hurt_motion = 55;
+            f.hurt_motion = damage_motion::kGetUp;
             a.damage_motion = true;
         }
-        amount = int(float(amount) * the_field().system_value(0x54, 0.5F));
+        amount = int(float(amount) * the_field().system_value(battle_constant::kKnockedCure, 0.5F));
     }
     f.hp = std::min(f.hp_most, f.hp + amount);
     if (tracing())
@@ -681,9 +681,9 @@ bool member_stun(Friend &f, Enemy &e)
 {
     Actor &a = *e.actor;
     if (f.knocked) {
-        f.knocked_for -= the_field().in_battle() ? 1.0F : the_field().system_value(0x5c, 8.0F);
+        f.knocked_for -= the_field().in_battle() ? 1.0F : the_field().system_value(battle_constant::kStunOutside, 8.0F);
         if (f.knocked_for <= 0.0F)
-            member_add_hp(f, e, int(float(f.hp_most) * the_field().system_value(0x58, 0.5F)));
+            member_add_hp(f, e, int(float(f.hp_most) * the_field().system_value(battle_constant::kGetUpHealth, 0.5F)));
     }
     // knocked out and free (OBJ::can_control: no damage reaction of its, not attacking; not in the air, not held by a
     // script nor playing another's set's motion): its stars started (ryj::PAX::start, the system effects' 14) and its
@@ -758,15 +758,8 @@ int hit_reaction(Enemy &m, const Vec3 &way, int reaction, const AttackParam &ap)
 {
     Actor &a = *m.actor;
     int started = -1;
-    int kind = reaction;
-    if (reaction == 1 || reaction == 12)
-        kind = 1;
-    else if (reaction == 3 || reaction == 6 || reaction == 8 || reaction == 10 || reaction == 13 || reaction == 16 ||
-             reaction == 18)
-        kind = 3;
-    else if (reaction == 4 || reaction == 7 || reaction == 9 || reaction == 11 || reaction == 15 || reaction == 17)
-        kind = 4;
-    if (kind <= 0 || kind == 5)
+    const int kind = reaction_type(reaction);
+    if (kind <= 0 || kind == kReactTornado)
         return -1;
     const Vec3 face = facing_of(a.yaw());
     const bool back = way[0] * face[0] + way[2] * face[2] >= 0.0F; // its facing along the hit's: struck from behind
@@ -782,35 +775,37 @@ int hit_reaction(Enemy &m, const Vec3 &way, int reaction, const AttackParam &ap)
     };
     const auto slide = [&] {
         float cm = float(ap.hitback);
-        if (ap.hitback == 0x7fff)
-            cm = the_field().system_value(kind == 3 ? 0x34 : 0x30, 200.0F);
-        if (reaction == 12 || reaction == 13)
+        if (ap.hitback == attack_record::kBattleHitback)
+            cm = the_field().system_value(
+                kind == kReactSmall ? battle_constant::kSmallHitback : battle_constant::kHitback, 200.0F);
+        if (half_hitback(reaction))
             cm *= 0.5F;
         a.slide = way;
-        a.slide_speed = cm * 0.1F;
+        a.slide_speed = cm * kHitbackTick;
     };
     const bool air = a.jump.on || (a.u32(field::kFlags) & bit::kInAir) != 0;
-    if (kind == 1) {
+    using namespace damage_motion;
+    if (kind == kReactSlide) {
         slide();
-    } else if (kind == 2 || (kind == 3 && !air)) {
-        start(own(back ? 12 : 10));
-        if (kind == 3)
+    } else if (kind == kReactOnSpot || (kind == kReactSmall && !air)) {
+        start(own(back ? kSmallBack : kSmallFront));
+        if (kind == kReactSmall)
             slide();
-    } else if (kind == 3) {
+    } else if (kind == kReactSmall) {
         turn();
-        start(own(back ? 15 : 14));
-    } else if (kind == 4) {
+        start(own(back ? kAirBack : kAirFront));
+    } else if (kind == kReactBlow) {
         float up = float(ap.hitback), along = float(ap.blow_along);
         if (ap.hitback == 0 && ap.blow_along == 0) {
-            up = the_field().system_value(0x24, 0.0F);
-            along = the_field().system_value(0x28, 0.0F);
+            up = the_field().system_value(battle_constant::kBlowUp, 0.0F);
+            along = the_field().system_value(battle_constant::kBlowAlong, 0.0F);
         }
         turn();
-        start(back ? 18 : 16);
+        start(back ? kBlowBack : kBlowFront);
         thrown(a, way[0], way[2], along, -up);
-    } else if (kind == 14) {
+    } else if (kind == kReactLarge) {
         turn();
-        start(back ? 24 : 23);
+        start(back ? kLargeBack : kLargeFront);
         slide();
     }
     return started;
@@ -844,7 +839,7 @@ void member_hurt(Enemy &by, Enemy &m, Friend &f, int atkp)
     }
     if (!by.dying && !by.released && enemies.count(by.days) != 0)
         f.target = by.days;
-    const int first = ap.reaction == 255 ? 0 : ap.reaction;
+    const int first = ap.reaction == kNoReaction ? 0 : ap.reaction;
     const int reaction = hit_pattern_reaction(a, first, true);
     if (!a.hooked() && m.motions->capture_id() < 0)
         if (const int motion = hit_reaction(m, hit_way(*by.actor, a), reaction, ap); motion >= 0)
