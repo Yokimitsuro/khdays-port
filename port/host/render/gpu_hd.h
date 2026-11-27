@@ -40,5 +40,12 @@ void khdays_gpu_hd_set_most(uint64_t bytes);
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void);
 /* Counts each upload or move of a picture into the buffer: unchanged, what was drawn into it is still there. */
 uint32_t khdays_gpu_hd_generation(void);
+/* The same, but for a picture whose texels are rewritten in place (one whose pixels change), which
+ * khdays_gpu_hd_written_at counts picture by picture: unchanged, and none of the pictures something drew from
+ * rewritten since, it is still as drawn. */
+uint32_t khdays_gpu_hd_layout(void);
+/* When picture `id`'s texels were last rewritten in place: a number that only grows, the greater the later; 0
+ * never, and for an id not known. */
+uint64_t khdays_gpu_hd_written_at(uint32_t id);
 
 #endif

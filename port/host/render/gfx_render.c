@@ -1162,7 +1162,8 @@ static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int colum
 typedef struct KeptHow {
     Compose2dParams cp;
     int parts[ONE_READS][4], part_count;
-    uint32_t hd_generation, sequence_draws;
+    uint32_t hd_layout, sequence_draws;
+    uint64_t hd_written; /* the latest rewrite in place of a picture the engine reads (hd_written_for) */
     SDL_GPUBuffer *hd;
     SDL_GPUTexture *texture;
 } KeptHow;
@@ -1229,9 +1230,28 @@ static void free_kept(void)
     }
 }
 
+/* The latest rewrite in place of a picture engine e's composition reads (khdays_gpu_hd_written_at): its elements'
+ * images and the mods' tiles (all of them, both engines'). A picture only the other engine draws -- an animated HUD
+ * piece's, rewritten as it moves -- leaves this one's screen kept. */
+static uint64_t hd_written_for(const KhdaysFramePackage *p, int e)
+{
+    uint64_t latest = 0u;
+    for (uint32_t i = 0; i < p->elements[e].count; ++i) {
+        const uint64_t w = khdays_gpu_hd_written_at(p->elements[e].records[(size_t)i * KE_WORDS + KE_IMAGE]);
+        latest = w > latest ? w : latest;
+    }
+    for (size_t i = 0; i < SDL_arraysize(p->hd2d); ++i) {
+        if (p->hd2d[i] != 0u) {
+            const uint64_t w = khdays_gpu_hd_written_at((p->hd2d[i] >> 20) - 1u);
+            latest = w > latest ? w : latest;
+        }
+    }
+    return latest;
+}
+
 /* 1 when engine e's screen is what composing its `parts` with `cp` now would make, so its pass can be left
  * out. */
-static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int part_count)
+static int kept_screen(const KhdaysFramePackage *p, int e, const Compose2dParams *cp, int (*parts)[4], int part_count)
 {
     KeptHow now;
     if (!keep || cp->source3d != 0u || kept[e].sent_bytes == 0) {
@@ -1242,7 +1262,8 @@ static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int pa
     now.cp = *cp;
     memcpy(now.parts, parts, sizeof(parts[0]) * (size_t)part_count);
     now.part_count = part_count;
-    now.hd_generation = khdays_gpu_hd_generation();
+    now.hd_layout = khdays_gpu_hd_layout();
+    now.hd_written = hd_written_for(p, e);
     now.sequence_draws = khdays_sequence_gpu_draws();
     now.hd = khdays_gpu_hd_buffer();
     now.texture = screen[e];
@@ -1772,7 +1793,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
                 cp.fog_table[i] = io32(io3d, 0x60 + 4u * (unsigned)i);
             }
         }
-        if (kept_screen(e, &cp, parts, part_count)) {
+        if (kept_screen(p, e, &cp, parts, part_count)) {
             continue; /* the screen as it was composed: nothing it is made of changed */
         }
         in[0] = desc[e];
