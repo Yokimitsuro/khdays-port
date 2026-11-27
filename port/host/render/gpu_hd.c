@@ -19,6 +19,7 @@ static int refused, full_said, table_said;      /* the card refused a larger buf
 static int at_most;                             /* the buffer is as large as MOST_BYTES lets it be */
 static uint32_t now = 1;                        /* the picture being drawn (khdays_gpu_hd_next_frame) */
 static uint32_t generation;                     /* counts each upload or move into the buffer */
+static uint32_t layout;                         /* the same but for a picture's texels rewritten in place */
 static uint32_t pinned_out;                     /* pictures kept on the card that did not fit yet */
 static uint64_t let_go;                         /* on-demand pictures let go since the full was said */
 
@@ -27,6 +28,10 @@ static uint64_t let_go;                         /* on-demand pictures let go sin
  * ones that change), and the picture that last drew it (on-demand ones). */
 static uint32_t *places, *versions, *drawn;
 static uint32_t places_capacity;
+/* For each replacement: when its texels were last rewritten in place (sync_changed), by image_writes -- a number
+ * that only grows; 0: never (khdays_gpu_hd_written_at) */
+static uint64_t *written_at;
+static uint64_t image_writes;
 static SDL_GPUTransferBuffer *changed_upload;
 static uint32_t changed_upload_size;
 
@@ -140,6 +145,16 @@ int khdays_gpu_hd_on_card(uint32_t id)
 uint32_t khdays_gpu_hd_generation(void)
 {
     return generation;
+}
+
+uint32_t khdays_gpu_hd_layout(void)
+{
+    return layout;
+}
+
+uint64_t khdays_gpu_hd_written_at(uint32_t id)
+{
+    return id < known && written_at != NULL ? written_at[id] : 0u;
 }
 
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void)
@@ -333,6 +348,7 @@ static int sync_changed(SDL_GPUCommandBuffer *cmd)
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = n;
             generation++;
+            written_at[id] = ++image_writes; /* (not `layout`: only what draws this picture changes) */
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             at += n;
         }
@@ -409,6 +425,7 @@ static int grow(SDL_GPUCopyPass *copy, uint32_t count, uint64_t need)
         to.buffer = grown;
         to.offset = table * 16u;
         generation++;
+        layout++;
         SDL_CopyGPUBufferToBuffer(copy, &from, &to, texel_end * 4u, false);
     }
     SDL_ReleaseGPUBuffer(device, buffer); /* (released once the card is done with it) */
@@ -521,6 +538,13 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
             return 0;
         }
         drawn = more;
+        {
+            uint64_t *stamps = (uint64_t *)SDL_realloc(written_at, n * sizeof(uint64_t));
+            if (stamps == NULL) {
+                return 0;
+            }
+            written_at = stamps;
+        }
         places_capacity = n;
     }
     /* what is to be placed: the new pictures kept on the card, the kept ones that did not fit yet, and the
@@ -530,6 +554,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         places[id] = NOWHERE;
         versions[id] = 0;
         drawn[id] = 0;
+        written_at[id] = 0;
     }
     {
         const uint32_t out = pinned_out;
@@ -654,6 +679,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         dst.size = entries * 16u;
         if (dst.size > 0) {
             generation++;
+            layout++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
         }
         src.offset = entries * 16u;
@@ -665,6 +691,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = words_of(id, khdays_textures_replacement((int)id)) * 4u;
             generation++;
+            layout++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             src.offset += dst.size;
         }
@@ -672,6 +699,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
             dst.offset = table_capacity * 16u;
             dst.size = 4u;
             generation++;
+            layout++;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
             white_pending = 0;
         }
