@@ -1330,7 +1330,8 @@ MESSAGES.update(
             "es": "Los otros mods están listos; KH2 Enemies se ha dejado fuera: se hace con el ejecutable de KINGDOM "
             "HEARTS II FINAL MIX, y la versión de Microsoft Store (aplicación Xbox) no deja leerlo.",
             "fr": "Les autres mods sont prêts ; KH2 Enemies a été laissé de côté : il est fait à partir de "
-            "l'exécutable de KINGDOM HEARTS II FINAL MIX, que la version du Microsoft Store (application Xbox) ne laisse pas lire.",
+            "l'exécutable de KINGDOM HEARTS II FINAL MIX, que la version du Microsoft Store (application Xbox) ne "
+            "laisse pas lire.",
             "de": "Die anderen Mods sind fertig; KH2 Enemies wurde ausgelassen: Es entsteht aus der Programmdatei von "
             "KINGDOM HEARTS II FINAL MIX, die sich in der Microsoft-Store-Version (Xbox-App) nicht lesen lässt.",
             "it": "Le altre mod sono pronte; KH2 Enemies è stato escluso: si crea dall'eseguibile di KINGDOM HEARTS II "
