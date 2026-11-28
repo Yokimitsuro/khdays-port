@@ -74,8 +74,13 @@ jobs:
       - name: Run CTest
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Install research tool dependencies
+        run: python -m pip install numpy Pillow
+
       - name: Run Python tool tests
-        run: python -m unittest discover -s tools/tests -p "test_*.py"
+        run: |
+          python -m unittest discover -s tools/tests -p "test_*.py"
+          python tools/research/tests/xion_test.py
 
   sanitizers:
     name: Sanitizers (Linux x64)
