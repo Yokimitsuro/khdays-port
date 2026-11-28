@@ -75,7 +75,10 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Run Python tool tests
-        run: python -m unittest discover -s tools/tests -p "test_*.py"
+        run: |
+          python -m unittest discover -s tools/tests -p "test_*.py"
+          python port/tools/build_shaders_test.py
+          python port/tools/fix_msl_order.py --check
 
   sanitizers:
     name: Sanitizers (Linux x64)
