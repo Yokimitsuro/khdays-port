@@ -214,6 +214,8 @@ def make(inputs: Inputs, mod: Path) -> None:
     font = ShapedFont(inputs.font(GUMMI), round(WORD_CAP * SUPERSAMPLE / GUMMI_CAP))
     for lang in LANGS:
         hd = inputs.hd / "layouts" / "camp" / lang
+        if not (hd / "camp.txt").is_file():  # a language the cart lacks (the US ROM has en and fr only): English's
+            hd = inputs.hd / "layouts" / "camp" / "en"
         out = mod / "layouts" / "camp" / lang
         out.mkdir(parents=True, exist_ok=True)
         lines = (hd / "camp.txt").read_text("utf-8").splitlines()
