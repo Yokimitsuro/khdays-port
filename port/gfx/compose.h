@@ -1000,17 +1000,42 @@ KD_FN uint kd_mix5(uint a, uint b, float t)
  * 127; 0 covers it, as every other colour). */
 #define KD_SEE_THROUGH(c) ((((c) & KD_HD) != 0u) ? (((c) >> 24) & 0x7fu) : 0u)
 
+/* The elements among the first 32 whose place takes in some of DS pixel (x, row), a bit each: the loops below
+ * look at those alone, and at every one past the 32nd. A filter shared by the layers and the sprites, made once a
+ * place composed: kd_element_texel's own rectangle test (the same comparisons, for numbers that are not finite
+ * too), which each loop otherwise reached only after reading every element's slot. */
+#define KD_NEAR_MOST 32u
+KD_FN uint kd_elements_near(int x, int row)
+{
+    const uint count = KD_DESC(KD_ELEMENTS);
+    uint e, el_near = 0u;
+    for (e = 0u; e < count && e < KD_NEAR_MOST; ++e) {
+        const uint base = e * KE_WORDS;
+        const float ex = KD_ASFLOAT(KD_ELEMENT(base + KE_X)), ey = KD_ASFLOAT(KD_ELEMENT(base + KE_Y));
+        const float ew = KD_ASFLOAT(KD_ELEMENT(base + KE_W)), eh = KD_ASFLOAT(KD_ELEMENT(base + KE_H));
+        if (!((float)x + 1.0f <= ex || (float)row + 1.0f <= ey || (float)x >= ex + ew || (float)row >= ey + eh)) {
+            el_near |= 1u << e;
+        }
+    }
+    return el_near;
+}
+#define KD_FAR(el_near, e) ((e) < KD_NEAR_MOST && (((el_near) >> (e)) & 1u) == 0u)
+
 /* Layer b's colour at (x, row) with the elements that take its slot, the topmost over the ones under
  * by its alpha, over the layer's own colour. Where the layer does not show either, the colour says how
- * much the elements let through (KD_SEE_THROUGH), composed with and without it (kd_through). */
-KD_FN uint kd_element_layer(int b, int x, int row, uint color)
+ * much the elements let through (KD_SEE_THROUGH), composed with and without it (kd_through). `el_near`:
+ * kd_elements_near's. */
+KD_FN uint kd_element_layer(int b, int x, int row, uint color, uint el_near)
 {
     const uint count = KD_DESC(KD_ELEMENTS);
     float r = 0.0f, g = 0.0f, bl = 0.0f, through = 1.0f; /* the colour so far, weighed; what still shows under it */
     uint e, under = 0u, c;
     for (e = 0u; e < count && through > 0.0f; ++e) {
-        const uint slot = KD_ELEMENT(e * KE_WORDS + KE_SLOT);
-        uint t;
+        uint slot, t;
+        if (KD_FAR(el_near, e)) {
+            continue;
+        }
+        slot = KD_ELEMENT(e * KE_WORDS + KE_SLOT);
         if ((slot & KES_SPRITES) != 0u || (slot & KES_NUMBER_MASK) != (uint)b) {
             continue;
         }
@@ -1070,15 +1095,18 @@ KD_FN uint kd_element_layer(int b, int x, int row, uint color)
 
 /* The topmost sprite at (x, row) with the elements that take the sprites'
  * slots: an element's opaque texel there wins over the sprites of its
- * priority and below. */
-KD_FN KdSprite kd_element_sprites(int x, int row, KdSprite spr)
+ * priority and below. `el_near`: kd_elements_near's. */
+KD_FN KdSprite kd_element_sprites(int x, int row, KdSprite spr, uint el_near)
 {
     const uint count = KD_DESC(KD_ELEMENTS);
     uint e;
     for (e = 0u; e < count; ++e) {
-        const uint slot = KD_ELEMENT(e * KE_WORDS + KE_SLOT);
-        const uint prio = slot & KES_NUMBER_MASK;
-        uint t;
+        uint slot, prio, t;
+        if (KD_FAR(el_near, e)) {
+            continue;
+        }
+        slot = KD_ELEMENT(e * KE_WORDS + KE_SLOT);
+        prio = slot & KES_NUMBER_MASK;
         if ((slot & KES_SPRITES) == 0u || (kd_shown(spr.color) != 0u && spr.prio < prio)) {
             continue;
         }
@@ -1195,13 +1223,14 @@ KD_FN uint kd_pixel(int x, int row)
             spr = kd_sprites(x, row);
         }
         if (KD_DESC(KD_ELEMENTS) != 0u) {
+            const uint el_near = kd_elements_near(x, row);
             for (b = 0; b < 4; ++b) {
                 if (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) {
-                    color[b] = kd_element_layer(b, x, row, color[b]);
+                    color[b] = kd_element_layer(b, x, row, color[b], el_near);
                 }
             }
             if (flags & KDF_OBJ_ON) {
-                spr = kd_element_sprites(x, row, spr);
+                spr = kd_element_sprites(x, row, spr, el_near);
             }
         }
         KD_STACK_SEEN(color, spr);
@@ -1291,16 +1320,17 @@ KD_FN uint kd_pixel_wide(int column, int row)
         spr = kd_sprites(x, row);
     }
     if (KD_DESC(KD_ELEMENTS) != 0u) {
+        const uint el_near = kd_elements_near(x, row);
         /* the elements at their place in the wider picture (in DS columns,
          * the DS's 256 starting at 0): placed by the layout, not moved as
          * pieces */
         for (b = 1; b < 4; ++b) {
             if (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) {
-                color[b] = kd_element_layer(b, x, row, color[b]);
+                color[b] = kd_element_layer(b, x, row, color[b], el_near);
             }
         }
         if (flags & KDF_OBJ_ON) {
-            spr = kd_element_sprites(x, row, spr);
+            spr = kd_element_sprites(x, row, spr, el_near);
         }
     }
     if (source >= 0 && source != x) {
