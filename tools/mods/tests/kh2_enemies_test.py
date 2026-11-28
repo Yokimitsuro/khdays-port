@@ -400,6 +400,46 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual(kh2_enemies.copy_pages(source, to), 3)
             self.assertEqual(sorted(p.name for p in to.iterdir()), ["-0.png", "-1.png", "-2.dds"])
 
+    def test_calls_of_a_release_with_its_tables_elsewhere(self):
+        """A made-up executable, not Steam's: the tables found from the code that puts kind 9's in their row, read
+        the same from the file and from the image a running game has in memory."""
+        base, text, data = 0x7FF600000000, 0x1000, 0x3000  # (sections' addresses from the base; 0x1000 each on file)
+        row, kind0, kind2, kind9 = data + 0x200, data + 0x400, data + 0x900, data + 0xA00
+
+        def record(function: int, arguments: int, back: bool) -> bytes:
+            return struct.pack("<QII", base + text + function if function else 0, arguments | back << 30, 0)
+
+        code = bytearray(0x1000)
+        # the routine that sets a table: movsxd rax, ecx; lea rcx, [rip+row]; mov [rcx+rax*8], rdx; ret
+        code[0x40:0x4F] = b"\x48\x63\xc1\x48\x8d\x0d" + struct.pack("<i", row - (text + 0x4A)) + b"\x48\x89\x14\xc1\xc3"
+        # kind 9 taken out (xor edx, edx; mov ecx, 9; call), then given its table (lea rdx, [rip+table]; mov ecx, 9;
+        # add rsp, 0x28; jmp)
+        code[0x80:0x8C] = b"\x33\xd2\xb9\x09\0\0\0\xe8" + struct.pack("<i", 0x40 - 0x8C)
+        code[0xA0:0xA7] = b"\x48\x8d\x15" + struct.pack("<i", kind9 - (text + 0xA7))
+        code[0xA7:0xB5] = b"\xb9\x09\0\0\0\x48\x83\xc4\x28\xe9" + struct.pack("<i", 0x40 - 0xB5)
+        held = bytearray(0x1000)
+        tables = [base + kind0, 0, base + kind2] + [0] * 8
+        held[row - data : row - data + 88] = struct.pack("<11Q", *tables)
+        zero = b"".join(record(0x10 + n, n % 4, n % 2 == 0) for n in range(60))
+        held[kind0 - data : kind0 - data + len(zero)] = zero
+        held[kind2 - data : kind2 - data + 48] = record(0x500, 2, True) + record(0, 0, False) + record(0x504, 1, False)
+        held[kind9 - data : kind9 - data + 16] = record(0x600, 3, False)
+        held[kind9 - data + 16 : kind9 - data + 24] = struct.pack("<Q", 1)  # what follows the last table: no record
+        head = bytearray(0x400)
+        head[:2], head[0x3C:0x40] = b"MZ", struct.pack("<I", 0x80)
+        head[0x80:0x84] = b"PE\0\0"
+        struct.pack_into("<H", head, 0x80 + 6, 2)  # sections
+        struct.pack_into("<H", head, 0x80 + 20, 0xF0)  # the optional header's size
+        struct.pack_into("<Q", head, 0x80 + 24 + 24, base)
+        for i, (name, va, raw) in enumerate(((b".text", text, 0x400), (b".data", data, 0x1400))):
+            struct.pack_into("<8sIIII", head, 0x80 + 24 + 0xF0 + 40 * i, name, 0x1000, va, 0x1000, raw)
+        file = bytes(head) + bytes(code) + bytes(held)
+        loaded = bytes(head) + bytes(text - len(head)) + bytes(code) + bytes(data - text - 0x1000) + bytes(held)
+        expected = [(0, n, n % 4, n % 2 == 0) for n in range(60)]
+        expected += [(2, 0, 2, True), (2, 2, 1, False), (9, 0, 3, False)]
+        self.assertEqual(kh2_bdx.exe_calls(file), expected)
+        self.assertEqual(kh2_bdx.exe_calls(loaded, loaded=True), expected)
+
     def test_made_numbers(self):
         # trigger 0 gives 956 to a routine that makes an object by its parameter (1:0: Oogie Boogie's gift boxes so),
         # then makes 7 itself; the routine's parameter traced to its caller's push

@@ -434,16 +434,33 @@ def read_handled(text: str) -> set[tuple[int, int]]:
     return out
 
 
-# KH2's call tables in KH2FM.exe (the Steam release read): eleven table addresses at CALL_TABLES; kind 9's is set by the
-# game at its start (FUN_14026ace0) to CALL_TABLE_9; kind 3's too, at run time only. A record is 16 bytes: the
-# function, then a word whose low 16 bits are its arguments' count and whose bit 30 says it gives a value back.
+# KH2's call tables in KH2FM.exe: eleven table addresses in a row, the Steam release's at CALL_TABLES; kind 9's is set
+# by the game at its start (FUN_14026ace0) to CALL_TABLE_9 there; kind 3's too, at run time only. A record is 16 bytes:
+# the function, then a word whose low 16 bits are its arguments' count and whose bit 30 says it gives a value back.
+# Another release (the Microsoft Store's, read from the running game) has them elsewhere: they are then found from the
+# game's code -- the routine that puts a table's address in the row (SET_TABLE: movsxd rax, ecx; lea rcx, [row];
+# mov [rcx+rax*8], rdx; ret) and the one place that gives it kind 9's (lea rdx, [table]; mov ecx, 9; then a call or
+# jump to it).
 CALL_TABLES = 0x140753490
 CALL_TABLE_9 = 0x14073D080
 CALL_KINDS = 11
+CALL_RECORD = 16
+CALLS_OF_KIND_0 = 50  # kind 0 has more calls than this in every release: fewer, and these are not KH2's tables
+TABLE_SPAN = 0x4000  # how far a table with none after it is read
+RUN_TIME_KINDS = (3,)  # set while the game runs, absent from its file: not read from a running game either
+POINTER = 8
+SET_TABLE = (bytes.fromhex("4863c1488d0d"), bytes.fromhex("488914c1c3"))  # the routine, its row's place between
+TABLE_GIVEN = bytes.fromhex("488d15")  # lea rdx, [rip+d]: the table handed to the routine
+KIND_9_GIVEN = bytes.fromhex("b909000000")  # mov ecx, 9
+RDX_EMPTIED = (bytes.fromhex("33d2"), bytes.fromhex("31d2"))  # xor edx, edx: no table handed
+TABLES_NOT_FOUND = "this executable's call tables are not where KH2 FINAL MIX's (Steam) are"
+CALL_OR_JUMP = (bytes([0xE8]), bytes([0xE9]))
+BEFORE_CALL = 32  # how far before the call its two arguments are looked for
 
 
-def exe_sections(exe: bytes) -> tuple[int, list[tuple[str, int, int, int]]]:
-    """A PE's image base and sections (name, address, file offset, size in the file)."""
+def exe_sections(exe: bytes, loaded: bool = False) -> tuple[int, list[tuple[str, int, int, int]]]:
+    """A PE's image base and sections (name, address, offset in `exe`, size there): `exe` the file, or with `loaded`
+    the image as the running program has it in memory (each section at its address, the base where it was loaded)."""
     if exe[:2] != b"MZ":
         raise AiError("not an executable")
     pe = struct.unpack_from("<I", exe, 0x3C)[0]
@@ -452,44 +469,131 @@ def exe_sections(exe: bytes) -> tuple[int, list[tuple[str, int, int, int]]]:
     base = struct.unpack_from("<Q", exe, pe + 24 + 24)[0]
     sections = []
     for i in range(count):
-        name, _, va, size, raw = struct.unpack_from("<8sIIII", exe, pe + 24 + optional + 40 * i)
+        name, virtual, va, size, raw = struct.unpack_from("<8sIIII", exe, pe + 24 + optional + 40 * i)
+        if loaded:
+            raw = min(va, len(exe))
+            size = min(max(virtual, size), len(exe) - raw)
         sections.append((name.rstrip(b"\0").decode("latin1"), base + va, raw, size))
     return base, sections
 
 
-def exe_calls(exe: bytes) -> list[tuple[int, int, int, bool]]:
-    """Every call KH2's tables hold, read from the player's executable: (kind, number, arguments, gives back). A table
-    ends where the next one starts, or at a record that is not one (a function outside the code, a count word with
-    more than its arguments and flag)."""
-    _, sections = exe_sections(exe)
+class _Image:
+    """An executable's bytes by address."""
 
-    def read(va: int, n: int) -> bytes:
-        for _, at, raw, size in sections:
+    def __init__(self, exe: bytes, loaded: bool) -> None:
+        self.exe = exe
+        self.loaded = loaded
+        _, self.sections = exe_sections(exe, loaded)
+        code = [(at, at + size) for name, at, _, size in self.sections if name == ".text"]
+        if not code:
+            raise AiError("this executable has no code section")
+        self.code = code[0]
+
+    def read(self, va: int, n: int) -> bytes:
+        for _, at, raw, size in self.sections:
             if at <= va and va + n <= at + size:
-                return exe[raw + va - at : raw + va - at + n]
+                return self.exe[raw + va - at : raw + va - at + n]
         raise AiError(f"{va:#x} is in no section of this executable")
 
-    code = [(at, at + size) for name, at, _, size in sections if name == ".text"]
-    if not code:
-        raise AiError("this executable has no code section")
-    lo, hi = code[0]
-    tables = list(struct.unpack("<11Q", read(CALL_TABLES, 8 * CALL_KINDS)))
-    tables[9] = CALL_TABLE_9
+    def holds(self, va: int, n: int) -> bool:
+        return any(at <= va and va + n <= at + size for _, at, _, size in self.sections)
+
+    def record(self, at: int) -> tuple[int, int] | None:
+        """The record at `at` (function, word); None when it is not one: a function outside the code, a count word
+        with more than its arguments and flag."""
+        fn, word = struct.unpack("<QI", self.read(at, 12))
+        if (fn and not self.code[0] <= fn < self.code[1]) or word & 0xBFFF0000:
+            return None
+        return fn, word
+
+    def calls(self, table: int) -> int:
+        """How many calls a table at `table` would hold, read as far as one with none after it is (0: none there)."""
+        count = 0
+        for at in range(table, table + TABLE_SPAN, CALL_RECORD):
+            found = self.record(at) if self.holds(at, 12) else None
+            if found is None:
+                break
+            count += bool(found[0])
+        return count
+
+    def row(self, at: int) -> list[int]:
+        """The eleven tables' addresses at `at`, those the game sets while it runs left out of a running game's."""
+        tables = list(struct.unpack(f"<{CALL_KINDS}Q", self.read(at, POINTER * CALL_KINDS)))
+        if self.loaded:
+            for kind in RUN_TIME_KINDS:
+                tables[kind] = 0
+        return tables
+
+    def tables_from_code(self) -> list[int]:
+        """The eleven tables' addresses of a release that has them elsewhere than Steam's, kind 9's among them: the
+        row from the routine that puts a table's address in it, kind 9's table from the code that calls that
+        routine with it (see SET_TABLE). The row is KH2's when kind 0's table is where it says and every other
+        address in it is a table's or none."""
+        lo, hi = self.code
+        code = self.read(lo, hi - lo)
+        head, tail = SET_TABLE
+        routine = code.find(head)
+        while routine >= 0:
+            lea_end = routine + len(head) + 4
+            if code[lea_end : lea_end + len(tail)] == tail:
+                row = lo + lea_end + struct.unpack_from("<i", code, lea_end - 4)[0]
+                tables = self.row(row) if self.holds(row, POINTER * CALL_KINDS) else [0] * CALL_KINDS
+                others = [t for kind, t in enumerate(tables) if t and kind != 9]
+                if self.calls(tables[0]) >= CALLS_OF_KIND_0 and all(self.calls(t) for t in others):
+                    for table in self.tables_given(code, lo + routine):
+                        if tables[9] in (0, table) and table not in others and self.calls(table):
+                            tables[9] = table
+                            return tables
+            routine = code.find(head, routine + 1)
+        raise AiError(TABLES_NOT_FOUND)
+
+    def tables_given(self, code: bytes, routine: int) -> list[int]:
+        """The tables the code hands to `routine` for kind 9: at each call or jump to it, an address taken into rdx
+        and then kind 9 into ecx right before, rdx not emptied after (the game also takes kind 9's table out: xor
+        edx, edx)."""
+        lo = self.code[0]
+        out = []
+        for opcode in CALL_OR_JUMP:
+            at = code.find(opcode)
+            while 0 <= at <= len(code) - 5:
+                if lo + at + 5 + struct.unpack_from("<i", code, at + 1)[0] == routine:
+                    before = code[max(at - BEFORE_CALL, 0) : at]
+                    lea = before.rfind(TABLE_GIVEN)
+                    rest = before[lea + 7 :] if 0 <= lea <= len(before) - 7 else b""
+                    if KIND_9_GIVEN in rest and not any(emptied in rest for emptied in RDX_EMPTIED):
+                        place = lo + at - len(before) + lea
+                        out.append(place + 7 + struct.unpack_from("<i", before, lea + 3)[0])
+                at = code.find(opcode, at + 1)
+        return out
+
+
+def exe_calls(exe: bytes, loaded: bool = False) -> list[tuple[int, int, int, bool]]:
+    """Every call KH2's tables hold, read from the player's executable (`loaded`: its image as the running game has
+    it in memory, exe_sections): (kind, number, arguments, gives back). A table ends where the next one starts, or
+    at a record that is not one (a function outside the code, a count word with more than its arguments and flag)."""
+    image = _Image(exe, loaded)
+    steam = not loaded and image.holds(CALL_TABLES, POINTER * CALL_KINDS)
+    if steam:
+        tables = image.row(CALL_TABLES)
+        tables[9] = CALL_TABLE_9
+        steam = image.holds(tables[0], CALL_RECORD) and image.calls(tables[0]) >= CALLS_OF_KIND_0
+    if not steam:
+        tables = image.tables_from_code()
     starts = sorted(t for t in tables if t)
     out = []
     for kind, table in enumerate(tables):
         if not table:
             continue
         later = [t for t in starts if t > table]
-        end = later[0] if later else table + 0x4000
+        end = later[0] if later else table + TABLE_SPAN
         number = 0
-        while table + 16 * number < end:
-            fn, word = struct.unpack("<QI", read(table + 16 * number, 12))
-            if (fn and not lo <= fn < hi) or word & 0xBFFF0000:
+        while table + CALL_RECORD * number < end:
+            found = image.record(table + CALL_RECORD * number)
+            if found is None:
                 break
-            if fn:
-                out.append((kind, number, word & 0xFFFF, bool(word & 0x40000000)))
+            if found[0]:
+                out.append((kind, number, found[1] & 0xFFFF, bool(found[1] & 0x40000000)))
             number += 1
-    if sum(1 for k, *_ in out if k == 0) < 50:
-        raise AiError("this executable's call tables are not where KH2 FINAL MIX's (Steam) are")
+    if sum(1 for k, *_ in out if k == 0) < CALLS_OF_KIND_0:
+        raise AiError(TABLES_NOT_FOUND)
     return out

@@ -447,11 +447,12 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(self.files(self.hd), merged)
         self.assertEqual(s.load_state(self.install), state)
 
-    def test_kh2_enemies_left_out_for_the_xbox_apps_copy(self):
-        """Its tool reads the executable's file, which only the game reads there: the others are made."""
+    def test_kh2_enemies_for_the_xbox_apps_copy_need_the_running_game(self):
+        """Its tool reads the executable, there the running game's memory: closed, it is left out, the others made."""
         import subprocess
 
         import collection_archive
+        import game_memory
 
         tools, c1525 = self.install / "tools", self.install / "c1525"
         for folder in (tools / "mods", tools / "hd", c1525):
@@ -476,11 +477,16 @@ class PortModsInTheHdPack(unittest.TestCase):
             mock.patch.object(collection_archive, "materialise"),
             mock.patch("subprocess.run", side_effect=tool),
         ):
-            result = self.build_mods(kh2_prizes=True, kh2_enemies=True, c1525=c1525)
-        self.assertEqual(ran, ["kh2_prizes.py"])
-        self.assertEqual(result["mods"], ["kh2-prizes"])
-        self.assertEqual(result["missing"], "Days - KH2 Enemies")
-        self.assertNotIn("kept", result)
+            with mock.patch.object(game_memory, "running_image", return_value=None):
+                closed = self.build_mods(kh2_prizes=True, kh2_enemies=True, c1525=c1525)
+            with mock.patch.object(game_memory, "running_image", return_value=b"MZ"):
+                running = self.build_mods(kh2_prizes=True, kh2_enemies=True, c1525=c1525)
+        self.assertEqual(ran, ["kh2_prizes.py", "kh2_prizes.py", "kh2_enemies.py"])
+        self.assertEqual(closed["mods"], ["kh2-prizes"])
+        self.assertEqual(closed["missing"], "Days - KH2 Enemies")
+        self.assertNotIn("kept", closed)
+        self.assertEqual(running["mods"], ["kh2-prizes", "kh2-enemies"])
+        self.assertNotIn("missing", running)
 
 
 class HdMenusAndKh2Models(unittest.TestCase):

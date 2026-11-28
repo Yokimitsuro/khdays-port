@@ -1325,17 +1325,18 @@ MESSAGES.update(
             "2.8).",
         },
         "mod-enemies-skipped": {
-            "en": "The other mods are ready; KH2 Enemies was left out: it is made from KINGDOM HEARTS II FINAL MIX's "
-            "executable, which the Microsoft Store (Xbox app) version lets nothing read.",
-            "es": "Los otros mods están listos; KH2 Enemies se ha dejado fuera: se hace con el ejecutable de KINGDOM "
-            "HEARTS II FINAL MIX, y la versión de Microsoft Store (aplicación Xbox) no deja leerlo.",
-            "fr": "Les autres mods sont prêts ; KH2 Enemies a été laissé de côté : il est fait à partir de "
-            "l'exécutable de KINGDOM HEARTS II FINAL MIX, que la version du Microsoft Store (application Xbox) ne "
-            "laisse pas lire.",
-            "de": "Die anderen Mods sind fertig; KH2 Enemies wurde ausgelassen: Es entsteht aus der Programmdatei von "
-            "KINGDOM HEARTS II FINAL MIX, die sich in der Microsoft-Store-Version (Xbox-App) nicht lesen lässt.",
-            "it": "Le altre mod sono pronte; KH2 Enemies è stato escluso: si crea dall'eseguibile di KINGDOM HEARTS II "
-            "FINAL MIX, che la versione del Microsoft Store (app Xbox) non lascia leggere.",
+            "en": "The other mods are ready; KH2 Enemies was left out: with the Microsoft Store (Xbox app) version "
+            "it is made from the running KINGDOM HEARTS II FINAL MIX, and the game is not open.",
+            "es": "Los otros mods están listos; KH2 Enemies se ha dejado fuera: con la versión de Microsoft Store "
+            "(aplicación Xbox) se hace a partir de KINGDOM HEARTS II FINAL MIX en ejecución, y el juego no está "
+            "abierto.",
+            "fr": "Les autres mods sont prêts ; KH2 Enemies a été laissé de côté : avec la version du Microsoft Store "
+            "(application Xbox), il est fait à partir de KINGDOM HEARTS II FINAL MIX en cours d'exécution, et le jeu "
+            "n'est pas lancé.",
+            "de": "Die anderen Mods sind fertig; KH2 Enemies wurde ausgelassen: Bei der Microsoft-Store-Version "
+            "(Xbox-App) entsteht es aus dem laufenden KINGDOM HEARTS II FINAL MIX, und das Spiel ist nicht geöffnet.",
+            "it": "Le altre mod sono pronte; KH2 Enemies è stato escluso: con la versione del Microsoft Store (app "
+            "Xbox) si crea da KINGDOM HEARTS II FINAL MIX in esecuzione, e il gioco non è aperto.",
         },
         "mod-kept-start-kh2": {
             "en": "The port's own mods were left as they are: the Microsoft Store (Xbox app) version is read only "
@@ -1469,6 +1470,7 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     import subprocess
 
     import collection_archive
+    import game_memory
 
     install = args.install.resolve()
     wanted = [m for m in PORT_MODS if getattr(args, m.replace("-", "_"))]
@@ -1486,10 +1488,6 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
             wanted.remove("menu-overhaul")
             why = words("mod-overhaul-skipped", args.language, tools=", ".join(lacking))
             left_out.append((PORT_MODS["menu-overhaul"][0], why))
-    if "kh2-enemies" in wanted and collection_archive.xbox_app_copy(args.c1525 / KH2_EXE):
-        # (its tool reads the executable's file, which only the game itself reads in the Xbox app's copy)
-        wanted.remove("kh2-enemies")
-        left_out.append((PORT_MODS["kh2-enemies"][0], words("mod-enemies-skipped", args.language)))
     # the collection's table before anything is touched: when only the running game gives it (the Xbox app's
     # copy) and it does not run, the mods in the HD PACK stay as they were made (an update the game runs itself
     # comes here with KH2 closed)
@@ -1505,6 +1503,12 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
                 "missing": ", ".join(PORT_MODS[m][0] for m in wanted if m in COLLECTION_MODS),
                 "message": words("mod-kept-start-kh2", args.language),
             }
+    if "kh2-enemies" in wanted and collection_archive.xbox_app_copy(args.c1525 / KH2_EXE):
+        # its tool reads the executable, which the Xbox app's copy gives only as the running game's memory (the
+        # table above may be the player's file's, KHDAYS_COLLECTION_TABLE, with the game closed)
+        if game_memory.running_image(args.c1525 / KH2_EXE) is None:
+            wanted.remove("kh2-enemies")
+            left_out.append((PORT_MODS["kh2-enemies"][0], words("mod-enemies-skipped", args.language)))
     # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
     unmerge_port_mods(install)
     for folder, _ in PORT_MODS.values():
@@ -1522,6 +1526,8 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copytree(tools["mods"], work / "tools" / "mods", ignore=shutil.ignore_patterns("tests"))
         shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
         shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
+        (work / "installer").mkdir()  # (kh2_enemies.py's reader of the running game: the Xbox app's copy)
+        shutil.copy2(HERE / "game_memory.py", work / "installer")
         places = mod_places(install, work / "src", c1525=args.c1525)
         if cipher is not None:
             # the collections' entries the tools read, extracted as the HD pieces' are

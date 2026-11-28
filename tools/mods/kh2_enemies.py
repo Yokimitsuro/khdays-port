@@ -309,6 +309,21 @@ def searched_numbers(bar: bytes) -> set[int]:
     return out
 
 
+def executable(path: Path) -> tuple[bytes, bool]:
+    """KH2's executable: its file, or its image out of the running game's memory when only the game reads the file
+    (the Xbox app's copy; installer/game_memory.py) -- the second value says which (kh2_bdx.exe_sections' `loaded`)."""
+    try:
+        return path.read_bytes(), False
+    except PermissionError:
+        sys.path.insert(0, str(HERE.parents[1] / "installer"))
+        import game_memory
+
+        image = game_memory.running_image(path)
+        if image is None:
+            raise
+        return image, True
+
+
 def friend_params(exe: bytes) -> bytes | None:
     """KH2's party AI's parameters (FRIEND_PARAMS_SIZE bytes, little-endian) out of its executable: where its records'
     offsets begin (FRIEND_PARAMS_HEAD), the 19 offsets rising inside it; None when not found."""
@@ -919,7 +934,8 @@ def make(
     added. The files every kind needs (the calls' shapes, SHARED, the names, the command menu, the font, the
     resident effect pictures, the keyblade's) go in whatever was asked."""
     left_out = []
-    shapes = kh2_bdx.exe_calls(kh2_exe.read_bytes())
+    program, loaded = executable(kh2_exe)
+    shapes = kh2_bdx.exe_calls(program, loaded)
     # the walks read a routine's stack past these calls (kh2_bdx.SHAPES): Zexion's book and illusion, made by a routine
     # given their numbers after a 1:84, were not found while none was known
     kh2_bdx.SHAPES.update({(kind, number): (count, int(back)) for kind, number, count, back in shapes})
@@ -928,7 +944,7 @@ def make(
     lines = ["# KINGDOM HEARTS II's calls: kind:number arguments gives-back (read from its executable, kh2_enemies.py)"]
     lines += [f"{kind}:{number} {count} {int(back)}" for kind, number, count, back in shapes]
     calls_file.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    params = friend_params(kh2_exe.read_bytes())
+    params = friend_params(program)
     if params is not None:
         (mod / "kh2" / "friend_param.bin").write_bytes(params)
     else:

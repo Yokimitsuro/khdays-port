@@ -218,8 +218,10 @@ it does not run the check says so: the installer's HD page asks the player to st
 the installation ends and try again (a box with Retry). The port's own mods are made the same way; when the
 game does not run then (an update the game runs itself), those already in the HD PACK are left as they were
 made, and the helper's result says so. The environment variable `KHDAYS_COLLECTION_TABLE` can name a file of
-the player's own that holds the table's 256 bytes instead (checked by the same digest). KH2 Enemies reads the
-executable's own code and is left out for such a copy, with a message that says why.
+the player's own that holds the table's 256 bytes instead (checked by the same digest). KH2 Enemies' tool
+reads the executable's call tables: for such a copy it takes them from the running game's image too
+(`tools/mods/kh2_bdx.py` finds them from the game's code, another release having them elsewhere than
+Steam's), and is left out with a message when the game is not open.
 
 `python collection_archive.py <archive without .hed/.pkg> <out folder> <kh2 exe> <path> [<path> ...]`
 writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`; a path the
