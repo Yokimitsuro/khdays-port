@@ -416,6 +416,13 @@ In `port/tools` (Python 3.11+ unless said):
   every buffer raw (no stride), and AMD's cards and vkd3d index a structured
   one by the view's stride, so every element read is the first (SDL issue
   12200; NVIDIA's cards read it right, which hides it).
+- `fix_msl_order.py [--check] [--list]`: checks or repairs the committed
+  Metal resource indices using the adjacent SPIR-V and the renderer's SDL
+  resource counts. Metal binds uniform buffers before storage buffers; optimized
+  shaders must retain the slots of unused resources. DXIL and SPIR-V are kept.
+  `build_shaders.py` applies the same mapping when regenerating headers.
+  Run `python port/tools/build_shaders_test.py` for the synthetic checks and
+  `python port/tools/fix_msl_order.py --check` to check every committed shader.
 - `analyze.py [--tree ...]`: builds the `khdays-analyze` target -- the port's
   own sources (not the decompilation's, not the third parties') compiled again
   with MSVC's `/analyze` and their real flags, not linked -- and lists every

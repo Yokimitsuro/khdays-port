@@ -1138,6 +1138,10 @@ target_compile_options(khdays-onescreen-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-onescreen COMMAND khdays-onescreen-test)
 # The rewrite of the game's C: its unit tests, in Python.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME khdays-metal-shader-order
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/fix_msl_order.py" --check)
+add_test(NAME khdays-metal-shader-test
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_shaders_test.py")
 add_test(NAME khdays-references
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/references_test.py")
 add_test(NAME khdays-prepare
