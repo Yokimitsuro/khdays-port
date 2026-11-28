@@ -432,6 +432,56 @@ class PortModsInTheHdPack(unittest.TestCase):
         s.unmerge_port_mods(self.install)
         self.assertEqual(self.files(self.hd), self.pristine)
 
+    def test_the_xbox_apps_copy_with_kh2_closed_leaves_the_mods_as_they_were_made(self):
+        """An update the game runs itself: the table is asked for before anything is taken out of the HD PACK."""
+        import collection_archive
+
+        s.merge_port_mods(self.install, [self.overhaul, self.walk], {"mods": ["menu-overhaul", "walk"]})
+        merged, state = self.files(self.hd), s.load_state(self.install)
+        unread = collection_archive.UnreadExecutable("read only while it runs")
+        with mock.patch.object(collection_archive, "load_table", side_effect=unread):
+            result = self.build_mods(walk=True, kh2_prizes=True)
+        self.assertEqual(result["mods"], ["menu-overhaul", "walk"])
+        self.assertEqual(result["missing"], "Days - KH2 Prizes")
+        self.assertEqual(result["kept"], s.HD_MOD)
+        self.assertEqual(self.files(self.hd), merged)
+        self.assertEqual(s.load_state(self.install), state)
+
+    def test_kh2_enemies_left_out_for_the_xbox_apps_copy(self):
+        """Its tool reads the executable's file, which only the game reads there: the others are made."""
+        import subprocess
+
+        import collection_archive
+
+        tools, c1525 = self.install / "tools", self.install / "c1525"
+        for folder in (tools / "mods", tools / "hd", c1525):
+            folder.mkdir(parents=True)
+        (tools / "decompress_data.py").write_text("")
+        (c1525 / collection_archive.XBOX_GAME_CONFIG).touch()
+        ran = []
+
+        def tool(line, cwd, **_):
+            ran.append(Path(line[1]).name)
+            (Path(cwd) / "mods" / line[line.index("--mod") + 1]).mkdir(parents=True)
+            return subprocess.CompletedProcess(line, 0, "", "")
+
+        with (
+            mock.patch.object(
+                s, "tool_folders", return_value={"rom": tools, "hd": tools / "hd", "mods": tools / "mods"}
+            ),
+            mock.patch.object(s, "data_folder", return_value=self.install / "data"),
+            mock.patch.object(collection_archive, "load_table"),
+            mock.patch.object(collection_archive, "Cipher"),
+            mock.patch.object(collection_archive, "Archive"),
+            mock.patch.object(collection_archive, "materialise"),
+            mock.patch("subprocess.run", side_effect=tool),
+        ):
+            result = self.build_mods(kh2_prizes=True, kh2_enemies=True, c1525=c1525)
+        self.assertEqual(ran, ["kh2_prizes.py"])
+        self.assertEqual(result["mods"], ["kh2-prizes"])
+        self.assertEqual(result["missing"], "Days - KH2 Enemies")
+        self.assertNotIn("kept", result)
+
 
 class HdMenusAndKh2Models(unittest.TestCase):
     """The HD page's choices: the HD menus and HUD need both collections, KH2's models 1.5+2.5 alone, each group's
@@ -537,6 +587,8 @@ class HdMenusAndKh2Models(unittest.TestCase):
                         )
                     )
                 self.assertEqual(str(reached.exception), "tools reached")
+
+
 class CollectionCheck(unittest.TestCase):
     """A 1.5+2.5 collection is checked for what the chosen pieces read: one holding only what the videos read
     (as the Japanese one does, its other archives' entries elsewhere) gives the videos, not the menus."""
@@ -566,6 +618,17 @@ class CollectionCheck(unittest.TestCase):
             # a movie missing: the videos say so
             (movies / videos["movies"][0]).unlink()
             self.assertTrue(s.check_folder("1.5+2.5", folder, ("videos",)))
+
+    def test_the_xbox_apps_copy_asks_for_kh2_to_be_started(self):
+        """All its files there and KH2's executable read only by the running game: start it, not "files missing"."""
+        with self.assertRaises(s.Refusal) as refused:
+            s.refuse_missing([s.KH2_NOT_RUNNING])
+        self.assertEqual(refused.exception.key, "hd-start-kh2")
+        with self.assertRaises(s.Refusal) as refused:
+            s.refuse_missing(["Image/dt/kh2_first.hed/.pkg", s.KH2_NOT_RUNNING])
+        self.assertEqual(refused.exception.key, "hd-missing")
+        self.assertEqual(refused.exception.values, {"missing": "Image/dt/kh2_first.hed/.pkg"})
+        s.refuse_missing([])
 
     def test_the_xbox_apps_game_folder_is_taken_as_its_content(self):
         """A player who chooses the Xbox app's game folder (C:\\XboxGames\\<game>) gets its Content, where its

@@ -10,6 +10,8 @@ prints the paths the archive holds, one a line (the studio's KH2 rooms: which ma
 from __future__ import annotations
 
 import hashlib
+import itertools
+import os
 import struct
 import sys
 import zlib
@@ -19,6 +21,8 @@ from pathlib import Path
 # The game's S-box, recognised by its digest (its bytes stay in the player's executable).
 TABLE_SHA256 = "759b2f22f7e0bfd257063a01f3de0c0835905217aa926df6def134a14313672d"
 TABLE_OFFSETS = (0x710940,)  # where Steam's KINGDOM HEARTS II FINAL MIX.exe has it (8,659,216 bytes)
+TABLE_FILE_VARIABLE = "KHDAYS_COLLECTION_TABLE"  # a file with the table, for a copy whose executable is not read
+XBOX_GAME_CONFIG = "MicrosoftGame.config"  # beside the executables of a game the Xbox app installed
 RCON = (0, 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36)
 ENTRY = struct.Struct("<16sqii")
 HEADER = struct.Struct("<iiii")
@@ -30,19 +34,53 @@ class ArchiveError(Exception):
     pass
 
 
+class UnreadExecutable(ArchiveError):
+    """The executable is there and only the running game reads it (the Xbox app's copy), and it does not run."""
+
+
+def table_in(data: bytes) -> bytes | None:
+    """The S-box in `data`: at a known place, else any 16-byte-aligned place whose 256 bytes have its digest."""
+    for offset in itertools.chain(TABLE_OFFSETS, range(0, len(data) - 255, 16)):
+        window = data[offset : offset + 256]
+        if hashlib.sha256(window).hexdigest() == TABLE_SHA256:
+            return window
+    return None
+
+
+def xbox_app_copy(exe: Path) -> bool:
+    """Whether `exe` is of a game the Xbox app installed (the Microsoft Store's copy): only the running game
+    reads such an executable's file."""
+    return (exe.parent / XBOX_GAME_CONFIG).is_file()
+
+
 def load_table(exe: Path) -> bytes:
-    """The S-box from the player's executable: at a known place, else any 16-byte-aligned place
-    whose 256 bytes have its digest."""
-    data = exe.read_bytes()
-    for offset in TABLE_OFFSETS:
-        window = data[offset : offset + 256]
-        if hashlib.sha256(window).hexdigest() == TABLE_SHA256:
-            return window
-    for offset in range(0, len(data) - 255, 16):
-        window = data[offset : offset + 256]
-        if hashlib.sha256(window).hexdigest() == TABLE_SHA256:
-            return window
-    raise ArchiveError(f"{exe} does not hold the collections' archive table")
+    """The S-box from the player's executable. The Xbox app (the Microsoft Store's copy) lets nothing but the
+    game read its executables: the table is then read from the running game's memory (game_memory.py), and
+    `UnreadExecutable` says the game is to be started when it does not run. The file `KHDAYS_COLLECTION_TABLE`
+    names (the player's own, holding the 256 bytes) gives it when neither does."""
+    import game_memory
+
+    try:
+        table = table_in(exe.read_bytes())
+        failure: Exception = ArchiveError(f"{exe} does not hold the collections' archive table")
+    except PermissionError as error:
+        table, failure = None, error
+        if xbox_app_copy(exe):  # not a file some other way refused
+            image = game_memory.running_image(exe)
+            table = table_in(image) if image is not None else None
+            failure = UnreadExecutable(f"{exe} is read only while it runs ({error})")
+    except OSError as error:
+        table, failure = None, error
+    if table is None:
+        kept = os.environ.get(TABLE_FILE_VARIABLE)
+        if kept:
+            try:
+                table = table_in(Path(kept).read_bytes())
+            except OSError:
+                table = None
+    if table is None:
+        raise failure
+    return table
 
 
 class Cipher:

@@ -6,12 +6,14 @@ permutation (the game's own is never in the repository); the encryption is its o
 import contextlib
 import hashlib
 import io
+import os
 import random
 import struct
 import sys
 import tempfile
 import unittest
 import zlib
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -118,6 +120,50 @@ class Reader(unittest.TestCase):
                     ca.load_table(exe)
             finally:
                 ca.TABLE_SHA256 = saved
+
+    def test_table_from_the_running_game_when_only_it_reads_the_executable(self):
+        """The Xbox app's copy: the file refuses every reader, the running game's image holds the table."""
+        import game_memory
+
+        digest = mock.patch.object(ca, "TABLE_SHA256", hashlib.sha256(TABLE).hexdigest())
+        refused = mock.patch.object(Path, "read_bytes", side_effect=PermissionError("denied"))
+        with digest, refused, mock.patch.dict(os.environ), tempfile.TemporaryDirectory() as d:
+            os.environ.pop(ca.TABLE_FILE_VARIABLE, None)
+            exe = Path(d) / "KINGDOM HEARTS II FINAL MIX.exe"
+            with mock.patch.object(game_memory, "running_image") as image:
+                with self.assertRaises(PermissionError):  # refused some other way: not the Xbox app's copy
+                    ca.load_table(exe)
+                image.assert_not_called()
+            (Path(d) / ca.XBOX_GAME_CONFIG).touch()
+            with mock.patch.object(game_memory, "running_image", return_value=bytes(4096) + TABLE) as image:
+                self.assertEqual(ca.load_table(exe), TABLE)
+                image.assert_called_once_with(exe)
+            for not_there in (None, bytes(8192)):  # the game not running; another program of its name
+                with mock.patch.object(game_memory, "running_image", return_value=not_there):
+                    with self.assertRaises(ca.UnreadExecutable):
+                        ca.load_table(exe)
+
+    def test_table_from_the_players_file_when_the_executable_is_not_read(self):
+        """The Xbox app's copy: its executable is there and nothing reads it."""
+        with tempfile.TemporaryDirectory() as d:
+            kept = Path(d) / "table.bin"
+            kept.write_bytes(TABLE)
+            unread = Path(d) / "absent.exe"
+            without = Path(d) / "game.exe"
+            without.write_bytes(bytes(512))
+            digest = mock.patch.object(ca, "TABLE_SHA256", hashlib.sha256(TABLE).hexdigest())
+            with digest, mock.patch.dict(os.environ, {ca.TABLE_FILE_VARIABLE: str(kept)}):
+                self.assertEqual(ca.load_table(unread), TABLE)
+                self.assertEqual(ca.load_table(without), TABLE)
+                kept.write_bytes(bytes(256))  # not the table: the executable's failure stands
+                with self.assertRaises(OSError):
+                    ca.load_table(unread)
+                with self.assertRaises(ca.ArchiveError):
+                    ca.load_table(without)
+            with digest, mock.patch.dict(os.environ):
+                os.environ.pop(ca.TABLE_FILE_VARIABLE, None)
+                with self.assertRaises(OSError):
+                    ca.load_table(unread)
 
 
 class CommandLine(unittest.TestCase):
