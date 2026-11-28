@@ -410,9 +410,28 @@ begin
   HdChanged(nil);
 end;
 
+{ One collection's check. The Xbox app's copy is read through the running game: that is said in a box
+  (the line under the choices is easily missed) and checked again each time the player answers Retry. }
+function CollectionChecked(const Command: String): Boolean;
+var
+  Json: String;
+begin
+  Result := True;
+  while RunHelper(Command, Json) <> 0 do begin
+    HdStatus.Caption := JsonValue(Json, 'message');
+    if (JsonValue(Json, 'refused') <> 'hd-start-kh2') or
+       (SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_RETRYCANCEL, IDCANCEL) <> IDRETRY) then begin
+      Result := False;
+      Exit;
+    end;
+    HdStatus.Caption := CustomMessage('HdChecking');
+    WizardForm.Refresh;
+  end;
+end;
+
 function CheckHd: Boolean;
 var
-  Json, Pieces: String;
+  Pieces: String;
 begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
@@ -426,14 +445,12 @@ begin
     Pieces := Pieces + 'videos';
   end;
   if (HdFolder(0) <> '') and (Pieces <> '') then
-    if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '" --pieces ' + Pieces, Json) <> 0 then begin
-      HdStatus.Caption := JsonValue(Json, 'message');
+    if not CollectionChecked('check-collection 1.5+2.5 "' + HdFolder(0) + '" --pieces ' + Pieces) then begin
       Result := False;
       Exit;
     end;
   if (HdFolder(1) <> '') and HdMenus.Checked then
-    if RunHelper('check-collection 2.8 "' + HdFolder(1) + '" --pieces menus', Json) <> 0 then begin
-      HdStatus.Caption := JsonValue(Json, 'message');
+    if not CollectionChecked('check-collection 2.8 "' + HdFolder(1) + '" --pieces menus') then begin
       Result := False;
       Exit;
     end;
@@ -713,8 +730,10 @@ begin
       Args := Args + ' --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
-      else if JsonValue(Json, 'missing') <> '' then
-        { made but for one left out (the Menu Overhaul without the HD menus it is made from): said }
+      else if (JsonValue(Json, 'missing') <> '') and not (AutoUpdate and (JsonValue(Json, 'kept') <> '')) then
+        { made but for one left out (the Menu Overhaul without the HD menus it is made from), or left as they were
+          (the Xbox app's copy with KH2 closed): said, but for the second in an update the game runs itself, which
+          finds KH2 closed every time }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);

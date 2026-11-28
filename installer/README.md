@@ -211,6 +211,18 @@ HEARTS II FINAL MIX's `Axa::PackageFile`), nothing taken from other tools:
   own, taken from the player's KINGDOM HEARTS II FINAL MIX executable (never kept); an asset uses its
   entry's header.
 
+The Xbox app (the Microsoft Store's copy) lets nothing but the game read its executables' files, while the
+running game's memory is read as any program's of the player: for such a copy the helper takes the table from
+the running `KINGDOM HEARTS II FINAL MIX.exe` (`game_memory.py`, read only, nothing of it written), and when
+it does not run the check says so: the installer's HD page asks the player to start it, leave it open until
+the installation ends and try again (a box with Retry). The port's own mods are made the same way; when the
+game does not run then (an update the game runs itself), those already in the HD PACK are left as they were
+made, and the helper's result says so. The environment variable `KHDAYS_COLLECTION_TABLE` can name a file of
+the player's own that holds the table's 256 bytes instead (checked by the same digest). KH2 Enemies' tool
+reads the executable's call tables: for such a copy it takes them from the running game's image too
+(`tools/mods/kh2_bdx.py` finds them from the game's code, another release having them elsewhere than
+Steam's), and is left out with a message when the game is not open.
+
 `python collection_archive.py <archive without .hed/.pkg> <out folder> <kh2 exe> <path> [<path> ...]`
 writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`; a path the
 archive does not hold is named and left out (exit status 3 when it holds none of them).
