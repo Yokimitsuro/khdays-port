@@ -730,8 +730,10 @@ begin
       Args := Args + ' --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
-      else if JsonValue(Json, 'missing') <> '' then
-        { made but for one left out (the Menu Overhaul without the HD menus it is made from): said }
+      else if (JsonValue(Json, 'missing') <> '') and not (AutoUpdate and (JsonValue(Json, 'kept') <> '')) then
+        { made but for one left out (the Menu Overhaul without the HD menus it is made from), or left as they were
+          (the Xbox app's copy with KH2 closed): said, but for the second in an update the game runs itself, which
+          finds KH2 closed every time }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);

@@ -761,7 +761,7 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
 # them in <library>/<game>/Content, its videos under MSSTORE (xbox_library.py); the
 # videos are found where the collection has them.
 KH2_EXE = "KINGDOM HEARTS II FINAL MIX.exe"
-KH2_NOT_RUNNING = KH2_EXE + " (not running)"  # the Xbox app's copy: read only from the running game
+KH2_NOT_RUNNING = KH2_EXE + " (not running)"  # check_folder's mark, never shown: the Xbox app's copy, KH2 closed
 COLLECTION_ARCHIVES = {
     "1.5+2.5": {
         "Mare": "Image/Mare",
@@ -910,11 +910,14 @@ def hd_inputs(pieces: tuple[str, ...] = PIECES) -> dict[str, list[str]]:
     return out
 
 
-def check_folder(kind: str, folder: Path, pieces: tuple[str, ...] = PIECES) -> list[str]:
+def check_folder(
+    kind: str, folder: Path, pieces: tuple[str, ...] = PIECES, found: dict[str, bytes] | None = None
+) -> list[str]:
     """What `folder` lacks of what the HD `pieces` read from collection `kind` (empty: all there): the
     archives and entries their tools read, with the menus the port's own mods' (made after them) and KH2's
-    executable (its table unscrambles the archives they read); the videos only the theater's archive and
-    the movies (a collection whose other archives differ, as the Japanese one's, still gives the videos)."""
+    executable (its table unscrambles the archives they read; left in `found["table"]` for a caller that
+    goes on to read them); the videos only the theater's archive and the movies (a collection whose other
+    archives differ, as the Japanese one's, still gives the videos)."""
     import collection_archive
 
     inputs = hd_inputs(pieces)
@@ -943,7 +946,9 @@ def check_folder(kind: str, folder: Path, pieces: tuple[str, ...] = PIECES) -> l
             missing.append(f"{movies.relative_to(folder).as_posix()}: {len(absent)} files ({absent[0]}...)")
     if kind == "1.5+2.5" and "menus" in pieces:
         try:
-            collection_archive.load_table(folder / KH2_EXE)
+            table = collection_archive.load_table(folder / KH2_EXE)
+            if found is not None:
+                found["table"] = table
         except collection_archive.UnreadExecutable:
             missing.append(KH2_NOT_RUNNING)
         except (OSError, collection_archive.ArchiveError):
@@ -953,11 +958,13 @@ def check_folder(kind: str, folder: Path, pieces: tuple[str, ...] = PIECES) -> l
 
 def refuse_missing(missing: list[str]) -> None:
     """The refusal for what check_folder found missing (none: nothing): the Xbox app's copy with all its files
-    asks for KH2 to be started (its table is read from the running game), anything else names what is absent."""
+    asks for KH2 to be started (its table is read from the running game), anything else names what is absent
+    (the game is asked for once those are there)."""
     if missing == [KH2_NOT_RUNNING]:
         raise Refusal("hd-start-kh2")
-    if missing:
-        raise Refusal("hd-missing", missing="; ".join(missing))
+    absent = [m for m in missing if m != KH2_NOT_RUNNING]
+    if absent:
+        raise Refusal("hd-missing", missing="; ".join(absent))
 
 
 def pieces_of(text: str) -> tuple[str, ...]:
@@ -1082,10 +1089,11 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         return {"pieces": [], "skipped": True, "message": words("hd-ready", args.language)}
     # each collection checked for what the pieces made now read of it (2.8: the menus' alone)
     chosen = tuple(p for p, wanted in (("menus", bool(menus)), ("videos", videos)) if wanted)
+    found: dict[str, bytes] = {}  # KH2's table as the check read it (the Xbox app's copy: one scan of the game)
     for kind, folder in (("1.5+2.5", args.c1525), ("2.8", args.c28)):
         pieces_here = chosen if kind == "1.5+2.5" else tuple(p for p in chosen if p == "menus")
         if folder is not None and pieces_here:
-            refuse_missing(check_folder(kind, folder, pieces_here))
+            refuse_missing(check_folder(kind, folder, pieces_here, found))
     if menus:
         unmerge_port_mods(install)  # the menus kept are copied as their tools made them (build-mods puts them in again)
     data = data_folder(install)
@@ -1122,7 +1130,10 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         # the collections' files these tools read (their arguments' archives), made from their archives
         read = {places[a[1:-1]] for _, template in runs for a in template if a[1:-1] in places}
         wanted = sorted({p.relative_to(src).parts[0].removesuffix(".hed_out") for p in read if p.is_relative_to(src)})
-        cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE)) if menus else None
+        cipher = None
+        if menus:
+            table = found.get("table") or collection_archive.load_table(args.c1525 / KH2_EXE)
+            cipher = collection_archive.Cipher(table)
         for archive in wanted:
             kind = "1.5+2.5" if archive in COLLECTION_ARCHIVES["1.5+2.5"] else "2.8"
             progress(0, 1, words("hd-making", args.language, what=archive))
@@ -1313,6 +1324,34 @@ MESSAGES.update(
             "salvataggi, impostazioni, stanze e titolo, e {tools} non sono stati creati (richiedono anche la raccolta "
             "2.8).",
         },
+        "mod-enemies-skipped": {
+            "en": "The other mods are ready; KH2 Enemies was left out: it is made from KINGDOM HEARTS II FINAL MIX's "
+            "executable, which the Microsoft Store (Xbox app) version lets nothing read.",
+            "es": "Los otros mods están listos; KH2 Enemies se ha dejado fuera: se hace con el ejecutable de KINGDOM "
+            "HEARTS II FINAL MIX, y la versión de Microsoft Store (aplicación Xbox) no deja leerlo.",
+            "fr": "Les autres mods sont prêts ; KH2 Enemies a été laissé de côté : il est fait à partir de "
+            "l'exécutable de KINGDOM HEARTS II FINAL MIX, que la version du Microsoft Store (application Xbox) ne laisse pas lire.",
+            "de": "Die anderen Mods sind fertig; KH2 Enemies wurde ausgelassen: Es entsteht aus der Programmdatei von "
+            "KINGDOM HEARTS II FINAL MIX, die sich in der Microsoft-Store-Version (Xbox-App) nicht lesen lässt.",
+            "it": "Le altre mod sono pronte; KH2 Enemies è stato escluso: si crea dall'eseguibile di KINGDOM HEARTS II "
+            "FINAL MIX, che la versione del Microsoft Store (app Xbox) non lascia leggere.",
+        },
+        "mod-kept-start-kh2": {
+            "en": "The port's own mods were left as they are: the Microsoft Store (Xbox app) version is read only "
+            "while KINGDOM HEARTS II FINAL MIX runs. To make them again, start it and run this installer again.",
+            "es": "Los mods propios del port se han dejado como están: la versión de Microsoft Store (aplicación Xbox) "
+            "solo se lee mientras KINGDOM HEARTS II FINAL MIX está abierto. Para hacerlos de nuevo, inícialo y vuelve "
+            "a ejecutar este instalador.",
+            "fr": "Les mods du portage ont été laissés tels quels : la version du Microsoft Store (application Xbox) "
+            "n'est lue que pendant que KINGDOM HEARTS II FINAL MIX est lancé. Pour les refaire, lancez-le et relancez "
+            "cet installateur.",
+            "de": "Die eigenen Mods des Ports bleiben unverändert: Die Microsoft-Store-Version (Xbox-App) "
+            "lässt sich nur lesen, während KINGDOM HEARTS II FINAL MIX läuft. Um sie neu zu erstellen, starte es und "
+            "führe dieses Installationsprogramm erneut aus.",
+            "it": "Le mod del port sono state lasciate come sono: la versione del Microsoft Store (app Xbox) si legge "
+            "solo mentre KINGDOM HEARTS II FINAL MIX è in esecuzione. Per rifarle, avvialo ed esegui di nuovo questo "
+            "programma di installazione.",
+        },
         "mod-tool-failed": {
             "en": "{tool}: {error} (all it said is in {log}; please attach it to a report)",
             "es": "{tool}: {error} (todo lo que dijo está en {log}; adjúntalo si lo reportas)",
@@ -1432,21 +1471,41 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
 
     install = args.install.resolve()
     wanted = [m for m in PORT_MODS if getattr(args, m.replace("-", "_"))]
-    # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
-    unmerge_port_mods(install)
     hd = install / "mods" / HD_MOD
     if ("kh2-prizes" in wanted or "kh2-enemies" in wanted) and args.c1525 is None:
         raise Refusal("mod-needs-1525")
     if "menu-overhaul" in wanted and args.c1525 is None:
         raise Refusal("mod-needs-hd")
-    skipped = None
+    left_out: list[tuple[str, str]] = []  # each mod chosen and not made: its folder, and why for the player
     if "menu-overhaul" in wanted:
         hd_tools = load_state(install).get("steps", {}).get("hd-menus", {}).get("tools", {})
         # (none when the HD menus were not made: the others are made all the same)
         lacking = [t for t in OVERHAUL_HD_TOOLS if t not in hd_tools or not any(p.is_file() for p in hd.rglob("*"))]
         if lacking:  # (an HD PACK made without 2.8: the overhaul read a missing camp_backdrop.png and failed)
             wanted.remove("menu-overhaul")
-            skipped = words("mod-overhaul-skipped", args.language, tools=", ".join(lacking))
+            why = words("mod-overhaul-skipped", args.language, tools=", ".join(lacking))
+            left_out.append((PORT_MODS["menu-overhaul"][0], why))
+    if "kh2-enemies" in wanted and collection_archive.xbox_app_copy(args.c1525 / KH2_EXE):
+        # (its tool reads the executable's file, which only the game itself reads in the Xbox app's copy)
+        wanted.remove("kh2-enemies")
+        left_out.append((PORT_MODS["kh2-enemies"][0], words("mod-enemies-skipped", args.language)))
+    # the collection's table before anything is touched: when only the running game gives it (the Xbox app's
+    # copy) and it does not run, the mods in the HD PACK stay as they were made (an update the game runs itself
+    # comes here with KH2 closed)
+    cipher = None
+    if set(COLLECTION_MODS) & set(wanted):
+        try:
+            cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+        except collection_archive.UnreadExecutable:
+            return {
+                "mods": load_state(install).get("steps", {}).get("port-mods", {}).get("mods", []),
+                "into": HD_MOD,
+                "kept": HD_MOD,
+                "missing": ", ".join(PORT_MODS[m][0] for m in wanted if m in COLLECTION_MODS),
+                "message": words("mod-kept-start-kh2", args.language),
+            }
+    # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
+    unmerge_port_mods(install)
     for folder, _ in PORT_MODS.values():
         remove(install / "mods" / folder)  # where an earlier installer put each, apart from the HD PACK
     made: list[str] = []
@@ -1463,12 +1522,8 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
         shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
         places = mod_places(install, work / "src", c1525=args.c1525)
-        if set(COLLECTION_MODS) & set(wanted):
+        if cipher is not None:
             # the collections' entries the tools read, extracted as the HD pieces' are
-            try:
-                cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
-            except collection_archive.UnreadExecutable:
-                raise Refusal("hd-start-kh2") from None
             for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
                 with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
                     collection_archive.materialise(a, paths, work / "src" / f"{MOD_SOURCES[archive]}.hed_out")
@@ -1497,8 +1552,9 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     if failed is not None:
         raise failed
     progress(1, 1, words("mod-ready", args.language))
-    if skipped is not None:
-        return {"mods": made, "into": HD_MOD, "missing": PORT_MODS["menu-overhaul"][0], "message": skipped}
+    if left_out:
+        folders, whys = zip(*left_out)
+        return {"mods": made, "into": HD_MOD, "missing": ", ".join(folders), "message": chr(10).join(whys)}
     return {"mods": made, "into": HD_MOD, "message": words("mod-ready", args.language)}
 
 

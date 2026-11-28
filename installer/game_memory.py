@@ -10,10 +10,9 @@ import sys
 from pathlib import Path
 
 PAGE = 0x1000
-MAX_IMAGE = 512 << 20  # no game's image is near this: a header that says more is not read
 PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION = 0x1000, 0x0010, 0x0400
 LIST_MODULES_ALL = 3
-MAX_PROCESSES = 8192
+ERROR_INSUFFICIENT_BUFFER = 122
 PE_OFFSET_AT, SIZE_OF_IMAGE_AT = 0x3C, 24 + 56  # the PE header's place; SizeOfImage in the optional header
 
 
@@ -58,21 +57,36 @@ def running_image(exe: Path) -> bytes | None:
                 out[offset : offset + got.value] = page.raw[: got.value]
         return bytes(out)
 
-    ids = (w.DWORD * MAX_PROCESSES)()
-    filled = w.DWORD()
-    if not psapi.EnumProcesses(ids, ctypes.sizeof(ids), ctypes.byref(filled)):
-        return None
+    def file_of(process: int) -> str | None:
+        """The path of the process's executable (its buffer grown until the whole path fits)."""
+        size = 260
+        while True:
+            name = ctypes.create_unicode_buffer(size)
+            length = w.DWORD(size)
+            if kernel.QueryFullProcessImageNameW(process, 0, name, ctypes.byref(length)):
+                return name.value
+            if ctypes.get_last_error() != ERROR_INSUFFICIENT_BUFFER:
+                return None
+            size *= 2
+
+    count = 1024
+    while True:  # the list is whole once it does not fill what it was given
+        ids = (w.DWORD * count)()
+        filled = w.DWORD()
+        if not psapi.EnumProcesses(ids, ctypes.sizeof(ids), ctypes.byref(filled)):
+            return None
+        if filled.value < ctypes.sizeof(ids):
+            break
+        count *= 2
     named: list[tuple[bool, int]] = []  # (not in exe's folder, process id): the folder's own sorts first
     for pid in ids[: filled.value // ctypes.sizeof(w.DWORD)]:
         process = kernel.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not process:
             continue
-        name = ctypes.create_unicode_buffer(1024)
-        length = w.DWORD(len(name))
-        found = kernel.QueryFullProcessImageNameW(process, 0, name, ctypes.byref(length))
+        file = file_of(process)
         kernel.CloseHandle(process)
-        if found and Path(name.value).name.casefold() == exe.name.casefold():
-            named.append((Path(name.value).parent != exe.parent, pid))
+        if file is not None and Path(file).name.casefold() == exe.name.casefold():
+            named.append((Path(file).parent != exe.parent, pid))
     for _, pid in sorted(named):
         process = kernel.OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid
@@ -96,7 +110,7 @@ def running_image(exe: Path) -> bytes | None:
             if pe + SIZE_OF_IMAGE_AT + 4 > len(header):
                 continue
             size = struct.unpack_from("<I", header, pe + SIZE_OF_IMAGE_AT)[0]
-            if not PAGE <= size <= MAX_IMAGE:
+            if size < PAGE:
                 continue
             return read(process, base, size)
         finally:

@@ -47,6 +47,12 @@ def table_in(data: bytes) -> bytes | None:
     return None
 
 
+def xbox_app_copy(exe: Path) -> bool:
+    """Whether `exe` is of a game the Xbox app installed (the Microsoft Store's copy): only the running game
+    reads such an executable's file."""
+    return (exe.parent / XBOX_GAME_CONFIG).is_file()
+
+
 def load_table(exe: Path) -> bytes:
     """The S-box from the player's executable. The Xbox app (the Microsoft Store's copy) lets nothing but the
     game read its executables: the table is then read from the running game's memory (game_memory.py), and
@@ -59,7 +65,7 @@ def load_table(exe: Path) -> bytes:
         failure: Exception = ArchiveError(f"{exe} does not hold the collections' archive table")
     except PermissionError as error:
         table, failure = None, error
-        if (exe.parent / XBOX_GAME_CONFIG).is_file():  # the Xbox app's copy, not a file some other way refused
+        if xbox_app_copy(exe):  # not a file some other way refused
             image = game_memory.running_image(exe)
             table = table_in(image) if image is not None else None
             failure = UnreadExecutable(f"{exe} is read only while it runs ({error})")
