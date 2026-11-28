@@ -23,6 +23,7 @@ compile_commands.json
 /data/
 /roms/
 /assets-extracted/
+/private/
 /generated/
 *.nds
 *.srl
